@@ -303,15 +303,32 @@ impl<'a> Serializer<'a> {
     }
 
     fn serialize_link<'b>(&mut self, node: &'b AstNode<'b>, url: &str, title: &str) {
-        // Collect the link text
-        let link_text = self.collect_text(node);
+        // Check if link contains an image (badge-style link)
+        let contains_image = node
+            .children()
+            .any(|child| matches!(&child.data.borrow().value, NodeValue::Image(_)));
 
-        if Self::is_external_url(url) {
+        if contains_image {
+            // Badge-style: image inside link - use fully inline syntax
+            // [![alt](img-url)](link-url)
+            self.output.push('[');
+            for child in node.children() {
+                self.serialize_node(child);
+            }
+            self.output.push_str("](");
+            self.output.push_str(url);
+            if !title.is_empty() {
+                self.output.push_str(" \"");
+                self.output.push_str(title);
+                self.output.push('"');
+            }
+            self.output.push(')');
+        } else if Self::is_external_url(url) {
             // External URL: use reference link style
-            // Use link text as label (shortcut reference style)
+            let link_text = self.collect_text(node);
             let label = link_text.clone();
 
-            // Output the reference: [text] or [text][label]
+            // Output the reference: [text]
             self.output.push('[');
             self.output.push_str(&link_text);
             self.output.push(']');
@@ -327,6 +344,7 @@ impl<'a> Serializer<'a> {
             );
         } else {
             // Relative/local URL: keep as inline link
+            let link_text = self.collect_text(node);
             self.output.push('[');
             self.output.push_str(&link_text);
             self.output.push_str("](");
@@ -442,14 +460,31 @@ impl<'a> Serializer<'a> {
                 content.push('`');
             }
             NodeValue::Link(link) => {
-                // Collect link text first
-                let mut link_text = String::new();
-                for child in node.children() {
-                    self.collect_inline_node(child, &mut link_text);
-                }
+                // Check if link contains an image (badge-style link)
+                let contains_image = node
+                    .children()
+                    .any(|child| matches!(&child.data.borrow().value, NodeValue::Image(_)));
 
-                if Self::is_external_url(&link.url) {
+                if contains_image {
+                    // Badge-style: image inside link - use fully inline syntax
+                    content.push('[');
+                    for child in node.children() {
+                        self.collect_inline_node(child, content);
+                    }
+                    content.push_str("](");
+                    content.push_str(&link.url);
+                    if !link.title.is_empty() {
+                        content.push_str(" \"");
+                        content.push_str(&link.title);
+                        content.push('"');
+                    }
+                    content.push(')');
+                } else if Self::is_external_url(&link.url) {
                     // External URL: use reference link style
+                    let mut link_text = String::new();
+                    for child in node.children() {
+                        self.collect_inline_node(child, &mut link_text);
+                    }
                     content.push('[');
                     content.push_str(&link_text);
                     content.push(']');
@@ -465,6 +500,10 @@ impl<'a> Serializer<'a> {
                     );
                 } else {
                     // Relative/local URL: keep as inline link
+                    let mut link_text = String::new();
+                    for child in node.children() {
+                        self.collect_inline_node(child, &mut link_text);
+                    }
                     content.push('[');
                     content.push_str(&link_text);
                     content.push_str("](");
@@ -1494,5 +1533,27 @@ Check [Python](https://python.org/) too.
         let result = parse_and_serialize(input);
         // The asterisk in "5 * 3" should be escaped to prevent misinterpretation
         assert_eq!(result, "5 \\* 3 = 15\n");
+    }
+
+    #[test]
+    fn test_serialize_image_inside_link_badge_style() {
+        // Badge-style: image inside a link, both using reference style
+        // Input: [![alt][img-ref]][link-ref] with definitions
+        // Should output fully inline: [![alt](img-url)](link-url)
+        let input = r#"[![JSR][JSR badge]][JSR]
+
+[JSR]: https://jsr.io/
+[JSR badge]: https://jsr.io/badge.svg
+"#;
+        let result = parse_and_serialize(input);
+        // The output should have a clickable image linking to JSR
+        assert!(
+            result.contains("[![JSR](https://jsr.io/badge.svg)](https://jsr.io/)"),
+            "Should output fully inline badge-style link"
+        );
+        assert!(
+            !result.contains("[![JSR](https://jsr.io/badge.svg)]:"),
+            "Should not create malformed reference definition"
+        );
     }
 }
