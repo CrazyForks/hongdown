@@ -13,7 +13,6 @@ pub fn serialize<'a>(node: &'a AstNode<'a>, options: &Options) -> String {
 
 struct Serializer<'a> {
     output: String,
-    #[allow(dead_code)]
     options: &'a Options,
     /// Current list item index (1-based) for ordered lists
     list_item_index: usize,
@@ -58,18 +57,7 @@ impl<'a> Serializer<'a> {
                 self.serialize_list_item(node);
             }
             NodeValue::Paragraph => {
-                if self.list_type.is_some() {
-                    // Inside a list item, don't add trailing newline
-                    self.serialize_children(node);
-                } else if self.in_block_quote {
-                    // Inside a block quote, add > prefix
-                    self.output.push_str("> ");
-                    self.serialize_children(node);
-                    self.output.push('\n');
-                } else {
-                    self.serialize_children(node);
-                    self.output.push('\n');
-                }
+                self.serialize_paragraph(node);
             }
             NodeValue::Text(text) => {
                 self.output.push_str(text);
@@ -161,6 +149,118 @@ impl<'a> Serializer<'a> {
                 }
             }
         }
+    }
+
+    fn serialize_paragraph<'b>(&mut self, node: &'b AstNode<'b>) {
+        // Collect all inline content first
+        let mut inline_content = String::new();
+        self.collect_inline_content(node, &mut inline_content);
+
+        let prefix = if self.in_block_quote { "> " } else { "" };
+
+        if self.list_type.is_some() {
+            // Inside a list item, don't wrap or add trailing newline
+            self.output.push_str(&inline_content);
+        } else {
+            // Wrap the paragraph at line_width
+            let wrapped = self.wrap_text(&inline_content, prefix);
+            self.output.push_str(&wrapped);
+            self.output.push('\n');
+        }
+    }
+
+    fn collect_inline_content<'b>(&self, node: &'b AstNode<'b>, content: &mut String) {
+        for child in node.children() {
+            self.collect_inline_node(child, content);
+        }
+    }
+
+    fn collect_inline_node<'b>(&self, node: &'b AstNode<'b>, content: &mut String) {
+        match &node.data.borrow().value {
+            NodeValue::Text(text) => {
+                content.push_str(text);
+            }
+            NodeValue::SoftBreak => {
+                content.push(' ');
+            }
+            NodeValue::LineBreak => {
+                content.push('\n');
+            }
+            NodeValue::Emph => {
+                content.push('*');
+                for child in node.children() {
+                    self.collect_inline_node(child, content);
+                }
+                content.push('*');
+            }
+            NodeValue::Strong => {
+                content.push_str("**");
+                for child in node.children() {
+                    self.collect_inline_node(child, content);
+                }
+                content.push_str("**");
+            }
+            NodeValue::Code(code) => {
+                content.push('`');
+                content.push_str(&code.literal);
+                content.push('`');
+            }
+            NodeValue::Link(link) => {
+                content.push('[');
+                for child in node.children() {
+                    self.collect_inline_node(child, content);
+                }
+                content.push_str("](");
+                content.push_str(&link.url);
+                if !link.title.is_empty() {
+                    content.push_str(" \"");
+                    content.push_str(&link.title);
+                    content.push('"');
+                }
+                content.push(')');
+            }
+            _ => {
+                for child in node.children() {
+                    self.collect_inline_node(child, content);
+                }
+            }
+        }
+    }
+
+    fn wrap_text(&self, text: &str, prefix: &str) -> String {
+        let line_width = self.options.line_width;
+        let mut result = String::new();
+        let mut current_line = String::new();
+        let prefix_len = prefix.len();
+
+        // Add prefix to first line
+        current_line.push_str(prefix);
+
+        for word in text.split_whitespace() {
+            let word_len = word.len();
+
+            if current_line.len() == prefix_len {
+                // First word on this line
+                current_line.push_str(word);
+            } else if current_line.len() + 1 + word_len <= line_width {
+                // Word fits on current line
+                current_line.push(' ');
+                current_line.push_str(word);
+            } else {
+                // Start a new line
+                result.push_str(&current_line);
+                result.push('\n');
+                current_line = String::from(prefix);
+                current_line.push_str(word);
+            }
+        }
+
+        // Add the last line
+        if !current_line.is_empty() && current_line != prefix {
+            result.push_str(&current_line);
+        }
+
+        result
     }
 
     fn serialize_front_matter(&mut self, content: &str) {
@@ -426,5 +526,52 @@ mod tests {
         let input = "---\ntitle: Test\n---\n\nSome content.";
         let result = parse_and_serialize_with_frontmatter(input);
         assert_eq!(result, "---\ntitle: Test\n---\n\nSome content.\n");
+    }
+
+    fn parse_and_serialize_with_width(input: &str, line_width: usize) -> String {
+        let arena = Arena::new();
+        let options = ComrakOptions::default();
+        let root = parse_document(&arena, input, &options);
+        let format_options = Options { line_width };
+        serialize(root, &format_options)
+    }
+
+    #[test]
+    fn test_serialize_paragraph_wrap_at_80() {
+        // A long line that should wrap at approximately 80 characters
+        let input = "This is a very long paragraph that should be wrapped at approximately eighty characters to maintain readability.";
+        let result = parse_and_serialize_with_width(input, 80);
+        // The line should be wrapped
+        assert!(result.contains('\n'));
+        // Each line should be at most 80 characters (approximately)
+        for line in result.lines() {
+            assert!(
+                line.len() <= 85,
+                "Line too long: {} chars",
+                line.len()
+            );
+        }
+    }
+
+    #[test]
+    fn test_serialize_paragraph_no_wrap_short() {
+        // A short line that should not be wrapped
+        let input = "Short paragraph.";
+        let result = parse_and_serialize_with_width(input, 80);
+        assert_eq!(result, "Short paragraph.\n");
+    }
+
+    #[test]
+    fn test_serialize_paragraph_wrap_preserves_words() {
+        // Words should not be broken
+        let input = "Word1 Word2 Word3 Word4 Word5 Word6 Word7 Word8 Word9 Word10 Word11 Word12 Word13 Word14 Word15";
+        let result = parse_and_serialize_with_width(input, 40);
+        // Check that words are not broken
+        for line in result.lines() {
+            assert!(
+                !line.ends_with('-'),
+                "Words should not be hyphenated"
+            );
+        }
     }
 }
