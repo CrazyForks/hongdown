@@ -54,12 +54,29 @@ impl<'a> Serializer<'a> {
     /// Characters that could be misinterpreted as Markdown syntax need escaping.
     fn escape_text(text: &str) -> String {
         let mut result = String::with_capacity(text.len());
-        for ch in text.chars() {
+        let chars: Vec<char> = text.chars().collect();
+
+        for (i, &ch) in chars.iter().enumerate() {
             match ch {
-                // Characters that could start emphasis/strong
-                '*' | '_' => {
+                // Asterisk always needs escaping (can create emphasis anywhere)
+                '*' => {
                     result.push('\\');
                     result.push(ch);
+                }
+                // Underscore only needs escaping at word boundaries
+                // In CommonMark, intraword underscores don't create emphasis
+                '_' => {
+                    let prev_is_alnum = i > 0 && chars[i - 1].is_alphanumeric();
+                    let next_is_alnum = i + 1 < chars.len() && chars[i + 1].is_alphanumeric();
+
+                    // Only escape if at word boundary (could start/end emphasis)
+                    if prev_is_alnum && next_is_alnum {
+                        // Intraword underscore - no escape needed
+                        result.push(ch);
+                    } else {
+                        result.push('\\');
+                        result.push(ch);
+                    }
                 }
                 // Characters that could start links/images
                 '[' | ']' => {
@@ -1555,5 +1572,22 @@ Check [Python](https://python.org/) too.
             !result.contains("[![JSR](https://jsr.io/badge.svg)]:"),
             "Should not create malformed reference definition"
         );
+    }
+
+    #[test]
+    fn test_serialize_underscore_in_word_not_escaped() {
+        // Underscores in the middle of words (like ALL_CAPS) should not be escaped
+        // because they don't create emphasis in CommonMark
+        let input = "Use ALL_CAPS for constants.";
+        let result = parse_and_serialize(input);
+        assert_eq!(result, "Use ALL_CAPS for constants.\n");
+    }
+
+    #[test]
+    fn test_serialize_underscore_emphasis_boundary() {
+        // Underscores at word boundaries should be escaped to prevent emphasis
+        let input = r"\_start and end\_";
+        let result = parse_and_serialize(input);
+        assert_eq!(result, "\\_start and end\\_\n");
     }
 }
