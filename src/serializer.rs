@@ -6,6 +6,44 @@ use comrak::nodes::{AlertType, AstNode, ListType, NodeTable, NodeValue, TableAli
 
 use crate::Options;
 
+/// Formatting directives that can be embedded in HTML comments.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Directive {
+    /// Disable formatting for the next block element only.
+    DisableNextLine,
+    /// Disable formatting for the entire file.
+    DisableFile,
+    /// Disable formatting for the next section (until next heading).
+    DisableNextSection,
+    /// Disable formatting from this point until `Enable`.
+    Disable,
+    /// Re-enable formatting after `Disable`.
+    Enable,
+}
+
+impl Directive {
+    /// Parse a directive from an HTML comment.
+    /// Returns `Some(Directive)` if the comment contains a valid directive.
+    fn parse(html: &str) -> Option<Self> {
+        let trimmed = html.trim();
+        // Check if it's an HTML comment
+        if !trimmed.starts_with("<!--") || !trimmed.ends_with("-->") {
+            return None;
+        }
+        // Extract the content between <!-- and -->
+        let content = trimmed.strip_prefix("<!--")?.strip_suffix("-->")?.trim();
+
+        match content {
+            "hongdown-disable-next-line" => Some(Directive::DisableNextLine),
+            "hongdown-disable-file" => Some(Directive::DisableFile),
+            "hongdown-disable-next-section" => Some(Directive::DisableNextSection),
+            "hongdown-disable" => Some(Directive::Disable),
+            "hongdown-enable" => Some(Directive::Enable),
+            _ => None,
+        }
+    }
+}
+
 /// A reference link definition: label -> (url, title)
 #[derive(Debug, Clone)]
 struct ReferenceLink {
@@ -16,7 +54,18 @@ struct ReferenceLink {
 
 /// Serializes a comrak AST node to a formatted Markdown string.
 pub fn serialize<'a>(node: &'a AstNode<'a>, options: &Options) -> String {
-    let mut serializer = Serializer::new(options);
+    serialize_with_source(node, options, None)
+}
+
+/// Serializes a comrak AST node to a formatted Markdown string,
+/// with access to the original source for directive handling.
+pub fn serialize_with_source<'a>(
+    node: &'a AstNode<'a>,
+    options: &Options,
+    source: Option<&str>,
+) -> String {
+    let source_lines: Vec<&str> = source.map(|s| s.lines().collect()).unwrap_or_default();
+    let mut serializer = Serializer::new(options, source_lines);
     serializer.serialize_node(node);
     serializer.output
 }
@@ -24,6 +73,8 @@ pub fn serialize<'a>(node: &'a AstNode<'a>, options: &Options) -> String {
 struct Serializer<'a> {
     output: String,
     options: &'a Options,
+    /// Original source lines for extracting unformatted content
+    source_lines: Vec<&'a str>,
     /// Current list item index (1-based) for ordered lists
     list_item_index: usize,
     /// Current list type
@@ -35,19 +86,65 @@ struct Serializer<'a> {
     pending_references: HashMap<String, ReferenceLink>,
     /// Current list nesting depth (0 = not in list, 1 = top-level, 2+ = nested)
     list_depth: usize,
+    /// Formatting is disabled (by `hongdown-disable` or `hongdown-disable-file`)
+    formatting_disabled: bool,
+    /// Skip formatting for the next block element only
+    skip_next_block: bool,
+    /// Skip formatting until the next section heading
+    skip_until_section: bool,
 }
 
 impl<'a> Serializer<'a> {
-    fn new(options: &'a Options) -> Self {
+    fn new(options: &'a Options, source_lines: Vec<&'a str>) -> Self {
         Self {
             output: String::new(),
             options,
+            source_lines,
             list_item_index: 0,
             list_type: None,
             in_block_quote: false,
             pending_references: HashMap::new(),
             list_depth: 0,
+            formatting_disabled: false,
+            skip_next_block: false,
+            skip_until_section: false,
         }
+    }
+
+    /// Extract original source text for a node using its sourcepos.
+    fn extract_source<'b>(&self, node: &'b AstNode<'b>) -> Option<String> {
+        if self.source_lines.is_empty() {
+            return None;
+        }
+        let sourcepos = node.data.borrow().sourcepos;
+        let start_line = sourcepos.start.line;
+        let end_line = sourcepos.end.line;
+
+        if start_line == 0 || end_line == 0 {
+            return None;
+        }
+
+        // Lines are 1-indexed in sourcepos
+        let start_idx = start_line - 1;
+        let end_idx = end_line - 1;
+
+        if end_idx >= self.source_lines.len() {
+            return None;
+        }
+
+        let mut result = String::new();
+        for i in start_idx..=end_idx {
+            if i > start_idx {
+                result.push('\n');
+            }
+            result.push_str(self.source_lines[i]);
+        }
+        Some(result)
+    }
+
+    /// Check if formatting should be skipped for this node.
+    fn should_skip_formatting(&self) -> bool {
+        self.formatting_disabled || self.skip_next_block || self.skip_until_section
     }
 
     /// Escape special Markdown characters in text content.
@@ -263,6 +360,64 @@ impl<'a> Serializer<'a> {
     fn serialize_document<'b>(&mut self, node: &'b AstNode<'b>) {
         let children: Vec<_> = node.children().collect();
         for (i, child) in children.iter().enumerate() {
+            // Check for directives in HTML blocks
+            if let NodeValue::HtmlBlock(html_block) = &child.data.borrow().value
+                && let Some(directive) = Directive::parse(&html_block.literal)
+            {
+                match directive {
+                    Directive::DisableFile => {
+                        // Output the directive comment, then output remaining content as-is
+                        self.output.push_str(&html_block.literal);
+                        for remaining_child in children.iter().skip(i + 1) {
+                            self.output.push('\n');
+                            if let Some(source) = self.extract_source(remaining_child) {
+                                self.output.push_str(&source);
+                            } else {
+                                self.serialize_node(remaining_child);
+                            }
+                        }
+                        self.flush_references();
+                        return;
+                    }
+                    Directive::DisableNextLine => {
+                        self.skip_next_block = true;
+                        // Output the directive comment
+                        if i > 0 {
+                            self.output.push('\n');
+                        }
+                        self.output.push_str(&html_block.literal);
+                        continue;
+                    }
+                    Directive::DisableNextSection => {
+                        self.skip_until_section = true;
+                        // Output the directive comment
+                        if i > 0 {
+                            self.output.push('\n');
+                        }
+                        self.output.push_str(&html_block.literal);
+                        continue;
+                    }
+                    Directive::Disable => {
+                        self.formatting_disabled = true;
+                        // Output the directive comment
+                        if i > 0 {
+                            self.output.push('\n');
+                        }
+                        self.output.push_str(&html_block.literal);
+                        continue;
+                    }
+                    Directive::Enable => {
+                        self.formatting_disabled = false;
+                        // Output the directive comment
+                        if i > 0 {
+                            self.output.push('\n');
+                        }
+                        self.output.push_str(&html_block.literal);
+                        continue;
+                    }
+                }
+            }
+
             // Check if we're about to start a new section (h2 heading)
             // If so, flush any pending references first
             let is_h2 = matches!(
@@ -279,14 +434,61 @@ impl<'a> Serializer<'a> {
                     &children[i - 1].data.borrow().value,
                     NodeValue::FrontMatter(_)
                 );
-                if !prev_is_front_matter {
+                // Also skip blank line after directive comments
+                let prev_is_directive =
+                    if let NodeValue::HtmlBlock(html) = &children[i - 1].data.borrow().value {
+                        Directive::parse(&html.literal).is_some()
+                    } else {
+                        false
+                    };
+                if !prev_is_front_matter && !prev_is_directive {
                     self.output.push('\n');
                     if is_h2 {
                         self.output.push('\n');
                     }
                 }
             }
-            self.serialize_node(child);
+
+            // Handle formatting based on directive state
+            if self.should_skip_formatting() {
+                // Check if this is a heading that ends skip_until_section
+                // (we skip the first heading in the section, but the next heading ends it)
+                if self.skip_until_section && is_h2 {
+                    // This heading ends the skipped section
+                    // Check if this is the second heading after disable-next-section
+                    // by looking at whether we've already output content in skip mode
+                    let in_skipped_section =
+                        self.output.ends_with('\n') && !self.output.ends_with("-->\n");
+
+                    if in_skipped_section {
+                        // Second heading: end skip mode and format normally
+                        self.skip_until_section = false;
+                        self.serialize_node(child);
+                    } else {
+                        // First heading: keep skip mode, output as-is
+                        if let Some(source) = self.extract_source(child) {
+                            self.output.push_str(&source);
+                            self.output.push('\n');
+                        } else {
+                            self.serialize_node(child);
+                        }
+                    }
+                } else {
+                    // Output original source if available, otherwise serialize normally
+                    if let Some(source) = self.extract_source(child) {
+                        self.output.push_str(&source);
+                        self.output.push('\n');
+                    } else {
+                        self.serialize_node(child);
+                    }
+                }
+                // Reset skip_next_block after processing one block
+                if self.skip_next_block {
+                    self.skip_next_block = false;
+                }
+            } else {
+                self.serialize_node(child);
+            }
         }
         // Flush any remaining references at the end of the document
         self.flush_references();
@@ -1112,6 +1314,14 @@ mod tests {
         serialize(root, &format_options)
     }
 
+    fn parse_and_serialize_with_source(input: &str) -> String {
+        let arena = Arena::new();
+        let options = ComrakOptions::default();
+        let root = parse_document(&arena, input, &options);
+        let format_options = Options::default();
+        serialize_with_source(root, &format_options, Some(input))
+    }
+
     #[test]
     fn test_serialize_plain_text() {
         let result = parse_and_serialize("Hello, world!");
@@ -1652,6 +1862,63 @@ Check [Python](https://python.org/) too.
         assert!(
             result.contains("\n        "),
             "Nested list continuation should have 8-space indent, got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_directive_disable_next_line() {
+        // hongdown-disable-next-line should preserve the next block element as-is
+        let input = "<!-- hongdown-disable-next-line -->\n[![Badge][badge-img]][badge-url]\n\n[badge-img]: https://example.com/badge.svg\n[badge-url]: https://example.com";
+        let result = parse_and_serialize_with_source(input);
+        // The badge line should be preserved exactly as-is (not converted to inline)
+        assert!(
+            result.contains("[![Badge][badge-img]][badge-url]"),
+            "disable-next-line should preserve the next line as-is, got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_directive_disable_file() {
+        // hongdown-disable-file should preserve the entire file as-is
+        let input = "<!-- hongdown-disable-file -->\n\nTitle\n===\n\nSome paragraph with *emphasis* that would normally be reformatted.";
+        let result = parse_and_serialize_with_source(input);
+        // The entire content after the directive should be preserved
+        assert!(
+            result.contains("Title\n==="),
+            "disable-file should preserve file content as-is, got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_directive_disable_next_section() {
+        // hongdown-disable-next-section should preserve content until the next heading
+        let input = "First section\n-------------\n\nNormal content.\n\n<!-- hongdown-disable-next-section -->\n\nSecond section\n--------------\n\n[![Badge][img]][url]\n\n[img]: https://example.com/img.svg\n[url]: https://example.com\n\nThird section\n-------------\n\nThis should be formatted normally.";
+        let result = parse_and_serialize_with_source(input);
+        // Second section should be preserved as-is
+        assert!(
+            result.contains("[![Badge][img]][url]"),
+            "disable-next-section should preserve section content as-is, got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_directive_disable_enable() {
+        // hongdown-disable and hongdown-enable should bracket unformatted regions
+        let input = "Normal paragraph.\n\n<!-- hongdown-disable -->\n\n[![Badge][img]][url]\n\nAnother unformatted line.\n\n<!-- hongdown-enable -->\n\nBack to normal formatting.\n\n[img]: https://example.com/img.svg\n[url]: https://example.com";
+        let result = parse_and_serialize_with_source(input);
+        // Content between disable/enable should be preserved
+        assert!(
+            result.contains("[![Badge][img]][url]"),
+            "disable/enable should preserve bracketed content as-is, got:\n{}",
+            result
+        );
+        assert!(
+            result.contains("Another unformatted line."),
+            "disable/enable should preserve all bracketed content, got:\n{}",
             result
         );
     }

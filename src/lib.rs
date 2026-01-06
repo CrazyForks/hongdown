@@ -30,6 +30,15 @@ impl Default for Options {
 
 /// Formats a Markdown document according to Hong Minhee's style conventions.
 ///
+/// This function supports formatting directives embedded in HTML comments:
+///
+/// - `<!-- hongdown-disable-file -->` - Disable formatting for the entire file.
+/// - `<!-- hongdown-disable-next-line -->` - Disable formatting for the next block.
+/// - `<!-- hongdown-disable-next-section -->` - Disable formatting until the next
+///   section heading.
+/// - `<!-- hongdown-disable -->` - Disable formatting from this point.
+/// - `<!-- hongdown-enable -->` - Re-enable formatting.
+///
 /// # Arguments
 ///
 /// * `input` - The Markdown source to format.
@@ -56,7 +65,7 @@ pub fn format(input: &str, options: &Options) -> Result<String, FormatError> {
     comrak_options.extension.footnotes = true;
 
     let root = parse_document(&arena, input, &comrak_options);
-    let output = serializer::serialize(root, options);
+    let output = serializer::serialize_with_source(root, options, Some(input));
 
     Ok(output)
 }
