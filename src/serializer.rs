@@ -127,6 +127,23 @@ impl<'a> Serializer<'a> {
                 }
                 self.output.push(')');
             }
+            NodeValue::FootnoteReference(footnote_ref) => {
+                self.output.push_str("[^");
+                self.output.push_str(&footnote_ref.name);
+                self.output.push(']');
+            }
+            NodeValue::FootnoteDefinition(footnote_def) => {
+                self.output.push_str("[^");
+                self.output.push_str(&footnote_def.name);
+                self.output.push_str("]: ");
+                // Collect content
+                let mut content = String::new();
+                for child in node.children() {
+                    self.collect_inline_node(child, &mut content);
+                }
+                self.output.push_str(content.trim());
+                self.output.push('\n');
+            }
             _ => {
                 // For now, just recurse into children for unhandled nodes
                 self.serialize_children(node);
@@ -840,5 +857,28 @@ mod tests {
         let result = parse_and_serialize_with_alerts(input);
         assert!(result.contains("> [!CAUTION]"));
         assert!(result.contains("> Be careful!"));
+    }
+
+    fn parse_and_serialize_with_footnotes(input: &str) -> String {
+        let arena = Arena::new();
+        let mut options = ComrakOptions::default();
+        options.extension.footnotes = true;
+        let root = parse_document(&arena, input, &options);
+        let format_options = Options::default();
+        serialize(root, &format_options)
+    }
+
+    #[test]
+    fn test_serialize_footnote_reference() {
+        let input = "This has a footnote[^1].\n\n[^1]: The footnote text.";
+        let result = parse_and_serialize_with_footnotes(input);
+        assert!(result.contains("[^1]"));
+    }
+
+    #[test]
+    fn test_serialize_footnote_definition() {
+        let input = "Text[^note].\n\n[^note]: A named footnote.";
+        let result = parse_and_serialize_with_footnotes(input);
+        assert!(result.contains("[^note]"));
     }
 }

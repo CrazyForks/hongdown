@@ -85,7 +85,7 @@ TODO
  -  [x] Tables with alignment
  -  [x] Definition lists
  -  [x] GitHub alerts/admonitions
- -  [ ] Footnotes
+ -  [x] Footnotes
  -  [ ] Reference link collection and placement
 
 ### Phase 3: Polish
