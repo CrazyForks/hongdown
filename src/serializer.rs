@@ -1,8 +1,18 @@
 //! Serializer for converting comrak AST to formatted Markdown.
 
+use std::collections::HashMap;
+
 use comrak::nodes::{AlertType, AstNode, ListType, NodeTable, NodeValue, TableAlignment};
 
 use crate::Options;
+
+/// A reference link definition: label -> (url, title)
+#[derive(Debug, Clone)]
+struct ReferenceLink {
+    label: String,
+    url: String,
+    title: String,
+}
 
 /// Serializes a comrak AST node to a formatted Markdown string.
 pub fn serialize<'a>(node: &'a AstNode<'a>, options: &Options) -> String {
@@ -20,6 +30,9 @@ struct Serializer<'a> {
     list_type: Option<ListType>,
     /// Whether we're inside a block quote
     in_block_quote: bool,
+    /// Reference links collected for the current section
+    /// Key: URL, Value: ReferenceLink
+    pending_references: HashMap<String, ReferenceLink>,
 }
 
 impl<'a> Serializer<'a> {
@@ -30,7 +43,48 @@ impl<'a> Serializer<'a> {
             list_item_index: 0,
             list_type: None,
             in_block_quote: false,
+            pending_references: HashMap::new(),
         }
+    }
+
+    /// Check if a URL is external (http:// or https://)
+    fn is_external_url(url: &str) -> bool {
+        url.starts_with("http://") || url.starts_with("https://")
+    }
+
+    /// Output pending reference definitions and clear them
+    fn flush_references(&mut self) {
+        if self.pending_references.is_empty() {
+            return;
+        }
+
+        // Sort references by label for consistent output
+        let mut refs: Vec<_> = self.pending_references.values().collect();
+        refs.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
+
+        // Add a blank line before references if not already present
+        if !self.output.ends_with("\n\n") {
+            if self.output.ends_with('\n') {
+                self.output.push('\n');
+            } else {
+                self.output.push_str("\n\n");
+            }
+        }
+
+        for reference in refs {
+            self.output.push('[');
+            self.output.push_str(&reference.label);
+            self.output.push_str("]: ");
+            self.output.push_str(&reference.url);
+            if !reference.title.is_empty() {
+                self.output.push_str(" \"");
+                self.output.push_str(&reference.title);
+                self.output.push('"');
+            }
+            self.output.push('\n');
+        }
+
+        self.pending_references.clear();
     }
 
     fn serialize_node<'b>(&mut self, node: &'b AstNode<'b>) {
@@ -116,16 +170,7 @@ impl<'a> Serializer<'a> {
                 self.output.push('`');
             }
             NodeValue::Link(link) => {
-                self.output.push('[');
-                self.serialize_children(node);
-                self.output.push_str("](");
-                self.output.push_str(&link.url);
-                if !link.title.is_empty() {
-                    self.output.push_str(" \"");
-                    self.output.push_str(&link.title);
-                    self.output.push('"');
-                }
-                self.output.push(')');
+                self.serialize_link(node, &link.url, &link.title);
             }
             NodeValue::FootnoteReference(footnote_ref) => {
                 self.output.push_str("[^");
@@ -154,16 +199,21 @@ impl<'a> Serializer<'a> {
     fn serialize_document<'b>(&mut self, node: &'b AstNode<'b>) {
         let children: Vec<_> = node.children().collect();
         for (i, child) in children.iter().enumerate() {
+            // Check if we're about to start a new section (h2 heading)
+            // If so, flush any pending references first
+            let is_h2 = matches!(
+                &child.data.borrow().value,
+                NodeValue::Heading(h) if h.level == 2
+            );
+            if is_h2 && i > 0 {
+                self.flush_references();
+            }
+
             // Add blank line between block elements (except after front matter)
             if i > 0 {
                 let prev_is_front_matter = matches!(
                     &children[i - 1].data.borrow().value,
                     NodeValue::FrontMatter(_)
-                );
-                // Two blank lines before level 2 headings
-                let is_h2 = matches!(
-                    &child.data.borrow().value,
-                    NodeValue::Heading(h) if h.level == 2
                 );
                 if !prev_is_front_matter {
                     self.output.push('\n');
@@ -174,6 +224,8 @@ impl<'a> Serializer<'a> {
             }
             self.serialize_node(child);
         }
+        // Flush any remaining references at the end of the document
+        self.flush_references();
     }
 
     fn serialize_heading<'b>(&mut self, node: &'b AstNode<'b>, level: u8) {
@@ -200,6 +252,44 @@ impl<'a> Serializer<'a> {
             self.output.push(' ');
             self.output.push_str(&heading_text);
             self.output.push('\n');
+        }
+    }
+
+    fn serialize_link<'b>(&mut self, node: &'b AstNode<'b>, url: &str, title: &str) {
+        // Collect the link text
+        let link_text = self.collect_text(node);
+
+        if Self::is_external_url(url) {
+            // External URL: use reference link style
+            // Use link text as label (shortcut reference style)
+            let label = link_text.clone();
+
+            // Output the reference: [text] or [text][label]
+            self.output.push('[');
+            self.output.push_str(&link_text);
+            self.output.push(']');
+
+            // Store the reference definition for later output
+            self.pending_references.insert(
+                url.to_string(),
+                ReferenceLink {
+                    label,
+                    url: url.to_string(),
+                    title: title.to_string(),
+                },
+            );
+        } else {
+            // Relative/local URL: keep as inline link
+            self.output.push('[');
+            self.output.push_str(&link_text);
+            self.output.push_str("](");
+            self.output.push_str(url);
+            if !title.is_empty() {
+                self.output.push_str(" \"");
+                self.output.push_str(title);
+                self.output.push('"');
+            }
+            self.output.push(')');
         }
     }
 
@@ -251,14 +341,14 @@ impl<'a> Serializer<'a> {
         }
     }
 
-    fn collect_inline_content<'b>(&self, node: &'b AstNode<'b>, content: &mut String) {
+    fn collect_inline_content<'b>(&mut self, node: &'b AstNode<'b>, content: &mut String) {
         for child in node.children() {
             self.collect_inline_node(child, content);
         }
     }
 
-    fn collect_inline_node<'b>(&self, node: &'b AstNode<'b>, content: &mut String) {
-        match &node.data.borrow().value {
+    fn collect_inline_node<'b>(&mut self, node: &'b AstNode<'b>, content: &mut String) {
+        match &node.data.borrow().value.clone() {
             NodeValue::Text(text) => {
                 content.push_str(text);
             }
@@ -288,18 +378,40 @@ impl<'a> Serializer<'a> {
                 content.push('`');
             }
             NodeValue::Link(link) => {
-                content.push('[');
+                // Collect link text first
+                let mut link_text = String::new();
                 for child in node.children() {
-                    self.collect_inline_node(child, content);
+                    self.collect_inline_node(child, &mut link_text);
                 }
-                content.push_str("](");
-                content.push_str(&link.url);
-                if !link.title.is_empty() {
-                    content.push_str(" \"");
-                    content.push_str(&link.title);
-                    content.push('"');
+
+                if Self::is_external_url(&link.url) {
+                    // External URL: use reference link style
+                    content.push('[');
+                    content.push_str(&link_text);
+                    content.push(']');
+
+                    // Store the reference definition
+                    self.pending_references.insert(
+                        link.url.clone(),
+                        ReferenceLink {
+                            label: link_text,
+                            url: link.url.clone(),
+                            title: link.title.clone(),
+                        },
+                    );
+                } else {
+                    // Relative/local URL: keep as inline link
+                    content.push('[');
+                    content.push_str(&link_text);
+                    content.push_str("](");
+                    content.push_str(&link.url);
+                    if !link.title.is_empty() {
+                        content.push_str(" \"");
+                        content.push_str(&link.title);
+                        content.push('"');
+                    }
+                    content.push(')');
                 }
-                content.push(')');
             }
             _ => {
                 for child in node.children() {
@@ -898,19 +1010,20 @@ mod tests {
     }
 
     #[test]
-    fn test_serialize_inline_link() {
+    fn test_serialize_external_link_becomes_reference() {
+        // External links (https://) are converted to reference style
         let result = parse_and_serialize("Visit [Rust](https://www.rust-lang.org/).");
-        assert_eq!(result, "Visit [Rust](https://www.rust-lang.org/).\n");
+        assert!(result.contains("Visit [Rust]."));
+        assert!(result.contains("[Rust]: https://www.rust-lang.org/"));
     }
 
     #[test]
-    fn test_serialize_inline_link_with_title() {
+    fn test_serialize_external_link_with_title_becomes_reference() {
+        // External links with titles are also converted to reference style
         let result =
             parse_and_serialize("Visit [Rust](https://www.rust-lang.org/ \"The Rust Language\").");
-        assert_eq!(
-            result,
-            "Visit [Rust](https://www.rust-lang.org/ \"The Rust Language\").\n"
-        );
+        assert!(result.contains("Visit [Rust]."));
+        assert!(result.contains("[Rust]: https://www.rust-lang.org/ \"The Rust Language\""));
     }
 
     fn parse_and_serialize_with_frontmatter(input: &str) -> String {
@@ -1165,5 +1278,61 @@ mod tests {
         // Should wrap with ">     " continuation (> + 4 spaces)
         assert!(result.contains(">  -  This is a very long"));
         assert!(result.contains("\n>     ")); // Continuation line with > and 4 spaces
+    }
+
+    #[test]
+    fn test_serialize_external_link_as_reference() {
+        // External URLs should be converted to reference links
+        let input = "Visit [Rust](https://www.rust-lang.org/) for more info.";
+        let result = parse_and_serialize(input);
+        // Should use reference style, not inline
+        assert!(result.contains("[Rust]"));
+        assert!(!result.contains("](https://"));
+        assert!(result.contains("[Rust]: https://www.rust-lang.org/"));
+    }
+
+    #[test]
+    fn test_serialize_relative_link_stays_inline() {
+        // Relative paths should stay as inline links
+        let input = "See the [README](./README.md) for details.";
+        let result = parse_and_serialize(input);
+        // Should keep inline style for relative paths
+        assert!(result.contains("[README](./README.md)"));
+    }
+
+    #[test]
+    fn test_serialize_reference_links_at_section_end() {
+        // Reference definitions should appear at the end of each section
+        let input = r#"# Title
+
+See [Example](https://example.com/) here.
+
+## Section One
+
+Visit [Rust](https://www.rust-lang.org/) and [Cargo](https://doc.rust-lang.org/cargo/).
+
+## Section Two
+
+Check [Python](https://python.org/) too.
+"#;
+        let result = parse_and_serialize(input);
+        // Each section should have its references at the end
+        assert!(result.contains("[Rust]: https://www.rust-lang.org/"));
+        assert!(result.contains("[Cargo]: https://doc.rust-lang.org/cargo/"));
+        assert!(result.contains("[Python]: https://python.org/"));
+        // References should come before the next section
+        let rust_def_pos = result.find("[Rust]: ").unwrap();
+        let section_two_pos = result.find("Section Two").unwrap();
+        assert!(rust_def_pos < section_two_pos);
+    }
+
+    #[test]
+    fn test_serialize_shortcut_reference_when_text_matches_label() {
+        // When link text matches a sensible label, use shortcut reference [text]
+        let input = "Use [comrak](https://docs.rs/comrak) for parsing.";
+        let result = parse_and_serialize(input);
+        // Should use shortcut reference style
+        assert!(result.contains("[comrak]"));
+        assert!(result.contains("[comrak]: https://docs.rs/comrak"));
     }
 }
