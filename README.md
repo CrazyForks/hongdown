@@ -75,7 +75,7 @@ TODO
  -  [x] Headings (setext and ATX)
  -  [ ] Paragraphs with line wrapping
  -  [x] Lists (ordered and unordered)
- -  [ ] Code blocks (fenced)
+ -  [x] Code blocks (fenced)
  -  [ ] Block quotes
  -  [ ] Inline formatting (emphasis, strong, code, links)
  -  [ ] Basic test suite

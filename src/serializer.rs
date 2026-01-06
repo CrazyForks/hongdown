@@ -42,6 +42,9 @@ impl<'a> Serializer<'a> {
             NodeValue::List(list) => {
                 self.serialize_list(node, list.list_type);
             }
+            NodeValue::CodeBlock(code_block) => {
+                self.serialize_code_block(&code_block.info, &code_block.literal);
+            }
             NodeValue::Item(_) => {
                 self.serialize_list_item(node);
             }
@@ -117,6 +120,40 @@ impl<'a> Serializer<'a> {
                 }
             }
         }
+    }
+
+    fn serialize_code_block(&mut self, info: &str, literal: &str) {
+        // Determine the minimum fence length (at least 4)
+        let min_fence_length = 4;
+
+        // Find the longest sequence of tildes in the content
+        let max_tildes_in_content = literal
+            .lines()
+            .filter_map(|line| {
+                let trimmed = line.trim_start();
+                if trimmed.starts_with('~') {
+                    Some(trimmed.chars().take_while(|&c| c == '~').count())
+                } else {
+                    None
+                }
+            })
+            .max()
+            .unwrap_or(0);
+
+        // Fence length must be greater than any tilde sequence in content
+        let fence_length = std::cmp::max(min_fence_length, max_tildes_in_content + 1);
+        let fence = "~".repeat(fence_length);
+
+        // Use "text" as default if no language specified
+        let language = if info.is_empty() { "text" } else { info };
+
+        self.output.push_str(&fence);
+        self.output.push(' ');
+        self.output.push_str(language);
+        self.output.push('\n');
+        self.output.push_str(literal);
+        self.output.push_str(&fence);
+        self.output.push('\n');
     }
 
     fn serialize_list<'b>(&mut self, node: &'b AstNode<'b>, list_type: ListType) {
@@ -231,5 +268,24 @@ mod tests {
     fn test_serialize_ordered_list_multiple_items() {
         let result = parse_and_serialize("1. First\n2. Second\n3. Third");
         assert_eq!(result, " 1. First\n 2. Second\n 3. Third\n");
+    }
+
+    #[test]
+    fn test_serialize_fenced_code_block() {
+        let result = parse_and_serialize("```rust\nfn main() {}\n```");
+        assert_eq!(result, "~~~~ rust\nfn main() {}\n~~~~\n");
+    }
+
+    #[test]
+    fn test_serialize_fenced_code_block_no_language() {
+        let result = parse_and_serialize("```\nsome code\n```");
+        assert_eq!(result, "~~~~ text\nsome code\n~~~~\n");
+    }
+
+    #[test]
+    fn test_serialize_fenced_code_block_with_tildes_inside() {
+        // When code contains ~~~~, use more tildes for the fence
+        let result = parse_and_serialize("```\n~~~~\ninner fence\n~~~~\n```");
+        assert_eq!(result, "~~~~~ text\n~~~~\ninner fence\n~~~~\n~~~~~\n");
     }
 }
