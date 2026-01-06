@@ -82,7 +82,7 @@ TODO
 
 ### Phase 2: Extended syntax
 
- -  [ ] Tables with alignment
+ -  [x] Tables with alignment
  -  [ ] Definition lists
  -  [ ] GitHub alerts/admonitions
  -  [ ] Footnotes

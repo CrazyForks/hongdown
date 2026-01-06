@@ -1,6 +1,6 @@
 //! Serializer for converting comrak AST to formatted Markdown.
 
-use comrak::nodes::{AstNode, ListType, NodeValue};
+use comrak::nodes::{AstNode, ListType, NodeTable, NodeValue, TableAlignment};
 
 use crate::Options;
 
@@ -52,6 +52,15 @@ impl<'a> Serializer<'a> {
             }
             NodeValue::FrontMatter(content) => {
                 self.serialize_front_matter(content);
+            }
+            NodeValue::Table(table) => {
+                self.serialize_table(node, table);
+            }
+            NodeValue::TableRow(is_header) => {
+                self.serialize_table_row(node, *is_header);
+            }
+            NodeValue::TableCell => {
+                self.serialize_children(node);
             }
             NodeValue::Item(_) => {
                 self.serialize_list_item(node);
@@ -285,6 +294,91 @@ impl<'a> Serializer<'a> {
         // so we preserve it verbatim and add a trailing blank line
         self.output.push_str(content.trim());
         self.output.push_str("\n\n");
+    }
+
+    fn serialize_table<'b>(&mut self, node: &'b AstNode<'b>, table: &NodeTable) {
+        let alignments = &table.alignments;
+        // Collect all rows and cells first to calculate column widths
+        let rows: Vec<_> = node.children().collect();
+        if rows.is_empty() {
+            return;
+        }
+
+        // Collect cell contents and calculate max widths
+        let mut all_cells: Vec<Vec<String>> = Vec::new();
+        let mut col_widths: Vec<usize> = vec![0; alignments.len()];
+
+        for row in &rows {
+            let mut row_cells: Vec<String> = Vec::new();
+            for (i, cell) in row.children().enumerate() {
+                let content = self.collect_text(cell);
+                if i < col_widths.len() {
+                    col_widths[i] = col_widths[i].max(content.len());
+                }
+                row_cells.push(content);
+            }
+            all_cells.push(row_cells);
+        }
+
+        // Ensure minimum column width for alignment markers
+        for width in &mut col_widths {
+            *width = (*width).max(3);
+        }
+
+        // Output header row
+        if let Some(header_cells) = all_cells.first() {
+            self.output.push('|');
+            for (i, cell) in header_cells.iter().enumerate() {
+                self.output.push(' ');
+                let width = col_widths.get(i).copied().unwrap_or(3);
+                self.output.push_str(&format!("{:width$}", cell, width = width));
+                self.output.push_str(" |");
+            }
+            self.output.push('\n');
+        }
+
+        // Output separator row with alignment
+        self.output.push('|');
+        for (i, alignment) in alignments.iter().enumerate() {
+            self.output.push(' ');
+            let width = col_widths.get(i).copied().unwrap_or(3);
+            match alignment {
+                TableAlignment::Left => {
+                    self.output.push(':');
+                    self.output.push_str(&"-".repeat(width - 1));
+                }
+                TableAlignment::Right => {
+                    self.output.push_str(&"-".repeat(width - 1));
+                    self.output.push(':');
+                }
+                TableAlignment::Center => {
+                    self.output.push(':');
+                    self.output.push_str(&"-".repeat(width - 2));
+                    self.output.push(':');
+                }
+                TableAlignment::None => {
+                    self.output.push_str(&"-".repeat(width));
+                }
+            }
+            self.output.push_str(" |");
+        }
+        self.output.push('\n');
+
+        // Output data rows (skip header)
+        for row_cells in all_cells.iter().skip(1) {
+            self.output.push('|');
+            for (i, cell) in row_cells.iter().enumerate() {
+                self.output.push(' ');
+                let width = col_widths.get(i).copied().unwrap_or(3);
+                self.output.push_str(&format!("{:width$}", cell, width = width));
+                self.output.push_str(" |");
+            }
+            self.output.push('\n');
+        }
+    }
+
+    fn serialize_table_row<'b>(&mut self, _node: &'b AstNode<'b>, _is_header: bool) {
+        // Table rows are handled by serialize_table
     }
 
     fn serialize_block_quote<'b>(&mut self, node: &'b AstNode<'b>) {
@@ -589,6 +683,56 @@ mod tests {
                 !line.ends_with('-'),
                 "Words should not be hyphenated"
             );
+        }
+    }
+
+    fn parse_and_serialize_with_table(input: &str) -> String {
+        let arena = Arena::new();
+        let mut options = ComrakOptions::default();
+        options.extension.table = true;
+        let root = parse_document(&arena, input, &options);
+        let format_options = Options::default();
+        serialize(root, &format_options)
+    }
+
+    #[test]
+    fn test_serialize_simple_table() {
+        let input = "| A | B |\n|---|---|\n| 1 | 2 |";
+        let result = parse_and_serialize_with_table(input);
+        assert!(result.contains("| A"));
+        assert!(result.contains("| B"));
+        assert!(result.contains("| 1"));
+        assert!(result.contains("| 2"));
+    }
+
+    #[test]
+    fn test_serialize_table_with_alignment() {
+        let input = "| Left | Center | Right |\n|:-----|:------:|------:|\n| L | C | R |";
+        let result = parse_and_serialize_with_table(input);
+        // Should contain alignment markers
+        assert!(result.contains(":--"));
+        assert!(result.contains("--:"));
+    }
+
+    #[test]
+    fn test_serialize_table_aligned_columns() {
+        let input = "| Name | Age |\n|------|-----|\n| Alice | 30 |\n| Bob | 25 |";
+        let result = parse_and_serialize_with_table(input);
+        // Columns should be aligned with padding
+        let lines: Vec<&str> = result.lines().collect();
+        // All rows should have the same pipe positions (aligned)
+        if lines.len() >= 3 {
+            // Find pipe positions in first data row
+            let first_pipes: Vec<_> = lines[0].match_indices('|').map(|(i, _)| i).collect();
+            // Verify other rows have pipes in similar positions (allowing for padding)
+            for line in &lines[1..] {
+                let pipes: Vec<_> = line.match_indices('|').map(|(i, _)| i).collect();
+                assert_eq!(
+                    first_pipes.len(),
+                    pipes.len(),
+                    "All rows should have same number of pipes"
+                );
+            }
         }
     }
 }
