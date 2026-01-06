@@ -52,11 +52,6 @@ struct ReferenceLink {
     title: String,
 }
 
-/// Serializes a comrak AST node to a formatted Markdown string.
-pub fn serialize<'a>(node: &'a AstNode<'a>, options: &Options) -> String {
-    serialize_with_source(node, options, None)
-}
-
 /// Serializes a comrak AST node to a formatted Markdown string,
 /// with access to the original source for directive handling.
 pub fn serialize_with_source<'a>(
@@ -119,12 +114,14 @@ impl<'a> Serializer<'a> {
         let sourcepos = node.data.borrow().sourcepos;
         let start_line = sourcepos.start.line;
         let end_line = sourcepos.end.line;
+        let start_col = sourcepos.start.column;
+        let end_col = sourcepos.end.column;
 
         if start_line == 0 || end_line == 0 {
             return None;
         }
 
-        // Lines are 1-indexed in sourcepos
+        // Lines and columns are 1-indexed in sourcepos
         let start_idx = start_line - 1;
         let end_idx = end_line - 1;
 
@@ -137,7 +134,28 @@ impl<'a> Serializer<'a> {
             if i > start_idx {
                 result.push('\n');
             }
-            result.push_str(self.source_lines[i]);
+            let line = self.source_lines[i];
+            if start_idx == end_idx {
+                // Single line: extract from start_col to end_col
+                let start_byte = start_col.saturating_sub(1);
+                let end_byte = end_col;
+                if end_byte <= line.len() {
+                    result.push_str(&line[start_byte..end_byte]);
+                } else {
+                    result.push_str(&line[start_byte..]);
+                }
+            } else if i == start_idx {
+                // First line: from start_col to end
+                let start_byte = start_col.saturating_sub(1);
+                result.push_str(&line[start_byte..]);
+            } else if i == end_idx {
+                // Last line: from start to end_col
+                let end_byte = end_col.min(line.len());
+                result.push_str(&line[..end_byte]);
+            } else {
+                // Middle lines: full line
+                result.push_str(line);
+            }
         }
         Some(result)
     }
@@ -145,6 +163,81 @@ impl<'a> Serializer<'a> {
     /// Check if formatting should be skipped for this node.
     fn should_skip_formatting(&self) -> bool {
         self.formatting_disabled || self.skip_next_block || self.skip_until_section
+    }
+
+    /// Check if a link/image was originally in reference style by examining the source.
+    /// Returns Some((text, label)) if reference style, None if inline style.
+    fn get_reference_style_info<'b>(&self, node: &'b AstNode<'b>) -> Option<(String, String)> {
+        let source = self.extract_source(node)?;
+
+        // Reference style patterns:
+        // [text][label] or ![text][label] - full reference
+        // [text][] or ![text][] - collapsed reference
+        // [text] or ![text] - shortcut reference
+        //
+        // Inline style pattern:
+        // [text](url) or ![text](url)
+        //
+        // Badge pattern (link containing image):
+        // [![alt][img-ref]][link-ref]
+
+        // Remove leading ! for images
+        let source = source.strip_prefix('!').unwrap_or(&source);
+
+        // Find the position of the first '[' and track brackets to find the matching ']'
+        let first_bracket = source.find('[')?;
+        let chars: Vec<char> = source.chars().collect();
+
+        // Find the closing bracket at depth 0 (the one that closes the text/content part)
+        let mut depth = 0;
+        let mut text_end_pos = None;
+        for (i, &ch) in chars.iter().enumerate().skip(first_bracket) {
+            match ch {
+                '[' => depth += 1,
+                ']' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        text_end_pos = Some(i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let text_end_pos = text_end_pos?;
+
+        // Look at what comes after the closing bracket
+        let after_close = &source[text_end_pos + 1..];
+
+        // If followed by "(", it's inline style
+        if after_close.starts_with('(') {
+            return None;
+        }
+
+        // Extract the text content (between first [ and matching ])
+        let text = source[first_bracket + 1..text_end_pos].to_string();
+
+        // If followed by "[", it's full or collapsed reference style
+        if let Some(label_content) = after_close.strip_prefix('[') {
+            // Find the label between [ and ]
+            if let Some(label_end) = label_content.find(']') {
+                let label = label_content[..label_end].to_string();
+
+                // If label is empty, it's collapsed reference (use text as label)
+                let final_label = if label.is_empty() {
+                    text.clone()
+                } else {
+                    label
+                };
+
+                return Some((text, final_label));
+            }
+        }
+
+        // Shortcut reference: just [text] with nothing following
+        // or followed by something that's not ( or [
+        Some((text.clone(), text))
     }
 
     /// Escape special Markdown characters in text content.
@@ -531,9 +624,43 @@ impl<'a> Serializer<'a> {
         let raw_text = self.collect_raw_text(node);
         let is_autolink = title.is_empty() && raw_text == url;
 
-        if contains_image {
-            // Badge-style: image inside link - use fully inline syntax
-            // [![alt](img-url)](link-url)
+        // Check if original was reference style
+        if let Some((text, label)) = self.get_reference_style_info(node) {
+            // Preserve reference style
+            if contains_image {
+                // Badge-style with reference: [![alt][img-ref]][link-ref]
+                self.output.push('[');
+                for child in node.children() {
+                    self.serialize_node(child);
+                }
+                self.output.push_str("][");
+                self.output.push_str(&label);
+                self.output.push(']');
+            } else if text == label {
+                // Shortcut reference: [text]
+                self.output.push('[');
+                self.output.push_str(&text);
+                self.output.push(']');
+            } else {
+                // Full reference: [text][label]
+                self.output.push('[');
+                self.output.push_str(&text);
+                self.output.push_str("][");
+                self.output.push_str(&label);
+                self.output.push(']');
+            }
+
+            // Store the reference definition for later output
+            self.pending_references.insert(
+                url.to_string(),
+                ReferenceLink {
+                    label,
+                    url: url.to_string(),
+                    title: title.to_string(),
+                },
+            );
+        } else if contains_image {
+            // Badge-style inline: [![alt](img-url)](link-url)
             self.output.push('[');
             for child in node.children() {
                 self.serialize_node(child);
@@ -590,17 +717,45 @@ impl<'a> Serializer<'a> {
         // Collect the alt text
         let alt_text = self.collect_text(node);
 
-        // Images always use inline syntax (no reference style for images)
-        self.output.push_str("![");
-        self.output.push_str(&alt_text);
-        self.output.push_str("](");
-        self.output.push_str(url);
-        if !title.is_empty() {
-            self.output.push_str(" \"");
-            self.output.push_str(title);
-            self.output.push('"');
+        // Check if original was reference style
+        if let Some((text, label)) = self.get_reference_style_info(node) {
+            // Preserve reference style
+            if text == label {
+                // Shortcut reference: ![alt]
+                self.output.push_str("![");
+                self.output.push_str(&text);
+                self.output.push(']');
+            } else {
+                // Full reference: ![alt][label]
+                self.output.push_str("![");
+                self.output.push_str(&text);
+                self.output.push_str("][");
+                self.output.push_str(&label);
+                self.output.push(']');
+            }
+
+            // Store the reference definition for later output
+            self.pending_references.insert(
+                url.to_string(),
+                ReferenceLink {
+                    label,
+                    url: url.to_string(),
+                    title: title.to_string(),
+                },
+            );
+        } else {
+            // Inline style: ![alt](url)
+            self.output.push_str("![");
+            self.output.push_str(&alt_text);
+            self.output.push_str("](");
+            self.output.push_str(url);
+            if !title.is_empty() {
+                self.output.push_str(" \"");
+                self.output.push_str(title);
+                self.output.push('"');
+            }
+            self.output.push(')');
         }
-        self.output.push(')');
     }
 
     fn collect_text<'b>(&self, node: &'b AstNode<'b>) -> String {
@@ -722,8 +877,43 @@ impl<'a> Serializer<'a> {
                 let raw_text = self.collect_raw_text(node);
                 let is_autolink = link.title.is_empty() && raw_text == link.url;
 
-                if contains_image {
-                    // Badge-style: image inside link - use fully inline syntax
+                // Check if original was reference style
+                if let Some((text, label)) = self.get_reference_style_info(node) {
+                    // Preserve reference style
+                    if contains_image {
+                        // Badge-style with reference: [![alt][img-ref]][link-ref]
+                        content.push('[');
+                        for child in node.children() {
+                            self.collect_inline_node(child, content);
+                        }
+                        content.push_str("][");
+                        content.push_str(&label);
+                        content.push(']');
+                    } else if text == label {
+                        // Shortcut reference: [text]
+                        content.push('[');
+                        content.push_str(&text);
+                        content.push(']');
+                    } else {
+                        // Full reference: [text][label]
+                        content.push('[');
+                        content.push_str(&text);
+                        content.push_str("][");
+                        content.push_str(&label);
+                        content.push(']');
+                    }
+
+                    // Store the reference definition
+                    self.pending_references.insert(
+                        link.url.clone(),
+                        ReferenceLink {
+                            label,
+                            url: link.url.clone(),
+                            title: link.title.clone(),
+                        },
+                    );
+                } else if contains_image {
+                    // Badge-style inline: [![alt](img-url)](link-url)
                     content.push('[');
                     for child in node.children() {
                         self.collect_inline_node(child, content);
@@ -779,23 +969,50 @@ impl<'a> Serializer<'a> {
                 }
             }
             NodeValue::Image(image) => {
-                // Collect alt text
-                let mut alt_text = String::new();
-                for child in node.children() {
-                    self.collect_inline_node(child, &mut alt_text);
-                }
+                // Check if original was reference style
+                if let Some((text, label)) = self.get_reference_style_info(node) {
+                    // Preserve reference style
+                    if text == label {
+                        // Shortcut reference: ![alt]
+                        content.push_str("![");
+                        content.push_str(&text);
+                        content.push(']');
+                    } else {
+                        // Full reference: ![alt][label]
+                        content.push_str("![");
+                        content.push_str(&text);
+                        content.push_str("][");
+                        content.push_str(&label);
+                        content.push(']');
+                    }
 
-                // Images always use inline syntax
-                content.push_str("![");
-                content.push_str(&alt_text);
-                content.push_str("](");
-                content.push_str(&image.url);
-                if !image.title.is_empty() {
-                    content.push_str(" \"");
-                    content.push_str(&image.title);
-                    content.push('"');
+                    // Store the reference definition
+                    self.pending_references.insert(
+                        image.url.clone(),
+                        ReferenceLink {
+                            label,
+                            url: image.url.clone(),
+                            title: image.title.clone(),
+                        },
+                    );
+                } else {
+                    // Inline style: collect alt text and use inline syntax
+                    let mut alt_text = String::new();
+                    for child in node.children() {
+                        self.collect_inline_node(child, &mut alt_text);
+                    }
+
+                    content.push_str("![");
+                    content.push_str(&alt_text);
+                    content.push_str("](");
+                    content.push_str(&image.url);
+                    if !image.title.is_empty() {
+                        content.push_str(" \"");
+                        content.push_str(&image.title);
+                        content.push('"');
+                    }
+                    content.push(')');
                 }
-                content.push(')');
             }
             NodeValue::HtmlInline(html) => {
                 // Preserve inline HTML as-is
@@ -1311,7 +1528,7 @@ mod tests {
         let options = ComrakOptions::default();
         let root = parse_document(&arena, input, &options);
         let format_options = Options::default();
-        serialize(root, &format_options)
+        serialize_with_source(root, &format_options, None)
     }
 
     fn parse_and_serialize_with_source(input: &str) -> String {
@@ -1460,7 +1677,7 @@ mod tests {
         options.extension.front_matter_delimiter = Some("---".to_string());
         let root = parse_document(&arena, input, &options);
         let format_options = Options::default();
-        serialize(root, &format_options)
+        serialize_with_source(root, &format_options, None)
     }
 
     #[test]
@@ -1493,7 +1710,7 @@ mod tests {
         let options = ComrakOptions::default();
         let root = parse_document(&arena, input, &options);
         let format_options = Options { line_width };
-        serialize(root, &format_options)
+        serialize_with_source(root, &format_options, None)
     }
 
     #[test]
@@ -1534,7 +1751,7 @@ mod tests {
         options.extension.table = true;
         let root = parse_document(&arena, input, &options);
         let format_options = Options::default();
-        serialize(root, &format_options)
+        serialize_with_source(root, &format_options, None)
     }
 
     #[test]
@@ -1584,7 +1801,7 @@ mod tests {
         options.extension.description_lists = true;
         let root = parse_document(&arena, input, &options);
         let format_options = Options::default();
-        serialize(root, &format_options)
+        serialize_with_source(root, &format_options, None)
     }
 
     #[test]
@@ -1610,7 +1827,7 @@ mod tests {
         options.extension.alerts = true;
         let root = parse_document(&arena, input, &options);
         let format_options = Options::default();
-        serialize(root, &format_options)
+        serialize_with_source(root, &format_options, None)
     }
 
     #[test]
@@ -1643,7 +1860,7 @@ mod tests {
         options.extension.footnotes = true;
         let root = parse_document(&arena, input, &options);
         let format_options = Options::default();
-        serialize(root, &format_options)
+        serialize_with_source(root, &format_options, None)
     }
 
     #[test]
@@ -1685,7 +1902,7 @@ mod tests {
         options.extension.alerts = true;
         let root = parse_document(&arena, input, &options);
         let format_options = Options { line_width };
-        serialize(root, &format_options)
+        serialize_with_source(root, &format_options, None)
     }
 
     #[test]
@@ -1919,6 +2136,46 @@ Check [Python](https://python.org/) too.
         assert!(
             result.contains("Another unformatted line."),
             "disable/enable should preserve all bracketed content, got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_preserve_reference_style_badge() {
+        // Reference-style badge links should be preserved as reference style
+        let input = "[![JSR][JSR badge]][JSR]\n\n[JSR]: https://jsr.io/@optique\n[JSR badge]: https://jsr.io/badges/@optique/core";
+        let result = parse_and_serialize_with_source(input);
+        // Should preserve reference style, not convert to inline
+        assert!(
+            result.contains("[![JSR][JSR badge]][JSR]"),
+            "Reference-style badge should be preserved, got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_preserve_reference_style_image() {
+        // Reference-style images should be preserved as reference style
+        let input = "![Logo][logo]\n\n[logo]: https://example.com/logo.png";
+        let result = parse_and_serialize_with_source(input);
+        // Should preserve reference style
+        assert!(
+            result.contains("![Logo][logo]"),
+            "Reference-style image should be preserved, got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_preserve_reference_style_link() {
+        // Reference-style links should be preserved as reference style
+        let input =
+            "Check the [documentation][docs] for more info.\n\n[docs]: https://example.com/docs";
+        let result = parse_and_serialize_with_source(input);
+        // Should preserve reference style
+        assert!(
+            result.contains("[documentation][docs]"),
+            "Reference-style link should be preserved, got:\n{}",
             result
         );
     }
