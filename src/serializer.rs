@@ -233,8 +233,16 @@ impl<'a> Serializer<'a> {
         let prefix = if self.in_block_quote { "> " } else { "" };
 
         if self.list_type.is_some() {
-            // Inside a list item, don't wrap or add trailing newline
-            self.output.push_str(&inline_content);
+            // Inside a list item, wrap with proper continuation indent
+            // First line has no prefix (marker already output)
+            // Continuation lines need 4-space indent (plus block quote prefix if applicable)
+            let continuation = if self.in_block_quote {
+                ">     " // > + 4 spaces to align with list item content
+            } else {
+                "    " // 4 spaces to align with list item content
+            };
+            let wrapped = self.wrap_text_first_line(&inline_content, "", continuation);
+            self.output.push_str(&wrapped);
         } else {
             // Wrap the paragraph at line_width
             let wrapped = self.wrap_text(&inline_content, prefix);
@@ -310,28 +318,233 @@ impl<'a> Serializer<'a> {
         // Add prefix to first line
         current_line.push_str(prefix);
 
-        for word in text.split_whitespace() {
-            let word_len = word.len();
+        // Split into "tokens" where each token is either:
+        // - A word (non-space characters) followed by optional spaces
+        // - Content inside backticks (treated as a single unbreakable unit)
+        // We preserve double spaces after periods.
+        let chars = text.chars();
+        let mut current_token = String::new();
+        let mut trailing_spaces = String::new();
+        let mut in_backticks = false;
 
-            if current_line.len() == prefix_len {
-                // First word on this line
-                current_line.push_str(word);
-            } else if current_line.len() + 1 + word_len <= line_width {
-                // Word fits on current line
-                current_line.push(' ');
-                current_line.push_str(word);
+        for ch in chars {
+            if ch == '`' {
+                if in_backticks {
+                    // End of backtick region
+                    current_token.push(ch);
+                    in_backticks = false;
+                } else {
+                    // Start of backtick region - include any accumulated content first
+                    if !current_token.is_empty() && !trailing_spaces.is_empty() {
+                        // We have a previous word, output it
+                        Self::add_token_to_line(
+                            &mut result,
+                            &mut current_line,
+                            &current_token,
+                            &trailing_spaces,
+                            prefix,
+                            prefix_len,
+                            line_width,
+                        );
+                        current_token.clear();
+                        trailing_spaces.clear();
+                    }
+                    current_token.push(ch);
+                    in_backticks = true;
+                }
+            } else if in_backticks {
+                // Inside backticks, everything is part of the token
+                current_token.push(ch);
+            } else if ch == ' ' {
+                trailing_spaces.push(ch);
             } else {
-                // Start a new line
-                result.push_str(&current_line);
-                result.push('\n');
-                current_line = String::from(prefix);
-                current_line.push_str(word);
+                // Regular character outside backticks
+                if !current_token.is_empty() && !trailing_spaces.is_empty() {
+                    // We have a previous word with trailing spaces, output it
+                    Self::add_token_to_line(
+                        &mut result,
+                        &mut current_line,
+                        &current_token,
+                        &trailing_spaces,
+                        prefix,
+                        prefix_len,
+                        line_width,
+                    );
+                    current_token.clear();
+                    trailing_spaces.clear();
+                }
+                current_token.push(ch);
             }
         }
 
-        // Add the last line
-        if !current_line.is_empty() && current_line != prefix {
-            result.push_str(&current_line);
+        // Handle the last token
+        if !current_token.is_empty() {
+            Self::add_token_to_line(
+                &mut result,
+                &mut current_line,
+                &current_token,
+                "",
+                prefix,
+                prefix_len,
+                line_width,
+            );
+        }
+
+        // Add the last line (trim trailing spaces)
+        let final_line = current_line.trim_end();
+        if !final_line.is_empty() && final_line != prefix {
+            result.push_str(final_line);
+        }
+
+        result
+    }
+
+    fn add_token_to_line(
+        result: &mut String,
+        current_line: &mut String,
+        token: &str,
+        trailing_spaces: &str,
+        prefix: &str,
+        prefix_len: usize,
+        line_width: usize,
+    ) {
+        let token_len = token.len();
+        let spaces_len = trailing_spaces.len();
+
+        if current_line.len() == prefix_len {
+            // First word on this line
+            current_line.push_str(token);
+            current_line.push_str(trailing_spaces);
+        } else if current_line.len() + token_len + spaces_len <= line_width {
+            // Token fits on current line
+            current_line.push_str(token);
+            current_line.push_str(trailing_spaces);
+        } else {
+            // Start a new line - trim trailing spaces from previous line
+            let trimmed = current_line.trim_end();
+            result.push_str(trimmed);
+            result.push('\n');
+            *current_line = String::from(prefix);
+            current_line.push_str(token);
+            current_line.push_str(trailing_spaces);
+        }
+    }
+
+    /// Wrap text where the first line has a different prefix than continuation lines.
+    /// This is used for list items where the marker is already output and continuation
+    /// lines need indentation.
+    fn wrap_text_first_line(
+        &self,
+        text: &str,
+        first_prefix: &str,
+        continuation_prefix: &str,
+    ) -> String {
+        let line_width = self.options.line_width;
+        let mut result = String::new();
+        let mut current_line = String::new();
+        let mut is_first_line = true;
+
+        // First line starts empty (marker already output)
+        current_line.push_str(first_prefix);
+        let first_prefix_len = first_prefix.len();
+        let cont_prefix_len = continuation_prefix.len();
+
+        let chars = text.chars();
+        let mut current_token = String::new();
+        let mut trailing_spaces = String::new();
+        let mut in_backticks = false;
+
+        // Helper closure to add a token to the current line
+        let add_token = |result: &mut String,
+                         current_line: &mut String,
+                         token: &str,
+                         trailing_spaces: &str,
+                         is_first_line: &mut bool| {
+            let current_prefix_len = if *is_first_line {
+                first_prefix_len
+            } else {
+                cont_prefix_len
+            };
+            let token_len = token.len();
+            let spaces_len = trailing_spaces.len();
+
+            // Check if token fits on current line (either first word or within width)
+            if current_line.len() == current_prefix_len
+                || current_line.len() + token_len + spaces_len <= line_width
+            {
+                current_line.push_str(token);
+                current_line.push_str(trailing_spaces);
+            } else {
+                let trimmed = current_line.trim_end();
+                result.push_str(trimmed);
+                result.push('\n');
+                *current_line = String::from(continuation_prefix);
+                current_line.push_str(token);
+                current_line.push_str(trailing_spaces);
+                *is_first_line = false;
+            }
+        };
+
+        for ch in chars {
+            if ch == '`' {
+                if in_backticks {
+                    current_token.push(ch);
+                    in_backticks = false;
+                } else {
+                    if !current_token.is_empty() && !trailing_spaces.is_empty() {
+                        add_token(
+                            &mut result,
+                            &mut current_line,
+                            &current_token,
+                            &trailing_spaces,
+                            &mut is_first_line,
+                        );
+                        current_token.clear();
+                        trailing_spaces.clear();
+                    }
+                    current_token.push(ch);
+                    in_backticks = true;
+                }
+            } else if in_backticks {
+                current_token.push(ch);
+            } else if ch == ' ' {
+                trailing_spaces.push(ch);
+            } else {
+                if !current_token.is_empty() && !trailing_spaces.is_empty() {
+                    add_token(
+                        &mut result,
+                        &mut current_line,
+                        &current_token,
+                        &trailing_spaces,
+                        &mut is_first_line,
+                    );
+                    current_token.clear();
+                    trailing_spaces.clear();
+                }
+                current_token.push(ch);
+            }
+        }
+
+        // Handle the last token
+        if !current_token.is_empty() {
+            add_token(
+                &mut result,
+                &mut current_line,
+                &current_token,
+                "",
+                &mut is_first_line,
+            );
+        }
+
+        // Add the last line (trim trailing spaces)
+        let final_line = current_line.trim_end();
+        let expected_prefix = if is_first_line {
+            first_prefix
+        } else {
+            continuation_prefix
+        };
+        if !final_line.is_empty() && final_line != expected_prefix {
+            result.push_str(final_line);
         }
 
         result
@@ -351,16 +564,19 @@ impl<'a> Serializer<'a> {
         self.output.push_str("]\n");
 
         // Output the alert content with > prefix
-        for child in node.children() {
-            let mut content = String::new();
-            self.collect_inline_node(child, &mut content);
-            let content = content.trim();
-            if !content.is_empty() {
-                self.output.push_str("> ");
-                self.output.push_str(content);
-                self.output.push('\n');
+        // Use in_block_quote to handle nested content properly
+        let was_in_block_quote = self.in_block_quote;
+        self.in_block_quote = true;
+
+        let children: Vec<_> = node.children().collect();
+        for (i, child) in children.iter().enumerate() {
+            if i > 0 {
+                self.output.push_str(">\n");
             }
+            self.serialize_node(child);
         }
+
+        self.in_block_quote = was_in_block_quote;
     }
 
     fn serialize_front_matter(&mut self, content: &str) {
@@ -522,6 +738,11 @@ impl<'a> Serializer<'a> {
 
     fn serialize_list_item<'b>(&mut self, node: &'b AstNode<'b>) {
         self.list_item_index += 1;
+
+        // Add block quote prefix if we're inside a block quote
+        if self.in_block_quote {
+            self.output.push_str("> ");
+        }
 
         match self.list_type {
             Some(ListType::Bullet) => {
@@ -896,5 +1117,53 @@ mod tests {
         let input = "Text[^note].\n\n[^note]: A named footnote.";
         let result = parse_and_serialize_with_footnotes(input);
         assert!(result.contains("[^note]"));
+    }
+
+    #[test]
+    fn test_serialize_double_space_after_period() {
+        // Hong's style uses two spaces after periods
+        let input = "First sentence.  Second sentence.";
+        let result = parse_and_serialize(input);
+        // Should preserve double spaces
+        assert_eq!(result, "First sentence.  Second sentence.\n");
+    }
+
+    #[test]
+    fn test_serialize_long_list_item_wrapping() {
+        // Long list items should wrap with 4-space continuation indent
+        let input = " -  This is a very long list item that should wrap to the next line with proper indentation to maintain readability.";
+        let result = parse_and_serialize_with_width(input, 80);
+        // Should contain wrapped content with proper indent
+        assert!(result.contains(" -  This is a very long list item"));
+        assert!(result.contains("\n    ")); // Continuation with 4 spaces
+    }
+
+    fn parse_and_serialize_with_alerts_and_width(input: &str, line_width: usize) -> String {
+        let arena = Arena::new();
+        let mut options = ComrakOptions::default();
+        options.extension.alerts = true;
+        let root = parse_document(&arena, input, &options);
+        let format_options = Options { line_width };
+        serialize(root, &format_options)
+    }
+
+    #[test]
+    fn test_serialize_list_in_alert() {
+        // Lists inside alerts should have proper prefixing
+        let input = "> [!NOTE]\n>  -  First item\n>  -  Second item";
+        let result = parse_and_serialize_with_alerts(input);
+        assert!(result.contains("> [!NOTE]"));
+        assert!(result.contains(">  -  First item"));
+        assert!(result.contains(">  -  Second item"));
+    }
+
+    #[test]
+    fn test_serialize_long_list_item_in_alert() {
+        // Long list items in alerts should wrap with proper continuation prefix
+        let input = "> [!NOTE]\n>  -  This is a very long list item that should wrap properly inside the alert block.";
+        let result = parse_and_serialize_with_alerts_and_width(input, 60);
+        // Should wrap with ">     " continuation (> + 4 spaces)
+        assert!(result.contains(">  -  This is a very long"));
+        assert!(result.contains("\n>     ")); // Continuation line with > and 4 spaces
     }
 }
