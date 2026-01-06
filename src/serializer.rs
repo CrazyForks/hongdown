@@ -50,6 +50,39 @@ impl<'a> Serializer<'a> {
         }
     }
 
+    /// Escape special Markdown characters in text content.
+    /// Characters that could be misinterpreted as Markdown syntax need escaping.
+    fn escape_text(text: &str) -> String {
+        let mut result = String::with_capacity(text.len());
+        for ch in text.chars() {
+            match ch {
+                // Characters that could start emphasis/strong
+                '*' | '_' => {
+                    result.push('\\');
+                    result.push(ch);
+                }
+                // Characters that could start links/images
+                '[' | ']' => {
+                    result.push('\\');
+                    result.push(ch);
+                }
+                // Backslash itself needs escaping
+                '\\' => {
+                    result.push('\\');
+                    result.push(ch);
+                }
+                // Backtick could start code spans
+                '`' => {
+                    result.push('\\');
+                    result.push(ch);
+                }
+                // Other characters pass through unchanged
+                _ => result.push(ch),
+            }
+        }
+        result
+    }
+
     /// Check if a URL is external (http:// or https://)
     fn is_external_url(url: &str) -> bool {
         url.starts_with("http://") || url.starts_with("https://")
@@ -157,7 +190,7 @@ impl<'a> Serializer<'a> {
                 self.serialize_paragraph(node);
             }
             NodeValue::Text(text) => {
-                self.output.push_str(text);
+                self.output.push_str(&Self::escape_text(text));
             }
             NodeValue::SoftBreak => {
                 self.output.push(' ');
@@ -333,7 +366,7 @@ impl<'a> Serializer<'a> {
     fn collect_text_recursive<'b>(&self, node: &'b AstNode<'b>, text: &mut String) {
         match &node.data.borrow().value {
             NodeValue::Text(t) => {
-                text.push_str(t);
+                text.push_str(&Self::escape_text(t));
             }
             NodeValue::SoftBreak => {
                 text.push(' ');
@@ -381,7 +414,7 @@ impl<'a> Serializer<'a> {
     fn collect_inline_node<'b>(&mut self, node: &'b AstNode<'b>, content: &mut String) {
         match &node.data.borrow().value.clone() {
             NodeValue::Text(text) => {
-                content.push_str(text);
+                content.push_str(&Self::escape_text(text));
             }
             NodeValue::SoftBreak => {
                 content.push(' ');
@@ -951,9 +984,10 @@ impl<'a> Serializer<'a> {
 
         // Only add newline if we didn't just serialize a nested list
         // (nested lists add their own newlines)
-        let last_child_is_list = node.children().last().is_some_and(|child| {
-            matches!(&child.data.borrow().value, NodeValue::List(_))
-        });
+        let last_child_is_list = node
+            .children()
+            .last()
+            .is_some_and(|child| matches!(&child.data.borrow().value, NodeValue::List(_)));
         if !last_child_is_list {
             self.output.push('\n');
         }
@@ -1419,5 +1453,46 @@ Check [Python](https://python.org/) too.
         // Should use shortcut reference style
         assert!(result.contains("[comrak]"));
         assert!(result.contains("[comrak]: https://docs.rs/comrak"));
+    }
+
+    #[test]
+    fn test_serialize_escaped_asterisk_in_emphasis() {
+        // Escaped asterisks inside emphasis should be preserved
+        let input = r"*\*.ts*";
+        let result = parse_and_serialize(input);
+        assert_eq!(result, "*\\*.ts*\n");
+    }
+
+    #[test]
+    fn test_serialize_escaped_underscore() {
+        // Escaped underscores should be preserved
+        let input = r"\_\_init\_\_";
+        let result = parse_and_serialize(input);
+        assert_eq!(result, "\\_\\_init\\_\\_\n");
+    }
+
+    #[test]
+    fn test_serialize_escaped_brackets() {
+        // Escaped brackets should be preserved (not treated as links)
+        let input = r"\[not a link\]";
+        let result = parse_and_serialize(input);
+        assert_eq!(result, "\\[not a link\\]\n");
+    }
+
+    #[test]
+    fn test_serialize_escaped_backslash() {
+        // Escaped backslash should be preserved
+        let input = r"path\\to\\file";
+        let result = parse_and_serialize(input);
+        assert_eq!(result, "path\\\\to\\\\file\n");
+    }
+
+    #[test]
+    fn test_serialize_asterisk_in_text_not_emphasis() {
+        // Asterisks in plain text that aren't emphasis should be escaped
+        let input = "5 * 3 = 15";
+        let result = parse_and_serialize(input);
+        // The asterisk in "5 * 3" should be escaped to prevent misinterpretation
+        assert_eq!(result, "5 \\* 3 = 15\n");
     }
 }
