@@ -797,19 +797,21 @@ fn test_multi_paragraph_list_item() {
 #[test]
 fn test_tight_nested_list() {
     // Nested list directly following text (tight) - no blank line
-    // 4-space indent for nested lists
-    let input = " -  Item:\n    -  Nested 1\n    -  Nested 2\n";
+    // Nested list indent = parent content start position (leading + 1 + trailing = 4)
+    // plus its own leading space, so 5 spaces before marker
+    let input = " -  Item:\n     -  Nested 1\n     -  Nested 2\n";
     let result = parse_and_serialize(input);
-    assert_eq!(result, " -  Item:\n    -  Nested 1\n    -  Nested 2\n");
+    assert_eq!(result, " -  Item:\n     -  Nested 1\n     -  Nested 2\n");
 }
 
 #[test]
 fn test_loose_nested_list() {
     // Nested list after blank line (loose) - preserve blank line
-    // 4-space indent for nested lists
-    let input = " -  Item.\n\n    -  Nested 1\n    -  Nested 2\n";
+    // Nested list indent = parent content start position (leading + 1 + trailing = 4)
+    // plus its own leading space, so 5 spaces before marker
+    let input = " -  Item.\n\n     -  Nested 1\n     -  Nested 2\n";
     let result = parse_and_serialize(input);
-    assert_eq!(result, " -  Item.\n\n    -  Nested 1\n    -  Nested 2\n");
+    assert_eq!(result, " -  Item.\n\n     -  Nested 1\n     -  Nested 2\n");
 }
 
 #[test]
@@ -1581,19 +1583,23 @@ fn test_list_trailing_spaces_three() {
 
 #[test]
 fn test_list_indent_width_two() {
+    // indent_width=2: nested list has 2 spaces indent before " -  " prefix
+    // Result: 2 spaces + " -  " = "   -  " (3 spaces before marker)
     let options = Options {
         indent_width: 2,
         ..Options::default()
     };
     let result = parse_and_serialize_with_options(" -  Item one\n     -  Nested", &options);
-    assert_eq!(result, " -  Item one\n  -  Nested\n");
+    assert_eq!(result, " -  Item one\n   -  Nested\n");
 }
 
 #[test]
 fn test_list_indent_width_default() {
+    // indent_width=4 (default): nested list has 4 spaces indent before " -  " prefix
+    // Result: 4 spaces + " -  " = "     -  " (5 spaces before marker)
     let options = Options::default();
     let result = parse_and_serialize_with_options(" -  Item one\n     -  Nested", &options);
-    assert_eq!(result, " -  Item one\n    -  Nested\n");
+    assert_eq!(result, " -  Item one\n     -  Nested\n");
 }
 
 #[test]

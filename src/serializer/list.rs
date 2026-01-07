@@ -62,13 +62,13 @@ impl<'a> Serializer<'a> {
 
         // Calculate indentation for nested lists
         // Level 1: " -  " (leading space + hyphen + trailing spaces)
-        // Level 2+: indent_width spaces per additional level
-        let indent_str = " ".repeat(self.options.indent_width);
+        // Level 2+: indent_width spaces per nesting level, then " -  " prefix
+        let indent_width = self.options.indent_width;
         if self.list_depth > 1 {
             let indent = format!(
                 "{}{}",
                 desc_base_indent,
-                indent_str.repeat(self.list_depth - 1)
+                " ".repeat(indent_width * (self.list_depth - 1))
             );
             self.output.push_str(&indent);
         } else {
@@ -78,19 +78,15 @@ impl<'a> Serializer<'a> {
         match self.list_type {
             Some(ListType::Bullet) => {
                 let marker = self.options.unordered_marker;
+                let leading = " ".repeat(self.options.leading_spaces);
                 let trailing = " ".repeat(self.options.trailing_spaces);
-                if self.list_depth > 1 {
-                    // Nested bullets: "-  " (no leading space, marker, trailing spaces)
-                    self.output.push(marker);
-                    self.output.push_str(&trailing);
-                } else if self.in_description_details {
-                    // Inside description details: "-  " (no leading space, already indented)
+                if self.in_description_details && self.list_depth == 1 {
+                    // Inside description details at top level: "-  " (no leading space)
                     self.output.push(marker);
                     self.output.push_str(&trailing);
                 } else {
-                    // Top-level bullets: " -  " (leading spaces + marker + trailing spaces)
-                    self.output
-                        .push_str(&" ".repeat(self.options.leading_spaces));
+                    // All other cases: " -  " (leading spaces + marker + trailing spaces)
+                    self.output.push_str(&leading);
                     self.output.push(marker);
                     self.output.push_str(&trailing);
                 }
@@ -102,20 +98,15 @@ impl<'a> Serializer<'a> {
                 } else {
                     self.options.even_level_marker
                 };
-                if self.list_depth > 1 {
-                    // Nested ordered: "N. " or "N) "
-                    self.output.push_str(&self.list_item_index.to_string());
-                    self.output.push(marker);
-                    self.output.push(' ');
-                } else if self.in_description_details {
-                    // Inside description details: "N. " (no leading space)
+                let leading = " ".repeat(self.options.leading_spaces);
+                if self.in_description_details && self.list_depth == 1 {
+                    // Inside description details at top level: "N. " (no leading space)
                     self.output.push_str(&self.list_item_index.to_string());
                     self.output.push(marker);
                     self.output.push(' ');
                 } else {
-                    // Top-level ordered: " N. " format (leading spaces + number + marker)
-                    self.output
-                        .push_str(&" ".repeat(self.options.leading_spaces));
+                    // All other cases: " N. " format (leading spaces + number + marker)
+                    self.output.push_str(&leading);
                     self.output.push_str(&self.list_item_index.to_string());
                     self.output.push(marker);
                     self.output.push(' ');
@@ -137,9 +128,9 @@ impl<'a> Serializer<'a> {
         let children: Vec<_> = node.children().collect();
         let base_indent = if self.in_description_details {
             // Inside description details, add extra 5-space indent
-            format!("     {}", indent_str.repeat(self.list_depth))
+            format!("     {}", " ".repeat(indent_width * self.list_depth))
         } else {
-            indent_str.repeat(self.list_depth)
+            " ".repeat(indent_width * self.list_depth)
         };
 
         for (i, child) in children.iter().enumerate() {

@@ -323,12 +323,12 @@ Implementation plan
 
  -  Basic CLI with file input/output
  -  Serializer for core Markdown elements:
-    -  Headings (setext and ATX)
-    -  Paragraphs with line wrapping
-    -  Lists (ordered and unordered)
-    -  Code blocks (fenced)
-    -  Block quotes
-    -  Inline formatting (emphasis, strong, code, links)
+     -  Headings (setext and ATX)
+     -  Paragraphs with line wrapping
+     -  Lists (ordered and unordered)
+     -  Code blocks (fenced)
+     -  Block quotes
+     -  Inline formatting (emphasis, strong, code, links)
  -  Basic test suite
 
 ### Phase 2: Extended syntax
