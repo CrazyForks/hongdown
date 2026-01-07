@@ -1,32 +1,45 @@
 Hongdown
 ========
 
-Hongdown is a Markdown formatter that enforces Hong Minhee's Markdown style
-conventions.  The formatter is implemented in Rust using the [comrak] library
+[![crates.io][crates.io badge]][crates.io]
+[![npm][npm badge]][npm]
+[![GitHub Actions][GitHub Actions badge]][GitHub Actions]
+
+Hongdown is a Markdown formatter that enforces [Hong Minhee's Markdown style]
+conventions.  The formatter is implemented in Rust using the [Comrak] library
 for parsing.  It produces consistently formatted Markdown output following
-a distinctive style used across multiple projects including [Fedify], [Hollo],
-and [Vertana].
+a distinctive style used across multiple projects including [Fedify], [LogTape],
+and [Optique].
 
-The name *Hongdown* is a portmanteau of *Hong* (from Hong Minhee, the author)
-and *Markdown*.  It also sounds like the Korean word *hongdapda* (홍답다),
-meaning "befitting of Hong" or "Hong-like."
-
-[comrak]: https://docs.rs/comrak
-[Fedify]: https://github.com/dahlia/fedify
-[Hollo]: https://github.com/dahlia/hollo
-[Vertana]: https://github.com/dahlia/vertana
+[crates.io badge]: https://img.shields.io/crates/v/hongdown?logo=rust
+[crates.io]: https://crates.io/crates/hongdown
+[npm badge]: https://img.shields.io/npm/v/hongdown?logo=npm
+[npm]: https://www.npmjs.com/package/hongdown
+[GitHub Actions badge]: https://github.com/dahlia/hongdown/actions/workflows/main.yaml/badge.svg
+[GitHub Actions]: https://github.com/dahlia/hongdown/actions/workflows/main.yaml
+[Hong Minhee's Markdown style]: ./AGENTS.md#markdown-style-guide
+[Comrak]: https://comrak.ee/
+[Fedify]: https://fedify.dev/
+[LogTape]: https://logtape.org/
+[Optique]: https://optique.dev/
 
 
 Installation
 ------------
 
-### npm (Node.js)
+### npm
 
 ~~~~ bash
 npm install -g hongdown
 ~~~~
 
-### Cargo (Rust)
+### mise
+
+~~~~ bash
+mise use github:dahlia/hongdown
+~~~~
+
+### Cargo
 
 ~~~~ bash
 cargo install hongdown
@@ -251,60 +264,18 @@ println!("{}", output);
 ~~~~
 
 
-TODO
-----
+Etymology
+---------
 
-### Phase 1: Core formatting
-
- -  [x] Basic CLI with file input/output
- -  [x] Front matter preservation (YAML/TOML)
- -  [x] Headings (setext and ATX)
- -  [x] Paragraphs with line wrapping
- -  [x] Lists (ordered and unordered)
- -  [x] Code blocks (fenced)
- -  [x] Block quotes
- -  [x] Inline formatting (emphasis, strong, code, links)
- -  [x] Basic test suite
-
-### Phase 2: Extended syntax
-
- -  [x] Tables with alignment
- -  [x] Definition lists
- -  [x] GitHub alerts/admonitions
- -  [x] Footnotes
- -  [x] Reference link collection and placement
-
-### Phase 3: Polish
-
- -  [x] Configuration file support
-    -  [x] Config file parsing and discovery (`.hongdown.toml`)
-    -  [x] `line_width` option
-    -  [x] `[heading]` section
-        -  [x] `setext_h1` option
-        -  [x] `setext_h2` option
-    -  [x] `[list]` section
-        -  [x] `unordered_marker` option
-        -  [x] `leading_spaces` option
-        -  [x] `trailing_spaces` option
-        -  [x] `indent_width` option
-    -  [x] `[ordered_list]` section
-        -  [x] `odd_level_marker` option
-        -  [x] `even_level_marker` option
-    -  [x] `[code_block]` section
-        -  [x] `fence_char` option
-        -  [x] `min_fence_length` option
-        -  [x] `space_after_fence` option
- -  [x] Check mode for CI integration
- -  [x] Diff output mode
- -  [x] Disable directives
- -  [x] Edge case handling
- -  [ ] Performance optimization
+The name *Hongdown* is a portmanteau of *Hong* (from Hong Minhee, the author)
+and *Markdown*.  It also sounds like the Korean word *hongdapda* (홍답다),
+meaning “befitting of Hong” or “Hong-like.”
 
 
 License
 -------
 
-Distributed under the [GPL-3.0-or-later].  See [LICENSE] for more information.
+Distributed under the [GPL-3.0-or-later].  See *[LICENSE]* for more information.
 
 [GPL-3.0-or-later]: https://www.gnu.org/licenses/gpl-3.0.html
-[LICENSE]: LICENSE
+[LICENSE]: ./LICENSE
