@@ -1335,3 +1335,28 @@ fn test_definition_list_with_list_as_first_child() {
     assert!(result.contains("     -  First item"));
     assert!(result.contains("     -  Second item"));
 }
+
+#[test]
+fn test_reference_used_in_multiple_sections_not_duplicated() {
+    let input = r#"Section
+-------
+
+### First
+
+Text with [link].
+
+### Second
+
+More text with [link].
+
+[link]: https://example.com
+"#;
+    let result = parse_and_serialize_with_source(input);
+    // The reference should appear only once, after first use
+    let count = result.matches("[link]: https://example.com").count();
+    assert_eq!(
+        count, 1,
+        "Reference should appear exactly once, but found {} times in:\n{}",
+        count, result
+    );
+}

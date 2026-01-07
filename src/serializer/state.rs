@@ -69,6 +69,8 @@ pub struct Serializer<'a> {
     /// Reference links collected for the current section
     /// Key: label, Value: ReferenceLink (insertion order preserved)
     pub pending_references: IndexMap<String, ReferenceLink>,
+    /// Reference labels that have already been emitted (to avoid duplicates)
+    pub emitted_references: std::collections::HashSet<String>,
     /// Current list nesting depth (0 = not in list, 1 = top-level, 2+ = nested)
     pub list_depth: usize,
     /// Formatting is disabled (by `hongdown-disable` or `hongdown-disable-file`)
@@ -92,6 +94,7 @@ impl<'a> Serializer<'a> {
             list_tight: true,
             in_block_quote: false,
             pending_references: IndexMap::new(),
+            emitted_references: std::collections::HashSet::new(),
             list_depth: 0,
             formatting_disabled: false,
             skip_next_block: false,

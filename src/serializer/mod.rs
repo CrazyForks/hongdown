@@ -118,8 +118,18 @@ impl<'a> Serializer<'a> {
         }
 
         // Take ownership of references to avoid borrow issues
-        let refs: Vec<ReferenceLink> = self.pending_references.values().cloned().collect();
+        // Filter out references that have already been emitted
+        let refs: Vec<ReferenceLink> = self
+            .pending_references
+            .values()
+            .filter(|r| !self.emitted_references.contains(&r.label))
+            .cloned()
+            .collect();
         self.pending_references.clear();
+
+        if refs.is_empty() {
+            return;
+        }
 
         // Count numeric references to decide sorting strategy
         let numeric_count = refs
@@ -140,6 +150,7 @@ impl<'a> Serializer<'a> {
             // Less than 2 numeric refs: output all in insertion order
             for reference in &refs {
                 Self::write_reference(&mut self.output, reference);
+                self.emitted_references.insert(reference.label.clone());
             }
         } else {
             // 2+ numeric refs: separate, sort numeric ones, output regular first
@@ -160,11 +171,13 @@ impl<'a> Serializer<'a> {
             // Output regular references first (in insertion order)
             for reference in regular_refs {
                 Self::write_reference(&mut self.output, reference);
+                self.emitted_references.insert(reference.label.clone());
             }
 
             // Output numeric references (sorted by number)
             for (_, reference) in numeric_refs {
                 Self::write_reference(&mut self.output, reference);
+                self.emitted_references.insert(reference.label.clone());
             }
         }
     }
