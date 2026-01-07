@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Parser;
+use hongdown::config::Config;
 use hongdown::{Options, format_with_warnings};
 
 /// A Markdown formatter that enforces Hong Minhee's Markdown style conventions.
@@ -29,16 +30,24 @@ struct Args {
     #[arg(long)]
     stdin: bool,
 
-    /// Line width for wrapping.
-    #[arg(long, default_value = "80")]
-    line_width: usize,
+    /// Line width for wrapping (overrides config file).
+    #[arg(long)]
+    line_width: Option<usize>,
+
+    /// Path to configuration file.
+    #[arg(long, value_name = "FILE")]
+    config: Option<PathBuf>,
 }
 
 fn main() -> ExitCode {
     let args = Args::parse();
 
+    // Load configuration
+    let config = load_config(&args);
+
+    // Build options, with CLI args overriding config file
     let options = Options {
-        line_width: args.line_width,
+        line_width: args.line_width.unwrap_or(config.line_width),
     };
 
     if args.stdin || args.files.is_empty() {
@@ -114,6 +123,36 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         } else {
             ExitCode::SUCCESS
+        }
+    }
+}
+
+/// Load configuration from file or use defaults.
+///
+/// Priority:
+/// 1. Explicit `--config` path
+/// 2. Auto-discovered `.hongdown.toml` in current or parent directories
+/// 3. Default configuration
+fn load_config(args: &Args) -> Config {
+    // If explicit config path is provided, use it
+    if let Some(config_path) = &args.config {
+        match Config::from_file(config_path) {
+            Ok(config) => return config,
+            Err(e) => {
+                eprintln!("Warning: {}", e);
+                return Config::default();
+            }
+        }
+    }
+
+    // Try to auto-discover config file from current directory
+    let start_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    match Config::discover(&start_dir) {
+        Ok(Some((_path, config))) => config,
+        Ok(None) => Config::default(),
+        Err(e) => {
+            eprintln!("Warning: {}", e);
+            Config::default()
         }
     }
 }

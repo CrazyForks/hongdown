@@ -184,10 +184,9 @@ impl<'a> Serializer<'a> {
 /// Pipes inside backticks should still be counted as they're not escaped for GFM tables.
 fn count_unescaped_pipes(line: &str) -> usize {
     let mut count = 0;
-    let mut chars = line.chars().peekable();
     let mut prev_char = None;
 
-    while let Some(c) = chars.next() {
+    for c in line.chars() {
         if c == '|' && prev_char != Some('\\') {
             count += 1;
         }

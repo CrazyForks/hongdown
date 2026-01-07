@@ -11,6 +11,7 @@
 //! let output = format(input, &options).unwrap();
 //! ```
 
+pub mod config;
 mod serializer;
 
 pub use serializer::Warning;
