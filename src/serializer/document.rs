@@ -256,7 +256,7 @@ impl<'a> Serializer<'a> {
             self.output
                 .push_str(&"=".repeat(heading_text.chars().count()));
             self.output.push('\n');
-        } else if level == 2 {
+        } else if level == 2 && self.options.setext_h2 {
             // Setext-style with '-'
             self.output.push_str(&heading_text);
             self.output.push('\n');

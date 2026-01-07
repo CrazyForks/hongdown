@@ -49,6 +49,7 @@ fn main() -> ExitCode {
     let options = Options {
         line_width: args.line_width.unwrap_or(config.line_width),
         setext_h1: config.heading.setext_h1,
+        setext_h2: config.heading.setext_h2,
     };
 
     if args.stdin || args.files.is_empty() {

@@ -207,9 +207,9 @@ TODO
  -  [x] Configuration file support
      -  [x] Config file parsing and discovery (`.hongdown.toml`)
      -  [x] `line_width` option
-     -  [ ] `[heading]` section
+     -  [x] `[heading]` section
          -  [x] `setext_h1` option
-         -  [ ] `setext_h2` option
+         -  [x] `setext_h2` option
      -  [ ] `[list]` section
          -  [ ] `unordered_marker` option
          -  [ ] `leading_spaces` option

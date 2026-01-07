@@ -1491,3 +1491,23 @@ fn test_heading_setext_h1_enabled() {
     let result = parse_and_serialize_with_options("# Document Title", &options);
     assert_eq!(result, "Document Title\n==============\n");
 }
+
+#[test]
+fn test_heading_setext_h2_disabled() {
+    let options = Options {
+        setext_h2: false,
+        ..Options::default()
+    };
+    let result = parse_and_serialize_with_options("## Section Title", &options);
+    assert_eq!(result, "## Section Title\n");
+}
+
+#[test]
+fn test_heading_setext_h2_enabled() {
+    let options = Options {
+        setext_h2: true,
+        ..Options::default()
+    };
+    let result = parse_and_serialize_with_options("## Section Title", &options);
+    assert_eq!(result, "Section Title\n-------------\n");
+}

@@ -26,6 +26,9 @@ pub struct Options {
 
     /// Use setext-style (underlined) for h1 headings. Default: true.
     pub setext_h1: bool,
+
+    /// Use setext-style (underlined) for h2 headings. Default: true.
+    pub setext_h2: bool,
 }
 
 impl Default for Options {
@@ -33,6 +36,7 @@ impl Default for Options {
         Self {
             line_width: 80,
             setext_h1: true,
+            setext_h2: true,
         }
     }
 }
