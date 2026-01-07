@@ -1558,3 +1558,23 @@ fn test_list_leading_spaces_two() {
     let result = parse_and_serialize_with_options(" -  Item one\n -  Item two", &options);
     assert_eq!(result, "  -  Item one\n  -  Item two\n");
 }
+
+#[test]
+fn test_list_trailing_spaces_one() {
+    let options = Options {
+        trailing_spaces: 1,
+        ..Options::default()
+    };
+    let result = parse_and_serialize_with_options(" -  Item one\n -  Item two", &options);
+    assert_eq!(result, " - Item one\n - Item two\n");
+}
+
+#[test]
+fn test_list_trailing_spaces_three() {
+    let options = Options {
+        trailing_spaces: 3,
+        ..Options::default()
+    };
+    let result = parse_and_serialize_with_options(" -  Item one\n -  Item two", &options);
+    assert_eq!(result, " -   Item one\n -   Item two\n");
+}

@@ -52,6 +52,7 @@ fn main() -> ExitCode {
         setext_h2: config.heading.setext_h2,
         unordered_marker: config.list.unordered_marker,
         leading_spaces: config.list.leading_spaces,
+        trailing_spaces: config.list.trailing_spaces,
     };
 
     if args.stdin || args.files.is_empty() {

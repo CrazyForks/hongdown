@@ -35,6 +35,9 @@ pub struct Options {
 
     /// Number of leading spaces before the list marker. Default: 1.
     pub leading_spaces: usize,
+
+    /// Number of trailing spaces after the list marker. Default: 2.
+    pub trailing_spaces: usize,
 }
 
 impl Default for Options {
@@ -45,6 +48,7 @@ impl Default for Options {
             setext_h2: true,
             unordered_marker: '-',
             leading_spaces: 1,
+            trailing_spaces: 2,
         }
     }
 }

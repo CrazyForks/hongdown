@@ -213,7 +213,7 @@ TODO
      -  [ ] `[list]` section
          -  [x] `unordered_marker` option
          -  [x] `leading_spaces` option
-         -  [ ] `trailing_spaces` option
+         -  [x] `trailing_spaces` option
          -  [ ] `indent_width` option
      -  [ ] `[ordered_list]` section
          -  [ ] `odd_level_marker` option

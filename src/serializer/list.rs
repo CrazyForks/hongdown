@@ -74,20 +74,21 @@ impl<'a> Serializer<'a> {
         match self.list_type {
             Some(ListType::Bullet) => {
                 let marker = self.options.unordered_marker;
+                let trailing = " ".repeat(self.options.trailing_spaces);
                 if self.list_depth > 1 {
-                    // Nested bullets: "-  " (no leading space, marker, two trailing spaces)
+                    // Nested bullets: "-  " (no leading space, marker, trailing spaces)
                     self.output.push(marker);
-                    self.output.push_str("  ");
+                    self.output.push_str(&trailing);
                 } else if self.in_description_details {
                     // Inside description details: "-  " (no leading space, already indented)
                     self.output.push(marker);
-                    self.output.push_str("  ");
+                    self.output.push_str(&trailing);
                 } else {
                     // Top-level bullets: " -  " (leading spaces + marker + trailing spaces)
                     self.output
                         .push_str(&" ".repeat(self.options.leading_spaces));
                     self.output.push(marker);
-                    self.output.push_str("  ");
+                    self.output.push_str(&trailing);
                 }
             }
             Some(ListType::Ordered) => {
