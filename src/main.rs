@@ -50,6 +50,7 @@ fn main() -> ExitCode {
         line_width: args.line_width.unwrap_or(config.line_width),
         setext_h1: config.heading.setext_h1,
         setext_h2: config.heading.setext_h2,
+        unordered_marker: config.list.unordered_marker,
     };
 
     if args.stdin || args.files.is_empty() {

@@ -1511,3 +1511,30 @@ fn test_heading_setext_h2_enabled() {
     let result = parse_and_serialize_with_options("## Section Title", &options);
     assert_eq!(result, "Section Title\n-------------\n");
 }
+
+#[test]
+fn test_list_unordered_marker_asterisk() {
+    let options = Options {
+        unordered_marker: '*',
+        ..Options::default()
+    };
+    let result = parse_and_serialize_with_options(" -  Item one\n -  Item two", &options);
+    assert_eq!(result, " *  Item one\n *  Item two\n");
+}
+
+#[test]
+fn test_list_unordered_marker_plus() {
+    let options = Options {
+        unordered_marker: '+',
+        ..Options::default()
+    };
+    let result = parse_and_serialize_with_options(" -  Item one\n -  Item two", &options);
+    assert_eq!(result, " +  Item one\n +  Item two\n");
+}
+
+#[test]
+fn test_list_unordered_marker_default() {
+    let options = Options::default();
+    let result = parse_and_serialize_with_options(" *  Item one\n *  Item two", &options);
+    assert_eq!(result, " -  Item one\n -  Item two\n");
+}

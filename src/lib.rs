@@ -29,6 +29,9 @@ pub struct Options {
 
     /// Use setext-style (underlined) for h2 headings. Default: true.
     pub setext_h2: bool,
+
+    /// Marker character for unordered lists: `-`, `*`, or `+`. Default: `-`.
+    pub unordered_marker: char,
 }
 
 impl Default for Options {
@@ -37,6 +40,7 @@ impl Default for Options {
             line_width: 80,
             setext_h1: true,
             setext_h2: true,
+            unordered_marker: '-',
         }
     }
 }
