@@ -843,7 +843,9 @@ impl<'a> Serializer<'a> {
                 content.push_str(&Self::escape_text(text));
             }
             NodeValue::SoftBreak => {
-                content.push(' ');
+                // Use a special marker to preserve original line breaks
+                // This will be processed by wrap_text to decide whether to keep them
+                content.push('\x00');
             }
             NodeValue::LineBreak => {
                 content.push('\n');
@@ -1028,12 +1030,78 @@ impl<'a> Serializer<'a> {
 
     fn wrap_text(&self, text: &str, prefix: &str) -> String {
         let line_width = self.options.line_width;
+
+        // Split by soft break markers (original line breaks)
+        // \x00 represents where the original document had line breaks
+        let original_lines: Vec<&str> = text.split('\x00').collect();
+
+        if original_lines.len() == 1 {
+            // No original line breaks, just wrap normally
+            return self.wrap_single_segment(text, prefix, prefix);
+        }
+
+        // Process lines: keep short lines as-is, merge and rewrap long lines
+        let mut result = String::new();
+        let mut i = 0;
+
+        while i < original_lines.len() {
+            let line = original_lines[i].trim();
+            let line_with_prefix_len = prefix.len() + line.len();
+
+            if line_with_prefix_len <= line_width {
+                // Line fits within limit, keep it as-is
+                if !result.is_empty() {
+                    result.push('\n');
+                }
+                result.push_str(prefix);
+                result.push_str(line);
+                i += 1;
+            } else {
+                // Line exceeds limit, merge with following lines and rewrap
+                let mut merged = String::from(line);
+
+                // Keep merging while current merged content exceeds limit
+                // or until we run out of lines
+                i += 1;
+                while i < original_lines.len() {
+                    let next_line = original_lines[i].trim();
+                    merged.push(' ');
+                    merged.push_str(next_line);
+                    i += 1;
+
+                    // Check if the last "line" of wrapped content would fit
+                    // If so, we can stop merging
+                    let wrapped = self.wrap_single_segment(&merged, "", "");
+                    if let Some(last_line) = wrapped.lines().last()
+                        && prefix.len() + last_line.len() <= line_width
+                    {
+                        break;
+                    }
+                }
+
+                // Wrap the merged content
+                let wrapped = self.wrap_single_segment(&merged, prefix, prefix);
+
+                if !result.is_empty() {
+                    result.push('\n');
+                }
+                result.push_str(&wrapped);
+            }
+        }
+
+        result
+    }
+
+    /// Wrap a single segment of text (no original line break markers)
+    fn wrap_single_segment(&self, text: &str, first_prefix: &str, prefix: &str) -> String {
+        let line_width = self.options.line_width;
         let mut result = String::new();
         let mut current_line = String::new();
-        let prefix_len = prefix.len();
+        let mut is_first_line = true;
+        let first_prefix_len = first_prefix.len();
 
         // Add prefix to first line
-        current_line.push_str(prefix);
+        current_line.push_str(first_prefix);
 
         // Split into "tokens" where each token is either:
         // - A word (non-space characters) followed by optional spaces
@@ -1054,14 +1122,15 @@ impl<'a> Serializer<'a> {
                     // Start of backtick region - include any accumulated content first
                     if !current_token.is_empty() && !trailing_spaces.is_empty() {
                         // We have a previous word, output it
-                        Self::add_token_to_line(
+                        Self::add_token_to_line_with_prefix(
                             &mut result,
                             &mut current_line,
                             &current_token,
                             &trailing_spaces,
+                            first_prefix_len,
                             prefix,
-                            prefix_len,
                             line_width,
+                            &mut is_first_line,
                         );
                         current_token.clear();
                         trailing_spaces.clear();
@@ -1078,14 +1147,15 @@ impl<'a> Serializer<'a> {
                 // Regular character outside backticks
                 if !current_token.is_empty() && !trailing_spaces.is_empty() {
                     // We have a previous word with trailing spaces, output it
-                    Self::add_token_to_line(
+                    Self::add_token_to_line_with_prefix(
                         &mut result,
                         &mut current_line,
                         &current_token,
                         &trailing_spaces,
+                        first_prefix_len,
                         prefix,
-                        prefix_len,
                         line_width,
+                        &mut is_first_line,
                     );
                     current_token.clear();
                     trailing_spaces.clear();
@@ -1096,40 +1166,48 @@ impl<'a> Serializer<'a> {
 
         // Handle the last token
         if !current_token.is_empty() {
-            Self::add_token_to_line(
+            Self::add_token_to_line_with_prefix(
                 &mut result,
                 &mut current_line,
                 &current_token,
                 "",
+                first_prefix_len,
                 prefix,
-                prefix_len,
                 line_width,
+                &mut is_first_line,
             );
         }
 
         // Add the last line (trim trailing spaces)
         let final_line = current_line.trim_end();
-        if !final_line.is_empty() && final_line != prefix {
+        if !final_line.is_empty() {
             result.push_str(final_line);
         }
 
         result
     }
 
-    fn add_token_to_line(
+    #[allow(clippy::too_many_arguments)]
+    fn add_token_to_line_with_prefix(
         result: &mut String,
         current_line: &mut String,
         token: &str,
         trailing_spaces: &str,
+        first_prefix_len: usize,
         prefix: &str,
-        prefix_len: usize,
         line_width: usize,
+        is_first_line: &mut bool,
     ) {
         let token_len = token.len();
         let spaces_len = trailing_spaces.len();
+        let current_prefix_len = if *is_first_line {
+            first_prefix_len
+        } else {
+            prefix.len()
+        };
 
-        if current_line.len() == prefix_len {
-            // First word on this line
+        if current_line.len() == current_prefix_len {
+            // First word on this line (prefix already added)
             current_line.push_str(token);
             current_line.push_str(trailing_spaces);
         } else if current_line.len() + token_len + spaces_len <= line_width {
@@ -1144,6 +1222,7 @@ impl<'a> Serializer<'a> {
             *current_line = String::from(prefix);
             current_line.push_str(token);
             current_line.push_str(trailing_spaces);
+            *is_first_line = false;
         }
     }
 
@@ -1157,111 +1236,74 @@ impl<'a> Serializer<'a> {
         continuation_prefix: &str,
     ) -> String {
         let line_width = self.options.line_width;
+
+        // Split by soft break markers (original line breaks)
+        let original_lines: Vec<&str> = text.split('\x00').collect();
+
+        if original_lines.len() == 1 {
+            // No original line breaks, just wrap normally
+            return self.wrap_single_segment(text, first_prefix, continuation_prefix);
+        }
+
+        // Process lines: keep short lines as-is, merge and rewrap long lines
         let mut result = String::new();
-        let mut current_line = String::new();
+        let mut i = 0;
         let mut is_first_line = true;
 
-        // First line starts empty (marker already output)
-        current_line.push_str(first_prefix);
-        let first_prefix_len = first_prefix.len();
-        let cont_prefix_len = continuation_prefix.len();
-
-        let chars = text.chars();
-        let mut current_token = String::new();
-        let mut trailing_spaces = String::new();
-        let mut in_backticks = false;
-
-        // Helper closure to add a token to the current line
-        let add_token = |result: &mut String,
-                         current_line: &mut String,
-                         token: &str,
-                         trailing_spaces: &str,
-                         is_first_line: &mut bool| {
-            let current_prefix_len = if *is_first_line {
-                first_prefix_len
+        while i < original_lines.len() {
+            let line = original_lines[i].trim();
+            let current_prefix = if is_first_line {
+                first_prefix
             } else {
-                cont_prefix_len
+                continuation_prefix
             };
-            let token_len = token.len();
-            let spaces_len = trailing_spaces.len();
+            let line_with_prefix_len = current_prefix.len() + line.len();
 
-            // Check if token fits on current line (either first word or within width)
-            if current_line.len() == current_prefix_len
-                || current_line.len() + token_len + spaces_len <= line_width
-            {
-                current_line.push_str(token);
-                current_line.push_str(trailing_spaces);
+            if line_with_prefix_len <= line_width {
+                // Line fits within limit, keep it as-is
+                if !result.is_empty() {
+                    result.push('\n');
+                }
+                result.push_str(current_prefix);
+                result.push_str(line);
+                is_first_line = false;
+                i += 1;
             } else {
-                let trimmed = current_line.trim_end();
-                result.push_str(trimmed);
-                result.push('\n');
-                *current_line = String::from(continuation_prefix);
-                current_line.push_str(token);
-                current_line.push_str(trailing_spaces);
-                *is_first_line = false;
-            }
-        };
+                // Line exceeds limit, merge with following lines and rewrap
+                let mut merged = String::from(line);
 
-        for ch in chars {
-            if ch == '`' {
-                if in_backticks {
-                    current_token.push(ch);
-                    in_backticks = false;
-                } else {
-                    if !current_token.is_empty() && !trailing_spaces.is_empty() {
-                        add_token(
-                            &mut result,
-                            &mut current_line,
-                            &current_token,
-                            &trailing_spaces,
-                            &mut is_first_line,
-                        );
-                        current_token.clear();
-                        trailing_spaces.clear();
+                i += 1;
+                while i < original_lines.len() {
+                    let next_line = original_lines[i].trim();
+                    merged.push(' ');
+                    merged.push_str(next_line);
+                    i += 1;
+
+                    // Check if the last line of wrapped content would fit
+                    let test_prefix = if is_first_line {
+                        first_prefix
+                    } else {
+                        continuation_prefix
+                    };
+                    let wrapped =
+                        self.wrap_single_segment(&merged, test_prefix, continuation_prefix);
+                    if let Some(last_line) = wrapped.lines().last()
+                        && continuation_prefix.len() + last_line.trim_start().len() <= line_width
+                    {
+                        break;
                     }
-                    current_token.push(ch);
-                    in_backticks = true;
                 }
-            } else if in_backticks {
-                current_token.push(ch);
-            } else if ch == ' ' {
-                trailing_spaces.push(ch);
-            } else {
-                if !current_token.is_empty() && !trailing_spaces.is_empty() {
-                    add_token(
-                        &mut result,
-                        &mut current_line,
-                        &current_token,
-                        &trailing_spaces,
-                        &mut is_first_line,
-                    );
-                    current_token.clear();
-                    trailing_spaces.clear();
+
+                // Wrap the merged content
+                let wrapped =
+                    self.wrap_single_segment(&merged, current_prefix, continuation_prefix);
+
+                if !result.is_empty() {
+                    result.push('\n');
                 }
-                current_token.push(ch);
+                result.push_str(&wrapped);
+                is_first_line = false;
             }
-        }
-
-        // Handle the last token
-        if !current_token.is_empty() {
-            add_token(
-                &mut result,
-                &mut current_line,
-                &current_token,
-                "",
-                &mut is_first_line,
-            );
-        }
-
-        // Add the last line (trim trailing spaces)
-        let final_line = current_line.trim_end();
-        let expected_prefix = if is_first_line {
-            first_prefix
-        } else {
-            continuation_prefix
-        };
-        if !final_line.is_empty() && final_line != expected_prefix {
-            result.push_str(final_line);
         }
 
         result
@@ -1549,8 +1591,9 @@ mod tests {
 
     #[test]
     fn test_serialize_multiline_paragraph() {
+        // Original line breaks are preserved when lines are under 80 chars
         let result = parse_and_serialize("Hello\nworld!");
-        assert_eq!(result, "Hello world!\n");
+        assert_eq!(result, "Hello\nworld!\n");
     }
 
     #[test]
@@ -1628,8 +1671,9 @@ mod tests {
 
     #[test]
     fn test_serialize_block_quote_multiple_lines() {
+        // Original line breaks are preserved when lines are under 80 chars
         let result = parse_and_serialize("> Line one.\n> Line two.");
-        assert_eq!(result, "> Line one. Line two.\n");
+        assert_eq!(result, "> Line one.\n> Line two.\n");
     }
 
     #[test]
@@ -1745,6 +1789,49 @@ mod tests {
         for line in result.lines() {
             assert!(!line.ends_with('-'), "Words should not be hyphenated");
         }
+    }
+
+    #[test]
+    fn test_selective_rewrap_short_lines_preserved() {
+        // Short lines (under 80 chars) should be preserved as-is
+        let input = "Line one.\nLine two.\nLine three.";
+        let result = parse_and_serialize(input);
+        // Each line should stay on its own line
+        assert_eq!(
+            result, "Line one.\nLine two.\nLine three.\n",
+            "Short lines should be preserved"
+        );
+    }
+
+    #[test]
+    fn test_selective_rewrap_long_line_wrapped() {
+        // A line over 80 chars should be rewrapped
+        let input = "This is a very long line that definitely exceeds the eighty character limit and should be wrapped to the next line properly.";
+        let result = parse_and_serialize_with_width(input, 80);
+        // Should be wrapped
+        let lines: Vec<&str> = result.lines().collect();
+        assert!(
+            lines.len() > 1,
+            "Long line should be wrapped, got:\n{}",
+            result
+        );
+        // Each line should be under 80 chars
+        for line in &lines {
+            assert!(line.len() <= 80, "Line should be under 80 chars: {}", line);
+        }
+    }
+
+    #[test]
+    fn test_selective_rewrap_mixed_lines() {
+        // Mix of short and long lines - short should be preserved, long rewrapped
+        let input = "Short line one.\nShort line two.\nThis is a very long line that definitely exceeds the eighty character limit and needs to be wrapped.";
+        let result = parse_and_serialize_with_width(input, 80);
+        // Short lines should be preserved
+        assert!(
+            result.starts_with("Short line one.\nShort line two.\n"),
+            "Short lines should be preserved at start, got:\n{}",
+            result
+        );
     }
 
     fn parse_and_serialize_with_table(input: &str) -> String {
