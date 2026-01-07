@@ -1,0 +1,37 @@
+{
+  "name": "hongdown",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "A Markdown formatter that enforces Hong Minhee's Markdown style conventions",
+  "license": "GPL-3.0-or-later",
+  "author": "Hong Minhee <hong@minhee.org>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dahlia/hongdown.git"
+  },
+  "homepage": "https://github.com/dahlia/hongdown",
+  "keywords": [
+    "markdown",
+    "formatter",
+    "linter",
+    "style"
+  ],
+  "bin": {
+    "hongdown": "bin/hongdown.js"
+  },
+  "files": [
+    "bin/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {
+    "@hongdown/darwin-arm64": "0.0.0",
+    "@hongdown/darwin-x64": "0.0.0",
+    "@hongdown/linux-arm64": "0.0.0",
+    "@hongdown/linux-x64": "0.0.0",
+    "@hongdown/win32-arm64": "0.0.0",
+    "@hongdown/win32-x64": "0.0.0"
+  }
+}

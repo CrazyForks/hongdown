@@ -20,11 +20,24 @@ meaning "befitting of Hong" or "Hong-like."
 Installation
 ------------
 
-### From source
+### npm (Node.js)
+
+~~~~ bash
+npm install -g hongdown
+~~~~
+
+### Cargo (Rust)
 
 ~~~~ bash
 cargo install hongdown
 ~~~~
+
+### Pre-built binaries
+
+Pre-built binaries for Linux, macOS, and Windows are available on the
+[GitHub Releases] page.
+
+[GitHub Releases]: https://github.com/dahlia/hongdown/releases
 
 
 Usage
