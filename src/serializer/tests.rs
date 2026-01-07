@@ -1325,3 +1325,13 @@ fn test_abbreviation_definition_multiple() {
     assert!(result.contains("*[HTML]: HyperText Markup Language"));
     assert!(result.contains("*[CSS]: Cascading Style Sheets"));
 }
+
+#[test]
+fn test_definition_list_with_list_as_first_child() {
+    let input = "Pros\n:    -  First item\n     -  Second item";
+    let result = parse_and_serialize(input);
+    // Should have colon on its own line, then indented list
+    assert!(result.contains("Pros\n:\n"));
+    assert!(result.contains("     -  First item"));
+    assert!(result.contains("     -  Second item"));
+}

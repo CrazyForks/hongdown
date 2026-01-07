@@ -173,6 +173,12 @@ impl<'a> Serializer<'a> {
                         self.output.push_str("    ");
                         self.serialize_code_block_with_indent(code, "    ");
                     }
+                    NodeValue::List(_) => {
+                        // List as first child: output marker, newline, then list
+                        // The list will handle its own indentation via in_description_details
+                        self.output.push_str(":\n");
+                        self.serialize_node(child);
+                    }
                     _ => {
                         // Other block types: serialize normally with indent
                         self.output.push_str(":   ");
