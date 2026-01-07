@@ -212,7 +212,7 @@ TODO
          -  [x] `setext_h2` option
      -  [ ] `[list]` section
          -  [x] `unordered_marker` option
-         -  [ ] `leading_spaces` option
+         -  [x] `leading_spaces` option
          -  [ ] `trailing_spaces` option
          -  [ ] `indent_width` option
      -  [ ] `[ordered_list]` section

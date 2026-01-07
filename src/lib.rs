@@ -32,6 +32,9 @@ pub struct Options {
 
     /// Marker character for unordered lists: `-`, `*`, or `+`. Default: `-`.
     pub unordered_marker: char,
+
+    /// Number of leading spaces before the list marker. Default: 1.
+    pub leading_spaces: usize,
 }
 
 impl Default for Options {
@@ -41,6 +44,7 @@ impl Default for Options {
             setext_h1: true,
             setext_h2: true,
             unordered_marker: '-',
+            leading_spaces: 1,
         }
     }
 }

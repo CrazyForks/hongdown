@@ -83,8 +83,9 @@ impl<'a> Serializer<'a> {
                     self.output.push(marker);
                     self.output.push_str("  ");
                 } else {
-                    // Top-level bullets: " -  " (one leading space)
-                    self.output.push(' ');
+                    // Top-level bullets: " -  " (leading spaces + marker + trailing spaces)
+                    self.output
+                        .push_str(&" ".repeat(self.options.leading_spaces));
                     self.output.push(marker);
                     self.output.push_str("  ");
                 }
@@ -99,8 +100,9 @@ impl<'a> Serializer<'a> {
                     self.output.push_str(&self.list_item_index.to_string());
                     self.output.push_str(". ");
                 } else {
-                    // Top-level ordered: " N. " format
-                    self.output.push(' ');
+                    // Top-level ordered: " N. " format (leading spaces + number + marker)
+                    self.output
+                        .push_str(&" ".repeat(self.options.leading_spaces));
                     self.output.push_str(&self.list_item_index.to_string());
                     self.output.push_str(". ");
                 }

@@ -51,6 +51,7 @@ fn main() -> ExitCode {
         setext_h1: config.heading.setext_h1,
         setext_h2: config.heading.setext_h2,
         unordered_marker: config.list.unordered_marker,
+        leading_spaces: config.list.leading_spaces,
     };
 
     if args.stdin || args.files.is_empty() {

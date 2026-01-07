@@ -1538,3 +1538,23 @@ fn test_list_unordered_marker_default() {
     let result = parse_and_serialize_with_options(" *  Item one\n *  Item two", &options);
     assert_eq!(result, " -  Item one\n -  Item two\n");
 }
+
+#[test]
+fn test_list_leading_spaces_zero() {
+    let options = Options {
+        leading_spaces: 0,
+        ..Options::default()
+    };
+    let result = parse_and_serialize_with_options(" -  Item one\n -  Item two", &options);
+    assert_eq!(result, "-  Item one\n-  Item two\n");
+}
+
+#[test]
+fn test_list_leading_spaces_two() {
+    let options = Options {
+        leading_spaces: 2,
+        ..Options::default()
+    };
+    let result = parse_and_serialize_with_options(" -  Item one\n -  Item two", &options);
+    assert_eq!(result, "  -  Item one\n  -  Item two\n");
+}
