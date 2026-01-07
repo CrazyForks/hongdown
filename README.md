@@ -244,23 +244,23 @@ TODO
 ### Phase 3: Polish
 
  -  [x] Configuration file support
-     -  [x] Config file parsing and discovery (`.hongdown.toml`)
-     -  [x] `line_width` option
-     -  [x] `[heading]` section
-         -  [x] `setext_h1` option
-         -  [x] `setext_h2` option
-     -  [x] `[list]` section
-         -  [x] `unordered_marker` option
-         -  [x] `leading_spaces` option
-         -  [x] `trailing_spaces` option
-         -  [x] `indent_width` option
-     -  [x] `[ordered_list]` section
-         -  [x] `odd_level_marker` option
-         -  [x] `even_level_marker` option
-     -  [x] `[code_block]` section
-         -  [x] `fence_char` option
-         -  [x] `min_fence_length` option
-         -  [x] `space_after_fence` option
+    -  [x] Config file parsing and discovery (`.hongdown.toml`)
+    -  [x] `line_width` option
+    -  [x] `[heading]` section
+        -  [x] `setext_h1` option
+        -  [x] `setext_h2` option
+    -  [x] `[list]` section
+        -  [x] `unordered_marker` option
+        -  [x] `leading_spaces` option
+        -  [x] `trailing_spaces` option
+        -  [x] `indent_width` option
+    -  [x] `[ordered_list]` section
+        -  [x] `odd_level_marker` option
+        -  [x] `even_level_marker` option
+    -  [x] `[code_block]` section
+        -  [x] `fence_char` option
+        -  [x] `min_fence_length` option
+        -  [x] `space_after_fence` option
  -  [x] Check mode for CI integration
  -  [x] Disable directives
  -  [x] Edge case handling

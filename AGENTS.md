@@ -1,5 +1,5 @@
 Guidance for LLM-based code agents
-===================================
+==================================
 
 This file provides guidance to LLM-based code agents (e.g., Claude Code,
 OpenCode) when working with code in this repository.
@@ -75,10 +75,13 @@ Additional TDD guidelines:
 
  -  Do not use Conventional Commits (no `fix:`, `feat:`, etc. prefixes).
     Keep the first line under 50 characters when possible.
+
  -  Focus on *why* the change was made, not just *what* changed.
+
  -  When referencing issues or PRs, use permalink URLs instead of just
     numbers (e.g., `#123`).  This preserves context if the repository
     is moved later.
+
  -  When listing items after a colon, add a blank line after the colon:
 
     ~~~~
@@ -87,6 +90,7 @@ Additional TDD guidelines:
     - Added foo
     - Fixed bar
     ~~~~
+
 
  -  When using LLMs or coding agents, include credit via `Co-Authored-By:`.
     Include a permalink to the agent session if available.
@@ -105,6 +109,7 @@ Development tips
     cargo add serde --features derive
     cargo add tokio --features full
     ~~~~
+
 
  -  *Check before adding*: Before adding a new dependency, consider whether
     the functionality can be achieved with existing dependencies or the
@@ -127,6 +132,27 @@ Development tips
 
  -  *Test location*: Unit tests for the serializer are in
     *src/serializer/tests.rs*.  Integration tests are in *tests/*.
+
+### Quality checks
+
+ -  *Run checks frequently*: Run `cargo fmt --check` and `cargo clippy`
+    frequently during development, not just before committing.  This
+    catches issues early and keeps the codebase clean.
+
+ -  *Format Markdown files*: After editing any Markdown files (*.md*),
+    always format them with Hongdown:
+
+    ~~~~ bash
+    cargo run -- -w README.md AGENTS.md
+    ~~~~
+
+
+ -  *Before committing*: Always run the full quality check suite:
+
+    ~~~~ bash
+    cargo test && cargo fmt --check && cargo clippy -- -D warnings
+    ~~~~
+
 
 ### Performance considerations
 
@@ -181,11 +207,13 @@ documentation:
     ------------
     ~~~~
 
+
  -  *ATX-style headings*: Use only for subsections within a section:
 
     ~~~~
     ### Subsection Name
     ~~~~
+
 
  -  *Heading case*: Use sentence case (capitalize only the first word and
     proper nouns) rather than Title Case:
@@ -194,6 +222,7 @@ documentation:
     Development commands    <- Correct
     Development Commands    <- Incorrect
     ~~~~
+
 
 ### Text formatting
 
@@ -205,7 +234,9 @@ documentation:
 ### Lists
 
  -  Use ` -  ` (space-hyphen-two spaces) for unordered list items
+
  -  Indent nested items with 4 spaces
+
  -  Align continuation text with the item content:
 
     ~~~~
@@ -214,9 +245,11 @@ documentation:
      -  *Second item*: Another item
     ~~~~
 
+
 ### Code blocks
 
  -  Use four tildes (`~~~~`) for code fences instead of backticks
+
  -  Always specify the language identifier:
 
     ~~~~~
@@ -224,6 +257,7 @@ documentation:
     let example = "Hello, world!";
     ~~~~
     ~~~~~
+
 
  -  For shell commands, use `bash`:
 
@@ -233,10 +267,12 @@ documentation:
     ~~~~
     ~~~~~
 
+
 ### Links
 
  -  Use reference-style links placed at the *end of each section*
     (not at document end)
+
  -  Format reference links with consistent spacing:
 
     ~~~~
@@ -244,6 +280,7 @@ documentation:
 
     [comrak documentation]: https://docs.rs/comrak
     ~~~~
+
 
 ### GitHub alerts
 
@@ -257,7 +294,7 @@ Use GitHub-style alert blocks for important information:
 
 Continue alert content on subsequent lines with `>`:
 
-~~~~
+~~~~ text
 > [!CAUTION]
 > This feature is experimental and may change in future versions.
 ~~~~
@@ -266,7 +303,7 @@ Continue alert content on subsequent lines with `>`:
 
 Use pipe tables with proper alignment markers:
 
-~~~~
+~~~~ text
 | Column 1        | Column 2                      |
 | --------------- | ----------------------------- |
 | Cell 1          | Cell 2                        |
