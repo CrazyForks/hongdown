@@ -196,6 +196,6 @@ jobs:
 
     - uses: rust-lang/crates-io-auth-action@v1
       id: crates-io-auth
-    - run: cargo publish
+    - run: cargo publish --allow-dirty
       env:
         CARGO_REGISTRY_TOKEN: ${{ steps.crates-io-auth.outputs.token }}
