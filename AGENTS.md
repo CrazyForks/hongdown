@@ -92,6 +92,52 @@ Additional TDD guidelines:
     Include a permalink to the agent session if available.
 
 
+Development tips
+----------------
+
+### Dependency management
+
+ -  *Always use `cargo add`*: When adding dependencies, use `cargo add`
+    instead of manually editing *Cargo.toml*.  This ensures you get the
+    latest compatible version:
+
+    ~~~~ bash
+    cargo add serde --features derive
+    cargo add tokio --features full
+    ~~~~
+
+ -  *Check before adding*: Before adding a new dependency, consider whether
+    the functionality can be achieved with existing dependencies or the
+    standard library.
+
+### Configuration changes
+
+ -  *Options struct*: When adding new configuration options, update both
+    the `Config` struct in *src/config.rs* and the `Options` struct in
+    *src/lib.rs*.  Also update *src/main.rs* to wire them together.
+
+ -  *Update documentation*: When adding configuration options, update the
+    Configuration file section in *README.md*.
+
+### Code organization
+
+ -  *Serializer modules*: The serializer is split into multiple modules
+    under *src/serializer/*.  Each module handles a specific type of
+    Markdown element (e.g., *list.rs*, *table.rs*, *code.rs*).
+
+ -  *Test location*: Unit tests for the serializer are in
+    *src/serializer/tests.rs*.  Integration tests are in *tests/*.
+
+### Performance considerations
+
+ -  *Parallel processing*: The CLI uses `rayon` for parallel file
+    processing in `--write` and `--check` modes.  Keep this in mind
+    when modifying file processing logic.
+
+ -  *Avoid unnecessary allocations*: Prefer borrowing over cloning when
+    possible.  Use `&str` instead of `String` for read-only string data.
+
+
 Code style
 ----------
 
