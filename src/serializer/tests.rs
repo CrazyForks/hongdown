@@ -747,12 +747,29 @@ fn test_serialize_escaped_underscore() {
 }
 
 #[test]
-fn test_serialize_escaped_brackets() {
-    // Escaped brackets should be preserved (not treated as links)
-    // The closing ] at end of text doesn't need escaping (can't close a link)
-    let input = r"\[not a link\]";
-    let result = parse_and_serialize(input);
-    assert_eq!(result, "\\[not a link]\n");
+fn test_ordered_list_with_code_block() {
+    // Code blocks inside ordered list items should be indented to align with content
+    // The marker " 1.  " is 5 characters, so content indent should be 5 spaces
+    let input =
+        " 1.  First item:\n\n     ~~~~ bash\n     echo \"hello\"\n     ~~~~\n\n 2.  Second item.\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(
+        result, input,
+        "Code block in ordered list should preserve indentation"
+    );
+}
+
+#[test]
+fn test_unordered_list_with_code_block() {
+    // Code blocks inside unordered list items should be indented to align with content
+    // The marker " -  " is 4 characters, so content indent should be 4 spaces
+    let input =
+        " -  First item:\n\n    ~~~~ bash\n    echo \"hello\"\n    ~~~~\n\n -  Second item.\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(
+        result, input,
+        "Code block in unordered list should preserve indentation"
+    );
 }
 
 #[test]

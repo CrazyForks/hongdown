@@ -14,6 +14,23 @@ impl<'a> Serializer<'a> {
             .count()
     }
 
+    /// Calculate the width of a list item marker.
+    /// This is used to determine the indentation for continuation lines.
+    fn calculate_marker_width(&self) -> usize {
+        match self.list_type {
+            Some(ListType::Bullet) => {
+                // " -  " = leading_spaces + 1 (marker) + trailing_spaces
+                self.options.leading_spaces + 1 + self.options.trailing_spaces
+            }
+            Some(ListType::Ordered) => {
+                // " N.  " = leading_spaces + number_width + 1 (marker) + trailing_spaces
+                let max_num_width = self.ordered_list_max_items.to_string().len();
+                self.options.leading_spaces + max_num_width + 1 + self.options.trailing_spaces
+            }
+            None => 0,
+        }
+    }
+
     pub(super) fn serialize_list<'b>(
         &mut self,
         node: &'b AstNode<'b>,
@@ -182,11 +199,26 @@ impl<'a> Serializer<'a> {
 
         // Serialize children, handling nested lists and multiple paragraphs
         let children: Vec<_> = node.children().collect();
+        // Calculate base indentation for continuation lines (paragraphs, code blocks, etc.)
+        // This should match the marker width so content aligns properly
+        let marker_width = self.calculate_marker_width();
         let base_indent = if self.in_description_details {
             // Inside description details, add extra 5-space indent
-            format!("     {}", " ".repeat(indent_width * self.list_depth))
+            format!(
+                "{}{}",
+                " ".repeat(5 + indent_width * (self.list_depth - 1)),
+                " ".repeat(marker_width)
+            )
+        } else if self.list_depth > 1 {
+            // Nested list: outer indent + marker width
+            format!(
+                "{}{}",
+                " ".repeat(indent_width * (self.list_depth - 1)),
+                " ".repeat(marker_width)
+            )
         } else {
-            " ".repeat(indent_width * self.list_depth)
+            // Top-level list: just marker width
+            " ".repeat(marker_width)
         };
 
         for (i, child) in children.iter().enumerate() {
@@ -243,13 +275,16 @@ impl<'a> Serializer<'a> {
             }
         }
 
-        // Only add newline if we didn't just serialize a nested list
-        // (nested lists add their own newlines)
-        let last_child_is_list = node
-            .children()
-            .last()
-            .is_some_and(|child| matches!(&child.data.borrow().value, NodeValue::List(_)));
-        if !last_child_is_list {
+        // Only add newline if the last child doesn't already end with one
+        // (nested lists and code blocks add their own newlines)
+        let last_child = node.children().last();
+        let last_child_ends_with_newline = last_child.is_some_and(|child| {
+            matches!(
+                &child.data.borrow().value,
+                NodeValue::List(_) | NodeValue::CodeBlock(_)
+            )
+        });
+        if !last_child_ends_with_newline {
             self.output.push('\n');
         }
     }
