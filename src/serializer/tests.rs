@@ -35,6 +35,14 @@ fn parse_and_serialize_with_source(input: &str) -> String {
     serialize_with_source(root, &format_options, Some(input))
 }
 
+fn parse_and_serialize_with_warnings(input: &str) -> SerializeResult {
+    let arena = Arena::new();
+    let options = comrak_options();
+    let root = parse_document(&arena, input, &options);
+    let format_options = Options::default();
+    serialize_with_source_and_warnings(root, &format_options, Some(input))
+}
+
 #[test]
 fn test_serialize_plain_text() {
     let result = parse_and_serialize("Hello, world!");
@@ -1833,4 +1841,56 @@ fn test_ordered_list_pad_nested() {
     assert!(result.contains("  1)  Child one"), "got:\n{}", result);
     assert!(result.contains("  9)  Child nine"), "got:\n{}", result);
     assert!(result.contains(" 10)  Child ten"), "got:\n{}", result);
+}
+
+// Tests for undefined reference warnings
+
+#[test]
+fn test_undefined_reference_warning() {
+    // When a reference link is used but not defined, a warning should be emitted
+    let input = "See [undefined reference] for details.";
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(result.warnings.len(), 1);
+    assert!(result.warnings[0].message.contains("undefined reference"));
+    assert!(
+        result.warnings[0]
+            .message
+            .contains("undefined reference link")
+    );
+}
+
+#[test]
+fn test_defined_reference_no_warning() {
+    // When a reference link is properly defined, no warning should be emitted
+    let input = "See [defined reference] for details.\n\n[defined reference]: https://example.com";
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(
+        result.warnings.len(),
+        0,
+        "Expected no warnings but got: {:?}",
+        result.warnings
+    );
+}
+
+#[test]
+fn test_multiple_undefined_references_warning() {
+    // Multiple undefined references should each generate a warning
+    let input = "See [foo] and [bar] for details.\n\n[foo]: https://example.com";
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(
+        result.warnings.len(),
+        1,
+        "Expected 1 warning for [bar] but got: {:?}",
+        result.warnings
+    );
+    assert!(result.warnings[0].message.contains("bar"));
+}
+
+#[test]
+fn test_undefined_full_reference_warning() {
+    // Full reference style [text][label] with undefined label
+    let input = "See [some text][undefined-label] for details.";
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(result.warnings.len(), 1);
+    assert!(result.warnings[0].message.contains("undefined-label"));
 }

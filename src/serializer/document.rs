@@ -1,6 +1,7 @@
 //! Document-level serialization logic.
 
 use comrak::nodes::{AstNode, NodeValue};
+use regex::Regex;
 
 use super::Serializer;
 use super::state::Directive;
@@ -9,6 +10,9 @@ use super::wrap;
 impl<'a> Serializer<'a> {
     pub(super) fn serialize_document<'b>(&mut self, node: &'b AstNode<'b>) {
         let children: Vec<_> = node.children().collect();
+
+        // Check for undefined reference links using AST
+        self.check_undefined_references_ast(node);
 
         // First pass: collect all footnote reference lines
         // This is needed because FootnoteDefinition nodes come at the end of the AST,
@@ -354,5 +358,138 @@ impl<'a> Serializer<'a> {
         for child in node.children() {
             self.collect_footnote_reference_lines(child);
         }
+    }
+
+    /// Check for undefined reference links using AST traversal.
+    ///
+    /// This method walks the AST looking for Text nodes that contain `[label]`
+    /// patterns. When comrak cannot resolve a reference link, it leaves the
+    /// brackets as literal text. We detect these and emit warnings.
+    ///
+    /// We also check the original source to ensure the bracket wasn't
+    /// intentionally escaped (e.g., `\[label]`).
+    fn check_undefined_references_ast<'b>(&mut self, node: &'b AstNode<'b>) {
+        if self.source_lines.is_empty() {
+            return;
+        }
+
+        // Collect warnings first to avoid borrow issues
+        let warnings = Self::find_undefined_references_in_ast(node, &self.source_lines);
+        for (line, msg) in warnings {
+            self.add_warning(line, msg);
+        }
+    }
+
+    /// Find undefined references by walking the AST.
+    /// Returns a vector of (line_number, warning_message) tuples.
+    fn find_undefined_references_in_ast<'b>(
+        node: &'b AstNode<'b>,
+        source_lines: &[&str],
+    ) -> Vec<(usize, String)> {
+        let mut warnings = Vec::new();
+
+        // Pattern to find [label] or [text][label] in text nodes
+        // This matches text that looks like a reference link but wasn't parsed as one
+        // The pattern [^\[\]] ensures the label doesn't start with [ or ]
+        let ref_pattern = Regex::new(r"\[([^\[\]][^\]]*)\](?:\[([^\]]*)\])?").unwrap();
+
+        Self::walk_ast_for_undefined_refs(node, source_lines, &ref_pattern, &mut warnings);
+
+        warnings
+    }
+
+    /// Recursively walk the AST looking for undefined references in Text nodes.
+    fn walk_ast_for_undefined_refs<'b>(
+        node: &'b AstNode<'b>,
+        source_lines: &[&str],
+        ref_pattern: &Regex,
+        warnings: &mut Vec<(usize, String)>,
+    ) {
+        let data = node.data.borrow();
+
+        match &data.value {
+            NodeValue::Text(text) => {
+                // Look for [label] patterns in text content
+                let line_num = data.sourcepos.start.line;
+
+                for caps in ref_pattern.captures_iter(text) {
+                    let full_match = caps.get(0).unwrap();
+                    let label = if let Some(explicit_label) = caps.get(2) {
+                        // [text][label] form - use the explicit label
+                        let l = explicit_label.as_str();
+                        if l.is_empty() {
+                            // [text][] form - use the text as label
+                            caps.get(1).map(|m| m.as_str()).unwrap_or("")
+                        } else {
+                            l
+                        }
+                    } else {
+                        // [text] form - use the text as label
+                        caps.get(1).map(|m| m.as_str()).unwrap_or("")
+                    };
+
+                    // Skip empty labels
+                    if label.is_empty() {
+                        continue;
+                    }
+
+                    // Skip footnote references [^name]
+                    if label.starts_with('^') {
+                        continue;
+                    }
+
+                    // Skip GitHub alert markers [!NOTE], [!TIP], etc.
+                    if label.starts_with('!') {
+                        continue;
+                    }
+
+                    // Check original source to see if this was escaped
+                    if Self::is_escaped_in_source(source_lines, line_num, full_match.as_str()) {
+                        continue;
+                    }
+
+                    warnings.push((line_num, format!("undefined reference link: [{}]", label)));
+                }
+            }
+            // Skip code blocks and inline code - they don't contain reference links
+            NodeValue::CodeBlock(_) | NodeValue::Code(_) => {
+                return;
+            }
+            // Skip other leaf nodes that don't contain text we care about
+            NodeValue::HtmlBlock(_) | NodeValue::HtmlInline(_) => {
+                return;
+            }
+            _ => {}
+        }
+
+        drop(data);
+
+        // Recurse into children
+        for child in node.children() {
+            Self::walk_ast_for_undefined_refs(child, source_lines, ref_pattern, warnings);
+        }
+    }
+
+    /// Check if a bracket pattern was escaped in the original source.
+    /// Returns true if the pattern appears as `\[...]` in the source.
+    fn is_escaped_in_source(source_lines: &[&str], line_num: usize, pattern: &str) -> bool {
+        if line_num == 0 || line_num > source_lines.len() {
+            return false;
+        }
+
+        let line = source_lines[line_num - 1];
+
+        // Look for the pattern in the line and check if it's preceded by backslash
+        if let Some(pos) = line.find(pattern)
+            && pos > 0
+        {
+            let bytes = line.as_bytes();
+            // Check if preceded by backslash (and not double backslash)
+            if bytes[pos - 1] == b'\\' && (pos < 2 || bytes[pos - 2] != b'\\') {
+                return true;
+            }
+        }
+
+        false
     }
 }
