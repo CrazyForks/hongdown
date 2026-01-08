@@ -1,3 +1,4 @@
 # Hongdown configuration file
 
-include = ["*.md"]
+include = ["*.md", "**/*.md"]
+exclude = ["target/**"]
