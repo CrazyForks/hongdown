@@ -18,20 +18,12 @@ pub fn escape_text(text: &str) -> String {
                 result.push('\\');
                 result.push(ch);
             }
-            // Underscore only needs escaping at word boundaries
-            // In CommonMark, intraword underscores don't create emphasis
+            // Underscore always needs escaping for safety
+            // While CommonMark doesn't create emphasis for intraword underscores,
+            // escaping ensures consistent behavior across all Markdown parsers
             '_' => {
-                let prev_is_alnum = i > 0 && chars[i - 1].is_alphanumeric();
-                let next_is_alnum = i + 1 < chars.len() && chars[i + 1].is_alphanumeric();
-
-                // Only escape if at word boundary (could start/end emphasis)
-                if prev_is_alnum && next_is_alnum {
-                    // Intraword underscore - no escape needed
-                    result.push(ch);
-                } else {
-                    result.push('\\');
-                    result.push(ch);
-                }
+                result.push('\\');
+                result.push(ch);
             }
             // Square brackets - only escape if they could form a link
             // A '[' at the end can't start a link, ']' at the start can't close one

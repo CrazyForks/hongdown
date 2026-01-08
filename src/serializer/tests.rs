@@ -930,17 +930,16 @@ fn test_serialize_image_inside_link_badge_style() {
 }
 
 #[test]
-fn test_serialize_underscore_in_word_not_escaped() {
-    // Underscores in the middle of words (like ALL_CAPS) should not be escaped
-    // because they don't create emphasis in CommonMark
+fn test_serialize_underscore_always_escaped() {
+    // Underscores are always escaped for safety and consistency across parsers
     let input = "Use ALL_CAPS for constants.";
     let result = parse_and_serialize(input);
-    assert_eq!(result, "Use ALL_CAPS for constants.\n");
+    assert_eq!(result, "Use ALL\\_CAPS for constants.\n");
 }
 
 #[test]
-fn test_serialize_underscore_emphasis_boundary() {
-    // Underscores at word boundaries should be escaped to prevent emphasis
+fn test_serialize_underscore_at_boundary_escaped() {
+    // Underscores at word boundaries should be escaped
     let input = r"\_start and end\_";
     let result = parse_and_serialize(input);
     assert_eq!(result, "\\_start and end\\_\n");
