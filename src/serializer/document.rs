@@ -173,6 +173,13 @@ impl<'a> Serializer<'a> {
         let was_in_description_details = self.in_description_details;
         self.in_description_details = true;
 
+        // Determine the prefix for blockquote context
+        let blockquote_prefix = if self.in_block_quote {
+            format!("{}> ", self.blockquote_outer_indent)
+        } else {
+            String::new()
+        };
+
         for (i, child) in children.iter().enumerate() {
             let child_value = &child.data.borrow().value;
 
@@ -180,13 +187,15 @@ impl<'a> Serializer<'a> {
                 // First child: start with `:   ` marker
                 match child_value {
                     NodeValue::Paragraph => {
+                        self.output.push_str(&blockquote_prefix);
                         self.output.push_str(":   ");
                         let mut content = String::new();
                         self.collect_inline_content(child, &mut content);
+                        let continuation = format!("{}    ", blockquote_prefix);
                         let wrapped = wrap::wrap_text_first_line(
                             content.trim(),
                             "",
-                            "    ",
+                            &continuation,
                             self.options.line_width,
                         );
                         self.output.push_str(&wrapped);
@@ -194,19 +203,26 @@ impl<'a> Serializer<'a> {
                     }
                     NodeValue::CodeBlock(code) => {
                         // Code block as first child (unusual but possible)
+                        self.output.push_str(&blockquote_prefix);
                         self.output.push_str(":   ");
                         self.output.push('\n');
+                        self.output.push_str(&blockquote_prefix);
                         self.output.push_str("    ");
-                        self.serialize_code_block_with_indent(code, "    ");
+                        self.serialize_code_block_with_indent(
+                            code,
+                            &format!("{}    ", blockquote_prefix),
+                        );
                     }
                     NodeValue::List(_) => {
                         // List as first child: output marker, newline, then list
                         // The list will handle its own indentation via in_description_details
+                        self.output.push_str(&blockquote_prefix);
                         self.output.push_str(":\n");
                         self.serialize_node(child);
                     }
                     _ => {
                         // Other block types: serialize normally with indent
+                        self.output.push_str(&blockquote_prefix);
                         self.output.push_str(":   ");
                         self.serialize_node(child);
                     }
@@ -216,21 +232,27 @@ impl<'a> Serializer<'a> {
                 self.output.push('\n');
                 match child_value {
                     NodeValue::Paragraph => {
+                        self.output.push_str(&blockquote_prefix);
                         self.output.push_str("    ");
                         let mut content = String::new();
                         self.collect_inline_content(child, &mut content);
+                        let continuation = format!("{}    ", blockquote_prefix);
                         let wrapped = wrap::wrap_text_first_line(
                             content.trim(),
                             "",
-                            "    ",
+                            &continuation,
                             self.options.line_width,
                         );
                         self.output.push_str(&wrapped);
                         self.output.push('\n');
                     }
                     NodeValue::CodeBlock(code) => {
+                        self.output.push_str(&blockquote_prefix);
                         self.output.push_str("    ");
-                        self.serialize_code_block_with_indent(code, "    ");
+                        self.serialize_code_block_with_indent(
+                            code,
+                            &format!("{}    ", blockquote_prefix),
+                        );
                     }
                     NodeValue::List(_) => {
                         // Lists handle their own indentation via in_description_details flag
@@ -238,6 +260,7 @@ impl<'a> Serializer<'a> {
                     }
                     _ => {
                         // Other block types
+                        self.output.push_str(&blockquote_prefix);
                         self.output.push_str("    ");
                         self.serialize_node(child);
                     }

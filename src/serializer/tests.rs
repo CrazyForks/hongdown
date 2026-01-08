@@ -2011,3 +2011,29 @@ fn test_wrap_multiline_paragraph_no_orphan_words() {
         result
     );
 }
+
+#[test]
+fn test_definition_list_in_blockquote() {
+    // Definition list inside blockquote should preserve the > prefix
+    let input = "> Term\n> :   Definition here.";
+    let result = parse_and_serialize(input);
+    assert_eq!(result, "> Term\n> :   Definition here.\n");
+}
+
+#[test]
+fn test_definition_list_in_blockquote_multiline() {
+    // Multi-line definition in blockquote should preserve > prefix on all lines
+    let input = "> `FC<Props>`\n> :   Applies the type argument `Props` to the generic type `FC`.\n>\n> `<Container>`\n> :   Opens a component tag.";
+    let result = parse_and_serialize(input);
+    assert!(
+        result.contains("> :   "),
+        "Definition list marker should have > prefix in blockquote. Got:\n{}",
+        result
+    );
+    // Should not have definition marker without > prefix
+    assert!(
+        !result.contains("\n:   "),
+        "Definition list should not lose > prefix. Got:\n{}",
+        result
+    );
+}
