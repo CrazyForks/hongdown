@@ -163,12 +163,16 @@ fn process_files_parallel(
                         eprintln!("{}: not formatted", file.display());
                         all_formatted.store(false, Ordering::Relaxed);
                     }
-                } else if write
-                    && input != result.output
-                    && let Err(e) = fs::write(file, &result.output)
-                {
-                    eprintln!("Error writing {}: {}", file.display(), e);
-                    has_error.store(true, Ordering::Relaxed);
+                } else if write && input != result.output {
+                    match fs::write(file, &result.output) {
+                        Ok(()) => {
+                            println!("{}", file.display());
+                        }
+                        Err(e) => {
+                            eprintln!("Error writing {}: {}", file.display(), e);
+                            has_error.store(true, Ordering::Relaxed);
+                        }
+                    }
                 }
             }
             Err(e) => {

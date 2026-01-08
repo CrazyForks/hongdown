@@ -243,4 +243,81 @@ mod cli_tests {
             "Should report conflicting options"
         );
     }
+
+    /// Test --write reports which files were changed.
+    #[test]
+    fn test_write_reports_changed_files() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        // Create a temporary directory with test files
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+
+        // Create a file that needs formatting
+        let unformatted_path = temp_dir.path().join("unformatted.md");
+        fs::write(&unformatted_path, "# Needs Formatting\n\nA paragraph.")
+            .expect("Failed to write unformatted file");
+
+        // Create a file that is already formatted
+        let formatted_path = temp_dir.path().join("formatted.md");
+        fs::write(
+            &formatted_path,
+            "Already Formatted\n=================\n\nA paragraph.\n",
+        )
+        .expect("Failed to write formatted file");
+
+        let (stdout, _stderr, exit_code) = run_hongdown(
+            &[
+                "--write",
+                unformatted_path.to_str().unwrap(),
+                formatted_path.to_str().unwrap(),
+            ],
+            None,
+        );
+
+        assert_eq!(exit_code, 0);
+
+        // Should report the unformatted file as changed
+        assert!(
+            stdout.contains("unformatted.md"),
+            "Should report the changed file: got stdout: {}",
+            stdout
+        );
+
+        // Should NOT report the already formatted file (check for the exact filename)
+        // Note: "unformatted.md" contains "formatted.md" as a substring, so we need to
+        // check that "formatted.md" only appears as part of "unformatted.md"
+        let stdout_without_unformatted = stdout.replace("unformatted.md", "");
+        assert!(
+            !stdout_without_unformatted.contains("formatted.md"),
+            "Should not report unchanged file: got stdout: {}",
+            stdout
+        );
+    }
+
+    /// Test --write does not report files that are unchanged.
+    #[test]
+    fn test_write_silent_on_unchanged_files() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+
+        // Create a file that is already formatted
+        let formatted_path = temp_dir.path().join("already_formatted.md");
+        fs::write(&formatted_path, "Title\n=====\n\nA paragraph.\n")
+            .expect("Failed to write formatted file");
+
+        let (stdout, _stderr, exit_code) =
+            run_hongdown(&["--write", formatted_path.to_str().unwrap()], None);
+
+        assert_eq!(exit_code, 0);
+
+        // Should not report any files since nothing changed
+        assert!(
+            stdout.is_empty(),
+            "Should not report unchanged files: got stdout: {}",
+            stdout
+        );
+    }
 }
