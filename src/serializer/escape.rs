@@ -104,17 +104,16 @@ pub fn format_code_span(content: &str) -> String {
     let delimiter: String = "`".repeat(delimiter_count);
 
     // Determine if we need space padding.
-    // Per CommonMark: if the content begins or ends with a backtick or space
-    // (and is not only spaces), add space padding.
+    // Per CommonMark: space padding is needed when content begins or ends with
+    // a backtick character. This is because backticks adjacent to the delimiter
+    // would be ambiguous. Spaces at the start/end do NOT require padding -
+    // they are preserved as-is.
     let needs_space = if content.is_empty() {
-        false
-    } else if content.chars().all(|c| c == ' ') {
-        // Content is only spaces - no padding needed
         false
     } else {
         let first = content.chars().next().unwrap();
         let last = content.chars().last().unwrap();
-        first == '`' || first == ' ' || last == '`' || last == ' '
+        first == '`' || last == '`'
     };
 
     if needs_space {

@@ -1148,6 +1148,30 @@ fn test_code_span_ending_with_backtick() {
 }
 
 #[test]
+fn test_code_span_with_trailing_space() {
+    // Code span ending with a space should preserve the space without extra padding
+    let input = "outputting to stderr with an `Error: ` prefix";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("`Error: `"),
+        "Code span with trailing space should be preserved exactly, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_code_span_with_leading_space() {
+    // Code span starting with a space should preserve the space without extra padding
+    let input = "The ` Error` message appeared.";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("` Error`"),
+        "Code span with leading space should be preserved exactly, got:\n{}",
+        result
+    );
+}
+
+#[test]
 fn test_reference_link_multiline_text_normalized() {
     // Reference link text spanning multiple lines should be normalized to single line
     let input = "Click [here for\nmore info][1].\n\n[1]: https://example.com";
