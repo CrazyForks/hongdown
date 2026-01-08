@@ -269,6 +269,43 @@ println!("{}", output);
 ~~~~
 
 
+Development
+-----------
+
+This project uses [mise] for task management.
+
+[mise]: https://mise.jdx.dev/
+
+### Initial setup
+
+After cloning the repository, set up the Git pre-commit hook to automatically
+run quality checks before each commit:
+
+~~~~ bash
+mise generate git-pre-commit --task=check --write
+~~~~
+
+### Quality checks
+
+The following tasks are available:
+
+~~~~ bash
+# Run all quality checks
+mise run check
+
+# Individual checks
+mise run check:clippy     # Run clippy linter
+mise run check:fmt        # Check code formatting
+mise run check:type       # Run Rust type checking
+mise run check:markdown   # Check Markdown formatting
+~~~~
+
+See *[AGENTS.md]* for detailed development guidelines including TDD
+practices, code style conventions, and commit message guidelines.
+
+[AGENTS.md]: ./AGENTS.md
+
+
 Etymology
 ---------
 

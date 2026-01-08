@@ -1,0 +1,22 @@
+[tools]
+rust = { version = "latest", profile = "default", components = "rust-analyzer" }
+
+[tasks.check]
+description = "Run all quality checks"
+depends = ["check:clippy", "check:fmt", "check:type", "check:markdown"]
+
+[tasks."check:clippy"]
+description = "Run clippy linter"
+run = "cargo clippy -- -D warnings"
+
+[tasks."check:fmt"]
+description = "Check code formatting"
+run = "cargo fmt --check"
+
+[tasks."check:type"]
+description = "Run Rust type checking"
+run = "cargo check"
+
+[tasks."check:markdown"]
+description = "Check Markdown formatting"
+run = "cargo run -- --check"

@@ -18,7 +18,19 @@ and Vertana.
 Development commands
 --------------------
 
-This is a Rust project using Cargo as the build system.
+This is a Rust project using Cargo as the build system.  We use [mise] for
+task management to streamline common development workflows.
+
+[mise]: https://mise.jdx.dev/
+
+### Initial setup
+
+After cloning the repository, set up the Git pre-commit hook to automatically
+run quality checks before each commit:
+
+~~~~ bash
+mise generate git-pre-commit --task=check --write
+~~~~
 
 ### Building
 
@@ -35,6 +47,21 @@ cargo test <name>      # Run specific test
 ~~~~
 
 ### Quality checks
+
+The recommended way to run quality checks is using mise tasks:
+
+~~~~ bash
+mise run check         # Run all quality checks (recommended)
+~~~~
+
+This runs all checks in parallel:
+
+ -  `mise run check:clippy` - Run clippy linter with warnings as errors
+ -  `mise run check:fmt` - Check code formatting
+ -  `mise run check:type` - Run Rust type checking
+ -  `mise run check:markdown` - Check Markdown formatting
+
+You can also run individual Cargo commands directly:
 
 ~~~~ bash
 cargo fmt              # Format code
@@ -144,11 +171,15 @@ Development tips
     cargo run -- -w README.md AGENTS.md
     ~~~~
 
- -  *Before committing*: Always run the full quality check suite:
+ -  *Before committing*: Always run the full quality check suite.  This is
+    automatically enforced by the Git pre-commit hook:
 
     ~~~~ bash
-    cargo test && cargo fmt --check && cargo clippy -- -D warnings
+    mise run check     # Runs all quality checks
     ~~~~
+
+    The pre-commit hook runs `mise run check` automatically before each
+    commit.  If any check fails, the commit will be aborted.
 
 ### Performance considerations
 
