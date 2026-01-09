@@ -1,6 +1,7 @@
 //! Table serialization logic.
 
 use comrak::nodes::{AstNode, NodeTable, TableAlignment};
+use unicode_width::UnicodeWidthStr;
 
 use super::Serializer;
 use super::escape;
@@ -36,7 +37,7 @@ impl<'a> Serializer<'a> {
                 // Escape pipe characters in table cells to prevent cell boundary confusion
                 let content = escape::escape_table_cell(&content);
                 if i < col_widths.len() {
-                    col_widths[i] = col_widths[i].max(content.len());
+                    col_widths[i] = col_widths[i].max(content.width());
                 }
                 row_cells.push(content);
             }
@@ -182,12 +183,31 @@ impl<'a> Serializer<'a> {
     }
 }
 
-/// Format a cell's content with alignment.
+/// Format a cell's content with alignment, accounting for display width.
+///
+/// The `width` parameter is the target display width (in terminal columns).
+/// Full-width characters (CJK, emoji, etc.) take 2 display columns each.
 fn format_cell_aligned(content: &str, width: usize, alignment: TableAlignment) -> String {
+    let content_width = content.width();
+    let padding = width.saturating_sub(content_width);
+
     match alignment {
-        TableAlignment::Right => format!("{:>width$}", content, width = width),
-        TableAlignment::Center => format!("{:^width$}", content, width = width),
-        TableAlignment::Left | TableAlignment::None => format!("{:width$}", content, width = width),
+        TableAlignment::Right => {
+            format!("{}{}", " ".repeat(padding), content)
+        }
+        TableAlignment::Center => {
+            let left_pad = padding / 2;
+            let right_pad = padding - left_pad;
+            format!(
+                "{}{}{}",
+                " ".repeat(left_pad),
+                content,
+                " ".repeat(right_pad)
+            )
+        }
+        TableAlignment::Left | TableAlignment::None => {
+            format!("{}{}", content, " ".repeat(padding))
+        }
     }
 }
 

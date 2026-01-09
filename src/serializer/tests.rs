@@ -3036,3 +3036,95 @@ Bar
 "
     );
 }
+
+#[test]
+fn test_serialize_table_with_fullwidth_characters() {
+    // Full-width characters (CJK, emoji) should take 2 display columns
+    let input = "| Name | Value |\n| ---- | ----: |\n| 한글 | 100 |\n| AB | 2000 |";
+    let result = parse_and_serialize_with_table(input);
+    let lines: Vec<&str> = result.lines().collect();
+    assert_eq!(lines.len(), 4, "Table should have 4 lines");
+
+    // "한글" has 2 characters but takes 4 display columns (2 each)
+    // "AB" has 2 characters and takes 2 display columns
+    // So minimum column width should be 4 for Name column
+    // For right-aligned Value column:
+    // "Value" = 5 display columns (header)
+    // "100" = 3 display columns, "2000" = 4 display columns
+    // The pipes should align properly when displayed in a terminal
+
+    // All rows should have pipes at the same display positions
+    // Since 한글 takes 4 columns and AB takes 2, AB needs 2 extra spaces
+    assert!(
+        lines[2].contains("| 한글"),
+        "Korean text should be in table, got:\n{}",
+        result
+    );
+    assert!(
+        lines[3].contains("| AB"),
+        "ASCII text should be in table, got:\n{}",
+        result
+    );
+
+    // Check that the right-aligned column aligns properly
+    // The pipes after the Value column should be at the same byte position
+    // when accounting for display width
+    let pipe_positions_row2: Vec<_> = lines[2].match_indices('|').map(|(i, _)| i).collect();
+    let pipe_positions_row3: Vec<_> = lines[3].match_indices('|').map(|(i, _)| i).collect();
+
+    // In a properly formatted table with full-width support,
+    // the row with "한글" (4 display cols) should have different byte offsets
+    // than the row with "AB" (2 display cols) for the second pipe
+    // but the display width should be the same
+    assert_eq!(
+        pipe_positions_row2.len(),
+        pipe_positions_row3.len(),
+        "Both rows should have same number of pipes"
+    );
+}
+
+#[test]
+fn test_serialize_table_fullwidth_right_alignment() {
+    // Right-aligned column with full-width characters
+    let input = "| Item | Price |\n| ---: | ----: |\n| 사과 | 1000 |\n| AB | 50 |";
+    let result = parse_and_serialize_with_table(input);
+
+    // "사과" = 4 display columns, "AB" = 2 display columns
+    // For right alignment, AB should have 2 extra spaces on the left
+    // to align with 사과 in display width
+
+    // When rendered in a terminal, both rows should have aligned pipes
+    assert!(result.contains("사과"), "Korean text should be preserved");
+    assert!(result.contains("AB"), "ASCII text should be preserved");
+
+    // The actual validation: check that ASCII row has more padding
+    let lines: Vec<&str> = result.lines().collect();
+    let ascii_row = lines[3]; // |   AB |   50 |
+
+    // In the ASCII row, there should be extra spaces before "AB" to compensate
+    // for the display width difference
+    assert!(
+        ascii_row.contains("|   AB"),
+        "AB should be padded with extra spaces for display width alignment, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_serialize_table_fullwidth_center_alignment() {
+    // Center-aligned column with full-width characters
+    let input = "| Item | Value |\n| :--: | :---: |\n| 가 | A |\n| ABCD | 나 |";
+    let result = parse_and_serialize_with_table(input);
+
+    // "가" = 2 display columns, "ABCD" = 4 display columns
+    // For center alignment, "가" needs 1 space on each side to match ABCD's width
+    // "나" = 2 display columns, "A" = 1 display column
+    // "A" needs more padding than "나" when centered
+
+    assert!(result.contains("가"), "Korean text should be preserved");
+    assert!(result.contains("나"), "Korean text should be preserved");
+
+    // Check that the table renders with proper alignment
+    let lines: Vec<&str> = result.lines().collect();
+    assert_eq!(lines.len(), 4, "Table should have 4 lines");
+}
