@@ -2236,3 +2236,104 @@ fn test_shortcut_link_followed_by_footnote() {
         result
     );
 }
+
+#[test]
+fn test_trailing_html_comment_after_references() {
+    // Trailing HTML comments (like cSpell ignore directives) should remain
+    // at the end of the document after reference definitions.
+    let input = r#"See the [docs] for more info.
+
+[docs]: https://example.com/docs
+
+<!-- cSpell: ignore: mybot -->
+"#;
+    let result = parse_and_serialize_with_source(input);
+    // The HTML comment should be at the very end, after the reference definition
+    // with a blank line before it
+    assert!(
+        result.ends_with("\n\n<!-- cSpell: ignore: mybot -->\n"),
+        "Trailing HTML comment should remain at the end with blank line before, got:\n{}",
+        result
+    );
+    // Reference definition should come before the HTML comment
+    let lines: Vec<&str> = result.lines().collect();
+    let comment_pos = lines.iter().position(|l| l.contains("cSpell")).unwrap();
+    let ref_pos = lines.iter().position(|l| l.starts_with("[docs]:")).unwrap();
+    assert!(
+        ref_pos < comment_pos,
+        "Reference definition should come before trailing HTML comment, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_trailing_html_comment_with_external_link() {
+    // When a document has an external link (which gets converted to reference style)
+    // and a trailing HTML comment, the comment should stay at the very end.
+    let input = r#"Check [example](https://example.com) for details.
+
+<!-- cSpell: ignore: mybot -->
+"#;
+    let result = parse_and_serialize_with_source(input);
+    // The HTML comment should be at the very end, after the reference definition
+    // with a blank line before it
+    assert!(
+        result.ends_with("\n\n<!-- cSpell: ignore: mybot -->\n"),
+        "Trailing HTML comment should remain at the end with blank line before, got:\n{}",
+        result
+    );
+    // The reference definition should come before the comment
+    let lines: Vec<&str> = result.lines().collect();
+    let comment_pos = lines.iter().position(|l| l.contains("cSpell")).unwrap();
+    let ref_pos = lines
+        .iter()
+        .position(|l| l.starts_with("[example]:"))
+        .unwrap();
+    assert!(
+        ref_pos < comment_pos,
+        "Reference definition should come before trailing HTML comment"
+    );
+}
+
+#[test]
+fn test_multiple_trailing_html_comments() {
+    // Multiple trailing HTML comments should all stay at the end
+    let input = r#"See [docs](https://example.com/docs) here.
+
+<!-- Comment 1 -->
+<!-- Comment 2 -->
+"#;
+    let result = parse_and_serialize_with_source(input);
+    // There should be a blank line before the first trailing comment
+    assert!(
+        result.ends_with("\n\n<!-- Comment 1 -->\n<!-- Comment 2 -->\n"),
+        "Multiple trailing HTML comments should remain at end with blank line before, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_html_comment_not_at_end_stays_in_place() {
+    // HTML comments that are not at the end should stay in their original position
+    let input = r#"First paragraph.
+
+<!-- Middle comment -->
+
+Second paragraph with [link](https://example.com).
+"#;
+    let result = parse_and_serialize_with_source(input);
+    // The middle comment should come before "Second paragraph"
+    let lines: Vec<&str> = result.lines().collect();
+    let comment_pos = lines
+        .iter()
+        .position(|l| l.contains("Middle comment"))
+        .unwrap();
+    let second_para_pos = lines
+        .iter()
+        .position(|l| l.contains("Second paragraph"))
+        .unwrap();
+    assert!(
+        comment_pos < second_para_pos,
+        "Middle HTML comment should stay before second paragraph"
+    );
+}

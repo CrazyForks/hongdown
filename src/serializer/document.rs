@@ -27,7 +27,17 @@ impl<'a> Serializer<'a> {
             }
         }
 
+        // Identify trailing HTML blocks (non-directive comments at the end of document)
+        // These should be output after reference definitions to maintain their position
+        let trailing_html_start = self.find_trailing_html_blocks(&children);
+
         for (i, child) in children.iter().enumerate() {
+            // Skip trailing HTML blocks for now - they'll be output after references
+            if i >= trailing_html_start
+                && let NodeValue::HtmlBlock(_) = &child.data.borrow().value
+            {
+                continue;
+            }
             // Skip FootnoteDefinition nodes (already processed above)
             if let NodeValue::FootnoteDefinition(_) = &child.data.borrow().value {
                 continue;
@@ -164,6 +174,69 @@ impl<'a> Serializer<'a> {
 
         self.flush_references();
         self.flush_footnotes();
+
+        // Output trailing HTML blocks after references and footnotes
+        self.output_trailing_html_blocks(&children, trailing_html_start);
+    }
+
+    /// Find the index where trailing HTML blocks start.
+    /// Returns `children.len()` if there are no trailing HTML blocks.
+    fn find_trailing_html_blocks<'b>(&self, children: &[&'b AstNode<'b>]) -> usize {
+        let mut trailing_start = children.len();
+
+        // Walk backwards from the end, looking for consecutive HTML blocks
+        // that are not formatting directives
+        for (i, child) in children.iter().enumerate().rev() {
+            match &child.data.borrow().value {
+                NodeValue::HtmlBlock(html_block) => {
+                    // Skip formatting directives - they should stay where they are
+                    if Directive::parse(&html_block.literal).is_some() {
+                        break;
+                    }
+                    // This is a regular HTML block (e.g., comment) - mark as trailing
+                    trailing_start = i;
+                }
+                NodeValue::FootnoteDefinition(_) => {
+                    // Skip footnote definitions - they're handled separately
+                    continue;
+                }
+                _ => {
+                    // Non-HTML block found - stop looking
+                    break;
+                }
+            }
+        }
+
+        trailing_start
+    }
+
+    /// Output trailing HTML blocks that were deferred until after references.
+    fn output_trailing_html_blocks<'b>(
+        &mut self,
+        children: &[&'b AstNode<'b>],
+        start_index: usize,
+    ) {
+        let mut is_first = true;
+        for (i, child) in children.iter().enumerate() {
+            if i < start_index {
+                continue;
+            }
+
+            if let NodeValue::HtmlBlock(html_block) = &child.data.borrow().value {
+                // Add a blank line before the first trailing HTML block
+                if is_first {
+                    if !self.output.ends_with("\n\n") {
+                        if self.output.ends_with('\n') {
+                            self.output.push('\n');
+                        } else {
+                            self.output.push_str("\n\n");
+                        }
+                    }
+                    is_first = false;
+                }
+                self.output.push_str(&html_block.literal);
+            }
+        }
     }
 
     pub(super) fn serialize_description_details<'b>(&mut self, node: &'b AstNode<'b>) {
