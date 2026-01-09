@@ -397,7 +397,14 @@ impl<'a> Serializer<'a> {
                 for (i, child) in children.iter().enumerate() {
                     if i > 0 {
                         // Add blank line between description items
-                        self.output.push('\n');
+                        // If inside a blockquote, we need to add the > prefix on the blank line
+                        // to keep items within the same blockquote
+                        if self.in_block_quote {
+                            self.output.push_str(&self.list_item_indent);
+                            self.output.push_str(">\n");
+                        } else {
+                            self.output.push('\n');
+                        }
                     }
                     self.serialize_node(child);
                 }

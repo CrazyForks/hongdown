@@ -2367,3 +2367,44 @@ Second paragraph with [link](https://example.com).
         "Middle HTML comment should stay before second paragraph"
     );
 }
+
+#[test]
+fn test_definition_list_in_alert_with_multiple_items() {
+    // Multiple definition list items inside an alert should preserve the > prefix
+    // on blank lines between items, so the alert doesn't get split into multiple pieces
+    let input = r#"> [!TIP]
+> It takes several kinds of objects as an argument, such as `Actor`, `string`,
+> and `URL`:
+>
+> `Actor`
+> :   The actor to follow.
+>
+> `URL`
+> :   The URI of the actor to follow.
+>     E.g., `new URL("https://example.com/users/alice")`.
+>
+> `string`
+> :   The URI or the fediverse handle of the actor to follow.
+>     E.g., `"https://example.com/users/alice"` or `"@alice@example.com"`."#;
+    let result = parse_and_serialize(input);
+
+    // The blank lines between definition items should have "> " prefix
+    // to keep them inside the alert
+    assert!(
+        !result.contains("\n\n> `URL`"),
+        "Definition list items should not be separated by empty lines without >. Got:\n{}",
+        result
+    );
+    assert!(
+        !result.contains("\n\n> `string`"),
+        "Definition list items should not be separated by empty lines without >. Got:\n{}",
+        result
+    );
+
+    // Should contain blank quote lines between items
+    assert!(
+        result.contains(">\n> `URL`") || result.contains(">\n>\n> `URL`"),
+        "Should have > prefix on blank lines between items. Got:\n{}",
+        result
+    );
+}
