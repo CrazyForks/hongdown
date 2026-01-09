@@ -268,10 +268,51 @@ impl<'a> Serializer<'a> {
 
         self.ensure_blank_line();
 
-        for footnote in &to_emit {
-            self.write_footnote(footnote);
-            self.footnotes.emitted.insert(footnote.name.clone());
+        // Count numeric footnotes to decide sorting strategy
+        let numeric_count = to_emit
+            .iter()
+            .filter(|f| Self::extract_numeric_footnote_name(&f.name).is_some())
+            .count();
+
+        if numeric_count < 2 {
+            // Less than 2 numeric footnotes: output all in insertion order
+            for footnote in &to_emit {
+                self.write_footnote(footnote);
+                self.footnotes.emitted.insert(footnote.name.clone());
+            }
+        } else {
+            // 2+ numeric footnotes: separate, sort numeric ones, output regular first
+            let mut regular_footnotes: Vec<&state::FootnoteDefinition> = Vec::new();
+            let mut numeric_footnotes: Vec<(u64, &state::FootnoteDefinition)> = Vec::new();
+
+            for footnote in &to_emit {
+                if let Some(num) = Self::extract_numeric_footnote_name(&footnote.name) {
+                    numeric_footnotes.push((num, footnote));
+                } else {
+                    regular_footnotes.push(footnote);
+                }
+            }
+
+            // Sort numeric footnotes by their numeric value
+            numeric_footnotes.sort_by_key(|(num, _)| *num);
+
+            // Output regular footnotes first (in insertion order)
+            for footnote in regular_footnotes {
+                self.write_footnote(footnote);
+                self.footnotes.emitted.insert(footnote.name.clone());
+            }
+
+            // Output numeric footnotes (sorted by number)
+            for (_, footnote) in numeric_footnotes {
+                self.write_footnote(footnote);
+                self.footnotes.emitted.insert(footnote.name.clone());
+            }
         }
+    }
+
+    /// Extract numeric value from a footnote name like "1" or "123"
+    fn extract_numeric_footnote_name(name: &str) -> Option<u64> {
+        name.parse::<u64>().ok()
     }
 
     /// Output all pending footnote definitions

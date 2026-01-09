@@ -2825,6 +2825,70 @@ See [example] and footnote[^1].
 }
 
 #[test]
+fn test_numeric_footnotes_sorted_at_end() {
+    // Numeric footnotes should be sorted by number and placed at the end
+    // (similar to link reference definitions)
+    let input = r#"This[^2] sentence[^non-numeric-b] has some footnotes.[^1]
+This sentence[^non-numeric-a] also has a footnote.[^3]
+
+[^2]: This is the second footnote.
+[^non-numeric-b]: This is another non-numeric footnote.
+[^1]: This is the first footnote.
+[^non-numeric-a]: This is a non-numeric footnote.
+[^3]: This is the third footnote.
+"#;
+    let result = parse_and_serialize_with_footnotes(input);
+
+    // Check that non-numeric footnotes come before numeric ones
+    let non_numeric_b_pos = result
+        .find("[^non-numeric-b]:")
+        .expect("non-numeric-b not found");
+    let non_numeric_a_pos = result
+        .find("[^non-numeric-a]:")
+        .expect("non-numeric-a not found");
+    let footnote_1_pos = result.find("[^1]:").expect("footnote 1 not found");
+    let footnote_2_pos = result.find("[^2]:").expect("footnote 2 not found");
+    let footnote_3_pos = result.find("[^3]:").expect("footnote 3 not found");
+
+    // Non-numeric footnotes should come before numeric footnotes
+    assert!(
+        non_numeric_b_pos < footnote_1_pos && non_numeric_a_pos < footnote_1_pos,
+        "Non-numeric footnotes should come before numeric ones.\nGot:\n{}",
+        result
+    );
+
+    // Numeric footnotes should be sorted: 1 < 2 < 3
+    assert!(
+        footnote_1_pos < footnote_2_pos && footnote_2_pos < footnote_3_pos,
+        "Numeric footnotes should be sorted by number.\nGot:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_single_numeric_footnote_not_sorted() {
+    // A single numeric footnote should stay in insertion order
+    let input = r#"Text[^foo] and[^1] and[^bar].
+
+[^foo]: Foo footnote.
+[^1]: Numeric footnote.
+[^bar]: Bar footnote.
+"#;
+    let result = parse_and_serialize_with_footnotes(input);
+
+    // With only one numeric footnote, it stays in insertion order
+    let foo_pos = result.find("[^foo]:").expect("foo not found");
+    let one_pos = result.find("[^1]:").expect("1 not found");
+    let bar_pos = result.find("[^bar]:").expect("bar not found");
+
+    assert!(
+        foo_pos < one_pos && one_pos < bar_pos,
+        "Single numeric footnote should stay in insertion order.\nGot:\n{}",
+        result
+    );
+}
+
+#[test]
 fn test_hard_line_break_in_blockquote() {
     // Hard line breaks (two trailing spaces) in a block quote should preserve
     // the `>` prefix on the continuation line.
