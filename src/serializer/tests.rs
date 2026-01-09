@@ -2123,6 +2123,119 @@ fn test_reference_after_abbreviation_no_warning() {
 }
 
 #[test]
+fn test_no_warning_in_disable_enable_region() {
+    // Undefined references inside hongdown-disable/enable regions
+    // should not produce warnings
+    let input = "Normal text.\n\n<!-- hongdown-disable -->\n\n[undefined ref] should not warn.\n\n<!-- hongdown-enable -->\n\nMore normal text.";
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(
+        result.warnings.len(),
+        0,
+        "Expected no warnings for disabled region but got: {:?}",
+        result.warnings
+    );
+}
+
+#[test]
+fn test_no_warning_in_disable_next_line() {
+    // Undefined reference on the line after hongdown-disable-next-line
+    // should not produce a warning
+    let input =
+        "<!-- hongdown-disable-next-line -->\n[undefined ref] should not warn.\n\nNormal text.";
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(
+        result.warnings.len(),
+        0,
+        "Expected no warnings for disabled line but got: {:?}",
+        result.warnings
+    );
+}
+
+#[test]
+fn test_no_warning_in_disable_file() {
+    // Undefined references after hongdown-disable-file should not produce warnings
+    let input = "<!-- hongdown-disable-file -->\n\n[undefined ref] should not warn.";
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(
+        result.warnings.len(),
+        0,
+        "Expected no warnings for disabled file but got: {:?}",
+        result.warnings
+    );
+}
+
+#[test]
+fn test_no_warning_in_disable_next_section() {
+    // disable-next-section disables content from the directive until the next h2/h1 heading.
+    // Content BETWEEN the directive and the next heading should not produce warnings.
+    let input = "First section\n-------------\n\nNormal text.\n\n<!-- hongdown-disable-next-section -->\n\n[undefined ref] should not warn.\n\nSecond section\n--------------\n\nNormal text.";
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(
+        result.warnings.len(),
+        0,
+        "Expected no warnings for disabled section but got: {:?}",
+        result.warnings
+    );
+}
+
+#[test]
+fn test_warning_before_disable_region() {
+    // Undefined references before a disabled region should still warn
+    let input = "[undefined before] warning expected.\n\n<!-- hongdown-disable -->\n\n[undefined inside] no warning.\n\n<!-- hongdown-enable -->\n\nNormal text.";
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(
+        result.warnings.len(),
+        1,
+        "Expected 1 warning for text before disabled region but got: {:?}",
+        result.warnings
+    );
+    assert!(result.warnings[0].message.contains("undefined before"));
+}
+
+#[test]
+fn test_warning_after_enable() {
+    // Undefined references after hongdown-enable should warn
+    let input = "Normal text.\n\n<!-- hongdown-disable -->\n\n[undefined inside] no warning.\n\n<!-- hongdown-enable -->\n\n[undefined after] warning expected.";
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(
+        result.warnings.len(),
+        1,
+        "Expected 1 warning for text after enabled region but got: {:?}",
+        result.warnings
+    );
+    assert!(result.warnings[0].message.contains("undefined after"));
+}
+
+#[test]
+fn test_warning_after_disable_next_line() {
+    // Undefined references after the disabled line should still warn
+    let input = "<!-- hongdown-disable-next-line -->\n[undefined on disabled line] no warning.\n\n[undefined after] warning expected.";
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(
+        result.warnings.len(),
+        1,
+        "Expected 1 warning for text after disabled line but got: {:?}",
+        result.warnings
+    );
+    assert!(result.warnings[0].message.contains("undefined after"));
+}
+
+#[test]
+fn test_warning_after_disable_next_section() {
+    // disable-next-section only disables content until the next h2/h1 heading.
+    // Content in the next section (after the heading) should still produce warnings.
+    let input = "First section\n-------------\n\nNormal text.\n\n<!-- hongdown-disable-next-section -->\n\n[undefined in disabled] no warning.\n\nSecond section\n--------------\n\n[undefined in second] warning expected.";
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(
+        result.warnings.len(),
+        1,
+        "Expected 1 warning for text after section heading but got: {:?}",
+        result.warnings
+    );
+    assert!(result.warnings[0].message.contains("undefined in second"));
+}
+
+#[test]
 fn test_heading_with_image() {
     // Images in headings should be preserved
     let result = parse_and_serialize("# ![logo](./logo.svg) Title");

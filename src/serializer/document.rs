@@ -500,6 +500,9 @@ impl<'a> Serializer<'a> {
         // (e.g., when they follow abbreviation definitions without a blank line)
         let source_ref_defs = Self::collect_source_reference_definitions(&self.source_lines);
 
+        // Collect disabled line ranges based on formatting directives
+        let disabled_ranges = Self::collect_disabled_line_ranges(node);
+
         // Collect warnings first to avoid borrow issues
         let warnings = Self::find_undefined_references_in_ast(
             node,
@@ -507,9 +510,96 @@ impl<'a> Serializer<'a> {
             &abbreviations,
             &source_ref_defs,
         );
+
+        // Filter out warnings that fall within disabled regions
         for (line, msg) in warnings {
-            self.add_warning(line, msg);
+            if !Self::is_line_in_disabled_ranges(line, &disabled_ranges) {
+                self.add_warning(line, msg);
+            }
         }
+    }
+
+    /// Collect line ranges that should be excluded from warnings due to
+    /// formatting directives (hongdown-disable, hongdown-disable-next-line, etc.).
+    ///
+    /// Returns a vector of (start_line, end_line) tuples representing disabled ranges.
+    fn collect_disabled_line_ranges<'b>(node: &'b AstNode<'b>) -> Vec<(usize, usize)> {
+        let mut ranges = Vec::new();
+        let children: Vec<_> = node.children().collect();
+
+        for (i, child) in children.iter().enumerate() {
+            if let NodeValue::HtmlBlock(html_block) = &child.data.borrow().value
+                && let Some(directive) = Directive::parse(&html_block.literal)
+            {
+                match directive {
+                    Directive::DisableFile => {
+                        // Everything after this directive is disabled
+                        let start_line = child.data.borrow().sourcepos.end.line + 1;
+                        ranges.push((start_line, usize::MAX));
+                    }
+                    Directive::DisableNextLine => {
+                        // Only the next block is disabled
+                        if let Some(next_child) = children.get(i + 1) {
+                            // Skip if next child is also a directive
+                            if !matches!(
+                                &next_child.data.borrow().value,
+                                NodeValue::HtmlBlock(hb) if Directive::parse(&hb.literal).is_some()
+                            ) {
+                                let start_line = next_child.data.borrow().sourcepos.start.line;
+                                let end_line = next_child.data.borrow().sourcepos.end.line;
+                                ranges.push((start_line, end_line));
+                            }
+                        }
+                    }
+                    Directive::DisableNextSection => {
+                        // Disabled until next h2 or lower heading
+                        let start_line = child.data.borrow().sourcepos.end.line + 1;
+                        let mut end_line = usize::MAX;
+
+                        // Find the next section (h2 or lower)
+                        for future_child in children.iter().skip(i + 1) {
+                            if let NodeValue::Heading(h) = &future_child.data.borrow().value
+                                && h.level <= 2
+                            {
+                                // End just before this heading
+                                end_line = future_child.data.borrow().sourcepos.start.line - 1;
+                                break;
+                            }
+                        }
+                        ranges.push((start_line, end_line));
+                    }
+                    Directive::Disable => {
+                        // Disabled until corresponding Enable directive
+                        let start_line = child.data.borrow().sourcepos.end.line + 1;
+                        let mut end_line = usize::MAX;
+
+                        // Find the corresponding Enable directive
+                        for future_child in children.iter().skip(i + 1) {
+                            if let NodeValue::HtmlBlock(hb) = &future_child.data.borrow().value
+                                && let Some(Directive::Enable) = Directive::parse(&hb.literal)
+                            {
+                                // End just before the Enable directive
+                                end_line = future_child.data.borrow().sourcepos.start.line - 1;
+                                break;
+                            }
+                        }
+                        ranges.push((start_line, end_line));
+                    }
+                    Directive::Enable => {
+                        // Enable doesn't start a new range, it ends one
+                    }
+                }
+            }
+        }
+
+        ranges
+    }
+
+    /// Check if a line number falls within any of the disabled ranges.
+    fn is_line_in_disabled_ranges(line: usize, ranges: &[(usize, usize)]) -> bool {
+        ranges
+            .iter()
+            .any(|(start, end)| line >= *start && line <= *end)
     }
 
     /// Collect PHP Markdown Extra abbreviation definitions from source.
