@@ -165,6 +165,72 @@ Additional TDD guidelines:
  -  When using LLMs or coding agents, include credit via `Co-Authored-By:`.
     Include a permalink to the agent session if available.
 
+### Changelog (*CHANGES.md*)
+
+This repository uses *CHANGES.md* as a human-readable changelog.  Follow these
+conventions:
+
+ -  *Structure*: Keep entries in reverse chronological order (newest version at
+    the top).
+
+ -  *Version sections*: Each release is a top-level section:
+
+    ~~~~
+    Version 0.1.0
+    -------------
+    ~~~~
+
+ -  *Unreleased version*: The next version should start with:
+
+    ~~~~
+    To be released.
+    ~~~~
+
+ -  *Released versions*: Use a release-date line right after the version header:
+
+    ~~~~
+    Released on December 30, 2025.
+    ~~~~
+
+    If you need to add brief context (e.g., initial release), keep it on the
+    same sentence:
+
+    ~~~~
+    Released on August 21, 2025.  Initial release.
+    ~~~~
+
+ -  *Bullets and wrapping*: Use ` -  ` list items, wrap around ~80 columns, and
+    indent continuation lines by 4 spaces so they align with the bullet text.
+
+ -  *Write useful change notes*: Prefer concrete, user-facing descriptions.
+    Include what changed, why it changed, and what users should do differently
+    (especially for breaking changes, deprecations, and security fixes).
+
+ -  *Multi-paragraph items*: For longer explanations, keep paragraphs inside the
+    same bullet item by indenting them by 4 spaces and separating paragraphs
+    with a blank line (also indented).
+
+ -  *Code blocks in bullets*: If a bullet includes code, indent the entire code
+    fence by 4 spaces so it remains part of that list item.  Use `~~~~` fences
+    and specify a language (e.g., `~~~~ rust`).
+
+ -  *Nested lists*: If you need sub-items (e.g., a list of added features), use
+    a nested list inside the parent bullet, indented by 4 spaces.
+
+ -  *Issue and PR references*: Use `[[#123]]` markers in the text and add
+    reference links at the end of the version section.
+
+    When listing multiple issues/PRs, list them like `[[#123], [#124]]`.
+
+    When the reference is for a PR authored by an external contributor, append
+    `by <NAME>` after the last reference marker (e.g., `[[#123] by Hong Minhee]`
+    or `[[#123], [#124] by Hong Minhee]`).
+
+    ~~~~
+    [#123]: https://github.com/dahlia/hongdown/issues/123
+    [#124]: https://github.com/dahlia/hongdown/pull/124
+    ~~~~
+
 
 Development tips
 ----------------
