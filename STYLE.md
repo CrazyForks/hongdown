@@ -357,20 +357,22 @@ Pipe characters within cell content are escaped:
 Thematic breaks
 ---------------
 
-### Asterisks with double spaces
+### Dashes with spaces
 
-Thematic breaks (horizontal rules) are rendered as `*  *  *  *  *`:
+Thematic breaks (horizontal rules) are rendered as a long line of spaced dashes
+(37 dashes) with 3 leading spaces:
 
 ~~~~ markdown
 Previous section content.
 
-  *  *  *  *  *
+   - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 New section content.
 ~~~~
 
-*Rationale*: The asterisks with double spaces create a visually distinct
-separator while maintaining the philosophy of readable plain text.
+*Rationale*: The extended line of dashes creates a visually prominent separator
+that resembles a traditional horizontal rule, making section breaks immediately
+apparent when scanning the plain text source.
 
 
 Line wrapping

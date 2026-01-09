@@ -188,8 +188,9 @@ pub struct ThematicBreakConfig {
 impl Default for ThematicBreakConfig {
     fn default() -> Self {
         Self {
-            style: "*  *  *  *  *".to_string(),
-            leading_spaces: 2,
+            style: "- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -"
+                .to_string(),
+            leading_spaces: 3,
         }
     }
 }
@@ -354,8 +355,11 @@ mod tests {
         assert_eq!(config.code_block.min_fence_length, 4);
         assert!(config.code_block.space_after_fence);
         assert_eq!(config.code_block.default_language, "");
-        assert_eq!(config.thematic_break.style, "*  *  *  *  *");
-        assert_eq!(config.thematic_break.leading_spaces, 2);
+        assert_eq!(
+            config.thematic_break.style,
+            "- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -"
+        );
+        assert_eq!(config.thematic_break.leading_spaces, 3);
     }
 
     #[test]
@@ -496,8 +500,8 @@ min_fence_length = 4
 space_after_fence = true
 
 [thematic_break]
-style = "*  *  *  *  *"
-leading_spaces = 2
+style = "- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -"
+leading_spaces = 3
 "#,
         )
         .unwrap();

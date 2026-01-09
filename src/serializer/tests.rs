@@ -1391,7 +1391,10 @@ fn test_horizontal_rule() {
     let result = parse_and_serialize(input);
     // Horizontal rules should be preserved with default style
     assert!(result.contains("Before"));
-    assert!(result.contains("*  *  *  *  *"));
+    assert!(
+        result
+            .contains("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -")
+    );
     assert!(result.contains("After"));
 }
 
@@ -1399,10 +1402,12 @@ fn test_horizontal_rule() {
 fn test_thematic_break_default_leading_spaces() {
     let input = "Before\n\n---\n\nAfter";
     let result = parse_and_serialize(input);
-    // Default leading_spaces is 2
+    // Default leading_spaces is 3
     assert!(
-        result.contains("\n  *  *  *  *  *\n"),
-        "Expected 2 leading spaces by default, got:\n{}",
+        result.contains(
+            "\n   - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n"
+        ),
+        "Expected 3 leading spaces by default, got:\n{}",
         result
     );
 }
@@ -1467,13 +1472,15 @@ fn test_thematic_break_idempotent() {
 fn test_thematic_break_various_input_styles() {
     // Test various input styles are normalized to default style
     let inputs = vec!["---", "***", "___", "- - -", "* * *", "_ _ _"];
+    let expected = "- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -";
     for input in inputs {
         let full_input = format!("Before\n\n{}\n\nAfter", input);
         let result = parse_and_serialize(&full_input);
         assert!(
-            result.contains("*  *  *  *  *"),
-            "Input '{}' should be normalized to '*  *  *  *  *', got:\n{}",
+            result.contains(expected),
+            "Input '{}' should be normalized to '{}', got:\n{}",
             input,
+            expected,
             result
         );
     }

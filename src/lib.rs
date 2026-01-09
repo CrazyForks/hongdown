@@ -97,8 +97,10 @@ impl Default for Options {
             min_fence_length: 4,
             space_after_fence: true,
             default_language: String::new(),
-            thematic_break_style: "*  *  *  *  *".to_string(),
-            thematic_break_leading_spaces: 2,
+            thematic_break_style:
+                "- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -"
+                    .to_string(),
+            thematic_break_leading_spaces: 3,
         }
     }
 }
