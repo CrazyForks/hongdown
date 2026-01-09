@@ -58,8 +58,9 @@ impl<'a> Serializer<'a> {
             for (i, cell) in header_cells.iter().enumerate() {
                 self.output.push(' ');
                 let width = col_widths.get(i).copied().unwrap_or(3);
-                self.output
-                    .push_str(&format!("{:width$}", cell, width = width));
+                let alignment = alignments.get(i).copied().unwrap_or(TableAlignment::None);
+                let formatted = format_cell_aligned(cell, width, alignment);
+                self.output.push_str(&formatted);
                 self.output.push_str(" |");
             }
             self.output.push('\n');
@@ -104,8 +105,9 @@ impl<'a> Serializer<'a> {
             for (i, cell) in row_cells.iter().enumerate() {
                 self.output.push(' ');
                 let width = col_widths.get(i).copied().unwrap_or(3);
-                self.output
-                    .push_str(&format!("{:width$}", cell, width = width));
+                let alignment = alignments.get(i).copied().unwrap_or(TableAlignment::None);
+                let formatted = format_cell_aligned(cell, width, alignment);
+                self.output.push_str(&formatted);
                 self.output.push_str(" |");
             }
             self.output.push('\n');
@@ -177,6 +179,15 @@ impl<'a> Serializer<'a> {
                 );
             }
         }
+    }
+}
+
+/// Format a cell's content with alignment.
+fn format_cell_aligned(content: &str, width: usize, alignment: TableAlignment) -> String {
+    match alignment {
+        TableAlignment::Right => format!("{:>width$}", content, width = width),
+        TableAlignment::Center => format!("{:^width$}", content, width = width),
+        TableAlignment::Left | TableAlignment::None => format!("{:width$}", content, width = width),
     }
 }
 

@@ -509,6 +509,55 @@ fn test_serialize_table_with_alignment() {
 }
 
 #[test]
+fn test_serialize_table_right_aligned_cell_data() {
+    // Right-aligned columns should have data cells right-aligned (padded on the left)
+    let input = "| Name | Value |\n| ---- | ----: |\n| A | 1 |\n| BB | 22 |";
+    let result = parse_and_serialize_with_table(input);
+    let lines: Vec<&str> = result.lines().collect();
+    assert_eq!(lines.len(), 4, "Table should have 4 lines");
+
+    // The Value column is right-aligned with width 5 ("Value" length)
+    // "1" should be right-aligned: "|     1 |" (4 spaces + 1)
+    // "22" should be right-aligned: "|    22 |" (3 spaces + 22)
+    // The data rows are lines[2] and lines[3]
+    assert!(
+        lines[2].contains("|     1 |"),
+        "Right-aligned column data should be right-aligned (padded on left), got:\n{}",
+        result
+    );
+    assert!(
+        lines[3].contains("|    22 |"),
+        "Right-aligned column data should be right-aligned (padded on left), got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_serialize_table_center_aligned_cell_data() {
+    // Center-aligned columns should have data cells center-aligned
+    let input = "| Name | Value |\n| ---- | :---: |\n| A | 1 |\n| BB | 22 |";
+    let result = parse_and_serialize_with_table(input);
+    let lines: Vec<&str> = result.lines().collect();
+    assert_eq!(lines.len(), 4, "Table should have 4 lines");
+
+    // The Value column is center-aligned with width 5 ("Value" length)
+    // Cell format is: "| " + content + " |", where content is centered
+    // "1" centered in width 5: "  1  " -> "|   1   |"
+    // "22" centered in width 5: " 22  " (1 left, 2 right) -> "|  22   |"
+    // Note: Rust's {:^} adds extra padding on right when asymmetric
+    assert!(
+        lines[2].contains("|   1   |"),
+        "Center-aligned column data should be centered, got:\n{}",
+        result
+    );
+    assert!(
+        lines[3].contains("|  22   |"),
+        "Center-aligned column data should be centered, got:\n{}",
+        result
+    );
+}
+
+#[test]
 fn test_serialize_table_aligned_columns() {
     let input = "| Name | Age |\n|------|-----|\n| Alice | 30 |\n| Bob | 25 |";
     let result = parse_and_serialize_with_table(input);
