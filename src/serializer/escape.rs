@@ -115,6 +115,27 @@ pub fn format_code_span(content: &str) -> String {
     }
 }
 
+/// Check if a string is a valid code span (starts and ends with matching backticks).
+/// This is used to validate source extraction results, since comrak may provide
+/// incorrect sourcepos for code spans containing escaped pipe characters in tables.
+pub fn is_valid_code_span(source: &str) -> bool {
+    if source.is_empty() {
+        return false;
+    }
+
+    // Count leading backticks
+    let leading_backticks = source.chars().take_while(|&c| c == '`').count();
+    if leading_backticks == 0 {
+        return false;
+    }
+
+    // Count trailing backticks
+    let trailing_backticks = source.chars().rev().take_while(|&c| c == '`').count();
+
+    // A valid code span has matching backtick counts at both ends
+    leading_backticks == trailing_backticks && leading_backticks <= source.len() / 2
+}
+
 /// Escape pipe characters in table cell content.
 /// Pipes must be escaped to prevent being interpreted as cell boundaries.
 pub fn escape_table_cell(content: &str) -> String {
@@ -140,4 +161,28 @@ pub fn escape_table_cell(content: &str) -> String {
         }
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_valid_code_span() {
+        // Valid code spans
+        assert!(is_valid_code_span("`foo`"));
+        assert!(is_valid_code_span("`string \\| number`"));
+        assert!(is_valid_code_span("``foo``"));
+        assert!(is_valid_code_span("`` foo ` bar ``"));
+
+        // Invalid code spans (missing closing backtick)
+        assert!(!is_valid_code_span("`foo"));
+        assert!(!is_valid_code_span("`string \\| number"));
+        assert!(!is_valid_code_span("``foo`"));
+
+        // Edge cases
+        assert!(!is_valid_code_span(""));
+        assert!(!is_valid_code_span("foo"));
+        assert!(!is_valid_code_span("foo`"));
+    }
 }

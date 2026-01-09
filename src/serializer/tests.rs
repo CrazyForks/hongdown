@@ -566,6 +566,36 @@ fn test_serialize_table_with_reference_links() {
     );
 }
 
+#[test]
+fn test_serialize_table_with_pipe_in_code_span() {
+    // Table cells containing code spans with pipe characters should preserve the closing backtick.
+    // This tests the fix for comrak sourcepos bug with escaped pipes in code spans.
+    let input = "| Option | Type |\n|--------|------|\n| `foo` | `string \\| number` |";
+    let result = parse_and_serialize_with_table(input);
+    assert!(
+        result.contains("`string \\| number`"),
+        "Code span with pipe should have closing backtick preserved, got:\n{}",
+        result
+    );
+    assert!(
+        result.contains("`foo`"),
+        "Simple code span should be preserved, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_serialize_table_with_multiple_pipes_in_code_span() {
+    // Test multiple pipe characters in a single code span
+    let input = "| Field | Type |\n|-------|------|\n| `val` | `\"a\" \\| \"b\" \\| \"c\"` |";
+    let result = parse_and_serialize_with_table(input);
+    assert!(
+        result.contains("`\"a\" \\| \"b\" \\| \"c\"`"),
+        "Code span with multiple pipes should have closing backtick preserved, got:\n{}",
+        result
+    );
+}
+
 fn parse_and_serialize_with_description_list(input: &str) -> String {
     let arena = Arena::new();
     let mut options = ComrakOptions::default();

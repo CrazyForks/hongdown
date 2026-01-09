@@ -46,9 +46,15 @@ impl<'a> Serializer<'a> {
                 }
             }
             NodeValue::Code(code) => {
-                // Try to use original source to preserve spacing
+                // Try to use original source to preserve spacing, but validate it first.
+                // comrak may provide incorrect sourcepos for code spans in table cells
+                // containing escaped pipe characters (e.g., `string \| number`).
                 if let Some(source) = self.extract_source(node) {
-                    text.push_str(&source);
+                    if escape::is_valid_code_span(&source) {
+                        text.push_str(&source);
+                    } else {
+                        text.push_str(&escape::format_code_span(&code.literal));
+                    }
                 } else {
                     text.push_str(&escape::format_code_span(&code.literal));
                 }
@@ -152,9 +158,15 @@ impl<'a> Serializer<'a> {
                 content.push_str(delim);
             }
             NodeValue::Code(code) => {
-                // Try to use original source to preserve spacing
+                // Try to use original source to preserve spacing, but validate it first.
+                // comrak may provide incorrect sourcepos for code spans in table cells
+                // containing escaped pipe characters (e.g., `string \| number`).
                 if let Some(source) = self.extract_source(node) {
-                    content.push_str(&source);
+                    if escape::is_valid_code_span(&source) {
+                        content.push_str(&source);
+                    } else {
+                        content.push_str(&escape::format_code_span(&code.literal));
+                    }
                 } else {
                     content.push_str(&escape::format_code_span(&code.literal));
                 }
