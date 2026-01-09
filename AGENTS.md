@@ -90,6 +90,19 @@ Test helper functions in *src/serializer/tests.rs*:
     for directive support
  -  `parse_and_serialize_with_warnings(input)` - Format and capture warnings
 
+### Formatting
+
+To format all files (Rust code and Markdown files):
+
+~~~~ bash
+mise run fmt           # Format all files (recommended)
+~~~~
+
+This runs:
+
+ -  `mise run fmt:rust` - Format Rust code with `cargo fmt`
+ -  `mise run fmt:markdown` - Format Markdown files with Hongdown
+
 ### Quality checks
 
 The recommended way to run quality checks is using mise tasks:
@@ -274,11 +287,10 @@ Development tips
     frequently during development, not just before committing.  This
     catches issues early and keeps the codebase clean.
 
- -  *Format Markdown files*: After editing any Markdown files (*.md*),
-    always format them with Hongdown:
+ -  *Format files*: After editing code or Markdown files, format them:
 
     ~~~~ bash
-    cargo run -- -w README.md AGENTS.md
+    mise run fmt       # Format all files
     ~~~~
 
  -  *Before committing*: Always run the full quality check suite.  This is

@@ -1,6 +1,18 @@
 [tools]
 rust = { version = "latest", profile = "default", components = "rust-analyzer" }
 
+[tasks.fmt]
+description = "Format all files"
+depends = ["fmt:rust", "fmt:markdown"]
+
+[tasks."fmt:rust"]
+description = "Format Rust code"
+run = "cargo fmt"
+
+[tasks."fmt:markdown"]
+description = "Format Markdown files"
+run = "cargo run -- --write"
+
 [tasks.check]
 description = "Run all quality checks"
 depends = ["check:clippy", "check:fmt", "check:type", "check:markdown"]
