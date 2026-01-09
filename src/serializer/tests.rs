@@ -2198,6 +2198,36 @@ fn test_definition_list_in_blockquote_multiline() {
 }
 
 #[test]
+fn test_definition_list_with_alert() {
+    // Alert inside definition list should preserve 4-space indent
+    let input = "term\n:   First paragraph.\n\n    > [!NOTE]\n    > This is a note.\n    > It has multiple lines.";
+    let result = parse_and_serialize(input);
+    assert_eq!(
+        result,
+        "term\n:   First paragraph.\n\n    > [!NOTE]\n    > This is a note.\n    > It has multiple lines.\n"
+    );
+}
+
+#[test]
+fn test_definition_list_with_blockquote() {
+    // Blockquote inside definition list should preserve 4-space indent
+    let input = "term\n:   First paragraph.\n\n    > This is a quote.\n    > With multiple lines.";
+    let result = parse_and_serialize(input);
+    assert_eq!(
+        result,
+        "term\n:   First paragraph.\n\n    > This is a quote.\n    > With multiple lines.\n"
+    );
+}
+
+#[test]
+fn test_definition_list_with_alert_as_first_child() {
+    // Alert as first child in definition list (note: `:   >` format required)
+    let input = "term\n:   > [!TIP]\n    > This is a tip.";
+    let result = parse_and_serialize(input);
+    assert_eq!(result, "term\n:\n    > [!TIP]\n    > This is a tip.\n");
+}
+
+#[test]
 fn test_code_block_default_no_language() {
     // By default, code blocks without a language identifier should stay without one
     let result = parse_and_serialize("```\nsome code\n```");

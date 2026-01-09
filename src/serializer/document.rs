@@ -293,6 +293,16 @@ impl<'a> Serializer<'a> {
                         self.output.push_str(":\n");
                         self.serialize_node(child);
                     }
+                    NodeValue::BlockQuote | NodeValue::Alert(_) => {
+                        // Block quotes and alerts as first child: output marker, newline,
+                        // then serialize with proper list_item_indent for continuation lines
+                        self.output.push_str(&blockquote_prefix);
+                        self.output.push_str(":\n");
+                        let old_list_item_indent =
+                            std::mem::replace(&mut self.list_item_indent, "    ".to_string());
+                        self.serialize_node(child);
+                        self.list_item_indent = old_list_item_indent;
+                    }
                     _ => {
                         // Other block types: serialize normally with indent
                         self.output.push_str(&blockquote_prefix);
@@ -330,6 +340,14 @@ impl<'a> Serializer<'a> {
                     NodeValue::List(_) => {
                         // Lists handle their own indentation via in_description_details flag
                         self.serialize_node(child);
+                    }
+                    NodeValue::BlockQuote | NodeValue::Alert(_) => {
+                        // Block quotes and alerts need list_item_indent to be set
+                        // so that their continuation lines are properly indented
+                        let old_list_item_indent =
+                            std::mem::replace(&mut self.list_item_indent, "    ".to_string());
+                        self.serialize_node(child);
+                        self.list_item_indent = old_list_item_indent;
                     }
                     _ => {
                         // Other block types
