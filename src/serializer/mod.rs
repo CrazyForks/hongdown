@@ -133,6 +133,18 @@ impl<'a> Serializer<'a> {
         Some((text.clone(), text))
     }
 
+    /// Ensure output ends with a blank line (two newlines).
+    /// Used before emitting reference definitions and footnotes.
+    fn ensure_blank_line(&mut self) {
+        if !self.output.ends_with("\n\n") {
+            if self.output.ends_with('\n') {
+                self.output.push('\n');
+            } else {
+                self.output.push_str("\n\n");
+            }
+        }
+    }
+
     /// Output pending reference definitions and clear them
     fn flush_references(&mut self) {
         if self.pending_references.is_empty() {
@@ -159,14 +171,7 @@ impl<'a> Serializer<'a> {
             .filter(|r| Self::extract_numeric_label(&r.label).is_some())
             .count();
 
-        // Add a blank line before references if not already present
-        if !self.output.ends_with("\n\n") {
-            if self.output.ends_with('\n') {
-                self.output.push('\n');
-            } else {
-                self.output.push_str("\n\n");
-            }
-        }
+        self.ensure_blank_line();
 
         if numeric_count < 2 {
             // Less than 2 numeric refs: output all in insertion order
@@ -274,14 +279,7 @@ impl<'a> Serializer<'a> {
             return;
         }
 
-        // Add a blank line before footnotes if not already present
-        if !self.output.ends_with("\n\n") {
-            if self.output.ends_with('\n') {
-                self.output.push('\n');
-            } else {
-                self.output.push_str("\n\n");
-            }
-        }
+        self.ensure_blank_line();
 
         for footnote in &to_emit {
             self.write_footnote(footnote);
@@ -329,14 +327,7 @@ impl<'a> Serializer<'a> {
             return;
         }
 
-        // Add a blank line before references if not already present
-        if !self.output.ends_with("\n\n") {
-            if self.output.ends_with('\n') {
-                self.output.push('\n');
-            } else {
-                self.output.push_str("\n\n");
-            }
-        }
+        self.ensure_blank_line();
 
         // Output references in insertion order
         for reference in &to_emit {
