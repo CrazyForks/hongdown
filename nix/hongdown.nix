@@ -1,21 +1,15 @@
 {
   lib,
   rustPlatform,
-  fetchFromGitHub,
   ...
 }:
-rustPlatform.buildRustPackage rec {
+rustPlatform.buildRustPackage {
   name = "hongdown";
   version = "0.1.0";
 
-  src = fetchFromGitHub {
-    owner = "dahlia";
-    repo = "hongdown";
-    rev = "${version}";
-    hash = "sha256-dXDzzXNy5noOVCTmzueospo9xJdwdDswAWpkkFBOeLQ=";
-  };
-  useFetchCargoVendor = true;
-  cargoHash = "sha256-lV+lPM/AAnhvoekR5iEWbes9aShqTbkDCJSw56eqUgI=";
+  src = ./..;
+  cargoLock.lockFile = ../Cargo.lock;
+
   meta = {
     description = "A Markdown formatter that enforces Hong Minhee's Markdown style conventions";
     mainProgram = "hongdown";
