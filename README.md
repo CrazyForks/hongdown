@@ -47,7 +47,7 @@ cargo install hongdown
 ### Nix
 
 ~~~ bash
-nix run https://github.com/dahlia/hongdown
+nix run github:dahlia/hongdown
 ~~~
 
 ### Pre-built binaries
