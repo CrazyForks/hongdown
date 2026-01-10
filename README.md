@@ -68,6 +68,10 @@ hongdown -w input.md
 # Format multiple files
 hongdown -w *.md
 
+# Format all Markdown files in a directory (recursive)
+hongdown -w .
+hongdown -w docs/
+
 # Check if files are formatted (exit 1 if not)
 hongdown --check input.md
 hongdown -c input.md

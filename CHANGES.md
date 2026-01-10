@@ -6,6 +6,12 @@ Version 0.2.0
 
 To be released.
 
+ -  Added support for directory arguments.  When a directory is passed as an
+    argument, Hongdown now recursively finds all Markdown files (_\*.md_ and
+    _\*.markdown_) within it.  [[#2]]
+
+[#2]: https://github.com/dahlia/hongdown/issues/2
+
 
 Version 0.1.0
 -------------

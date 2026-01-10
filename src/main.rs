@@ -2,7 +2,7 @@
 
 use std::fs;
 use std::io::{self, Read};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -11,6 +11,7 @@ use hongdown::config::Config;
 use hongdown::{Options, format_with_warnings};
 use rayon::prelude::*;
 use similar::{ChangeTag, TextDiff};
+use walkdir::WalkDir;
 
 /// A Markdown formatter that enforces Hong Minhee's Markdown style conventions.
 #[derive(Parser, Debug)]
@@ -105,13 +106,15 @@ fn main() -> ExitCode {
         }
     } else if stdin_requested {
         // Filter out `-` from files list since we'll handle stdin separately
-        args.files
+        let filtered: Vec<PathBuf> = args
+            .files
             .iter()
             .filter(|f| f.to_str() != Some("-"))
             .cloned()
-            .collect()
+            .collect();
+        expand_paths(&filtered)
     } else {
-        args.files.clone()
+        expand_paths(&args.files)
     };
 
     if stdin_requested {
@@ -308,6 +311,41 @@ fn print_diff(filename: &str, original: &str, formatted: &str) {
             }
         }
     }
+}
+
+/// Expand paths, converting directories to their contained `.md` files.
+///
+/// If a path is a directory, recursively finds all `.md` files within it.
+/// If a path is a file, it is included as-is.
+fn expand_paths(paths: &[PathBuf]) -> Vec<PathBuf> {
+    let mut result = Vec::new();
+    for path in paths {
+        if path.is_dir() {
+            result.extend(collect_md_files(path));
+        } else {
+            result.push(path.clone());
+        }
+    }
+    result
+}
+
+/// Recursively collect all Markdown files (`.md` and `.markdown`) from a directory.
+fn collect_md_files(dir: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    for entry in WalkDir::new(dir).follow_links(true) {
+        let Ok(entry) = entry else { continue };
+        let path = entry.path();
+        if path.is_file() {
+            let is_markdown = path.extension().is_some_and(|ext| {
+                ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown")
+            });
+            if is_markdown {
+                files.push(path.to_path_buf());
+            }
+        }
+    }
+    files.sort();
+    files
 }
 
 /// Load configuration from file or use defaults.

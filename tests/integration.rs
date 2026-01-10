@@ -366,4 +366,174 @@ mod cli_tests {
         assert_eq!(exit_code, 0);
         assert!(stdout.contains("Test\n===="));
     }
+
+    /// Test that passing a directory as an argument recursively finds .md files.
+    #[test]
+    fn test_directory_argument_finds_md_files() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+
+        // Create some already-formatted .md files (using setext headings)
+        fs::write(
+            temp_dir.path().join("README.md"),
+            "README\n======\n\nContent.\n",
+        )
+        .expect("Failed to write README.md");
+        fs::write(
+            temp_dir.path().join("CHANGELOG.md"),
+            "Changelog\n=========\n\nChanges.\n",
+        )
+        .expect("Failed to write CHANGELOG.md");
+
+        // Create a subdirectory with more .md files
+        let docs_dir = temp_dir.path().join("docs");
+        fs::create_dir(&docs_dir).expect("Failed to create docs dir");
+        fs::write(
+            docs_dir.join("guide.md"),
+            "Guide\n=====\n\nGuide content.\n",
+        )
+        .expect("Failed to write guide.md");
+
+        // Create a .markdown file (should also be found)
+        fs::write(
+            docs_dir.join("reference.markdown"),
+            "Reference\n=========\n\nReference content.\n",
+        )
+        .expect("Failed to write reference.markdown");
+
+        // Create a non-.md file that should be ignored
+        fs::write(temp_dir.path().join("main.rs"), "fn main() {}")
+            .expect("Failed to write main.rs");
+
+        let (stdout, _stderr, exit_code) =
+            run_hongdown(&["--check", temp_dir.path().to_str().unwrap()], None);
+
+        // All .md files are already formatted, so --check should succeed
+        assert_eq!(exit_code, 0, "All .md files should be formatted");
+        assert!(stdout.is_empty(), "No output expected when all files pass");
+    }
+
+    /// Test that --write with directory argument formats all .md files.
+    #[test]
+    fn test_directory_argument_write_mode() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+
+        // Create an unformatted .md file
+        fs::write(temp_dir.path().join("test.md"), "# Test\n\nParagraph.")
+            .expect("Failed to write test.md");
+
+        // Create a subdirectory with an unformatted file
+        let sub_dir = temp_dir.path().join("sub");
+        fs::create_dir(&sub_dir).expect("Failed to create sub dir");
+        fs::write(sub_dir.join("nested.md"), "# Nested\n\nContent.")
+            .expect("Failed to write nested.md");
+
+        let (stdout, _stderr, exit_code) =
+            run_hongdown(&["--write", temp_dir.path().to_str().unwrap()], None);
+
+        assert_eq!(exit_code, 0);
+
+        // Both files should be reported as changed
+        assert!(
+            stdout.contains("test.md"),
+            "Should report test.md as changed"
+        );
+        assert!(
+            stdout.contains("nested.md"),
+            "Should report nested.md as changed"
+        );
+
+        // Verify files were actually formatted
+        let test_content =
+            fs::read_to_string(temp_dir.path().join("test.md")).expect("Failed to read test.md");
+        assert!(
+            test_content.contains("Test\n===="),
+            "test.md should be formatted"
+        );
+
+        let nested_content =
+            fs::read_to_string(sub_dir.join("nested.md")).expect("Failed to read nested.md");
+        assert!(
+            nested_content.contains("Nested\n======"),
+            "nested.md should be formatted"
+        );
+    }
+
+    /// Test that directory argument with --check fails when files need formatting.
+    #[test]
+    fn test_directory_argument_check_fails_on_unformatted() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+
+        // Create an unformatted .md file
+        fs::write(temp_dir.path().join("unformatted.md"), "# Title\n\nText.")
+            .expect("Failed to write unformatted.md");
+
+        let (_stdout, stderr, exit_code) =
+            run_hongdown(&["--check", temp_dir.path().to_str().unwrap()], None);
+
+        assert_ne!(exit_code, 0, "Should fail when files need formatting");
+        assert!(
+            stderr.contains("not formatted"),
+            "Should report unformatted file"
+        );
+    }
+
+    /// Test that empty directory produces no error.
+    #[test]
+    fn test_directory_argument_empty_dir() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+
+        let (stdout, stderr, exit_code) =
+            run_hongdown(&["--check", temp_dir.path().to_str().unwrap()], None);
+
+        // Empty directory should succeed (nothing to check)
+        assert_eq!(
+            exit_code, 0,
+            "Empty directory should not fail: stderr={}",
+            stderr
+        );
+        assert!(stdout.is_empty());
+    }
+
+    /// Test mixing directory and file arguments.
+    #[test]
+    fn test_mixed_directory_and_file_arguments() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+
+        // Create a directory with an already-formatted file
+        let sub_dir = temp_dir.path().join("docs");
+        fs::create_dir(&sub_dir).expect("Failed to create docs dir");
+        fs::write(sub_dir.join("doc.md"), "Doc\n===\n\nContent.\n")
+            .expect("Failed to write doc.md");
+
+        // Create a standalone already-formatted file
+        let standalone = temp_dir.path().join("standalone.md");
+        fs::write(&standalone, "Standalone\n==========\n\nText.\n")
+            .expect("Failed to write standalone.md");
+
+        let (stdout, _stderr, exit_code) = run_hongdown(
+            &[
+                "--check",
+                sub_dir.to_str().unwrap(),
+                standalone.to_str().unwrap(),
+            ],
+            None,
+        );
+
+        assert_eq!(exit_code, 0, "All files should pass check");
+        assert!(stdout.is_empty());
+    }
 }
