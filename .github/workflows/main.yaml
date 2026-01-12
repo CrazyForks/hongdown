@@ -212,7 +212,7 @@ jobs:
         mkdir -p packages/wasm/pkg
         cp -r pkg/* packages/wasm/pkg/
         cd packages/wasm
-        pnpm install --frozen-lockfile
+        pnpm install --no-frozen-lockfile
         pnpm run build
 
     - uses: actions/upload-artifact@v6
@@ -362,7 +362,7 @@ jobs:
         done
 
         # Copy README
-        cp ../README.md .
+        cp ../../README.md .
 
         # Platform mappings: npm_pkg:rust_target:os:cpu
         platforms=(
