@@ -216,11 +216,8 @@ jobs:
       with:
         name: wasm-package
         path: |
-          npm/wasm/dist/
-          npm/wasm/package.json
-          npm/wasm/package-lock.json
-          npm/wasm/README.md
-          npm/wasm/tsconfig.json
+          npm/wasm/
+          !npm/wasm/node_modules/
 
   release:
     if: github.event_name == 'push' && github.ref_type == 'tag'
