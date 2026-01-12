@@ -10,11 +10,11 @@ To be released.
     convert ASCII punctuation to typographically correct Unicode equivalents.
     Configurable via the `[punctuation]` section in _.hongdown.toml_:
 
-     -  `curly_double_quotes`: Convert `"text"` to `“text”` (default: true)
-     -  `curly_single_quotes`: Convert `'text'` to `‘text’` (default: true)
-     -  `curly_apostrophes`: Convert `it's` to `it’s` (default: false)
-     -  `ellipsis`: Convert `...` to `…` (default: true)
-     -  `en_dash`: Convert pattern to `–` (default: disabled)
+     -  `curly_double_quotes`: Convert `"text"` to `“text”` (default: `true`)
+     -  `curly_single_quotes`: Convert `'text'` to `‘text’` (default: `true`)
+     -  `curly_apostrophes`: Convert `it's` to `it’s` (default: `false`)
+     -  `ellipsis`: Convert `...` to `…` (default: `true`)
+     -  `en_dash`: Convert pattern to `–` (default: `false`)
      -  `em_dash`: Convert `--` to `—` (default: `"--"`)
 
     Code spans and fenced code blocks are never transformed.
