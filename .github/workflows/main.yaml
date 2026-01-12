@@ -19,7 +19,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - uses: dtolnay/rust-toolchain@stable
     - name: Determine version
       id: version
@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - uses: dtolnay/rust-toolchain@stable
       with:
         components: rustfmt, clippy
@@ -59,7 +59,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v2
     - run: cargo test
@@ -89,7 +89,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - uses: dtolnay/rust-toolchain@stable
       with:
         targets: ${{ matrix.target }}
@@ -156,20 +156,79 @@ jobs:
           tar -cjf "$ARCHIVE_NAME.tar.bz2" "$STAGING"
           echo "name=$ARCHIVE_NAME.tar.bz2" >> "$GITHUB_OUTPUT"
         fi
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v6
       with:
         name: ${{ steps.archive.outputs.name }}
         path: ${{ steps.archive.outputs.name }}
 
+  build-wasm:
+    needs: [version, lint, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v6
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: wasm32-unknown-unknown
+    - uses: Swatinem/rust-cache@v2
+      with:
+        key: wasm32
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+
+    - name: Install wasm-pack
+      run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+    - name: Install dasel
+      if: github.ref_type != 'tag'
+      env:
+        DASEL_VERSION: "3.2.1"
+      run: |
+        set -euxo pipefail
+        curl -sSLf \
+          "https://github.com/TomWright/dasel/releases/download/v${DASEL_VERSION}/dasel_linux_amd64" \
+          -o dasel
+        chmod +x dasel
+        echo "$PWD" >> "$GITHUB_PATH"
+
+    - name: Set version in Cargo.toml
+      if: github.ref_type != 'tag'
+      env:
+        VERSION: ${{ needs.version.outputs.version }}
+      run: |
+        dasel -i toml --root "package.version = \"$VERSION\"" \
+          < Cargo.toml > Cargo.toml.new
+        mv Cargo.toml.new Cargo.toml
+
+    - name: Build WASM
+      run: wasm-pack build --target web --features wasm
+
+    - name: Build TypeScript wrapper
+      run: |
+        mkdir -p npm/wasm/pkg
+        cp -r pkg/* npm/wasm/pkg/
+        cd npm/wasm
+        npm install
+        npm run build
+
+    - uses: actions/upload-artifact@v6
+      with:
+        name: wasm-package
+        path: |
+          npm/wasm/dist/
+          npm/wasm/package.json
+          npm/wasm/tsconfig.json
+
   release:
     if: github.event_name == 'push' && github.ref_type == 'tag'
-    needs: [build]
+    needs: [build, build-wasm]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/download-artifact@v4
+    - uses: actions/checkout@v6
+    - uses: actions/download-artifact@v6
       with:
         path: artifacts
         merge-multiple: true
@@ -203,7 +262,7 @@ jobs:
     permissions:
       id-token: write
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v2
 
@@ -261,8 +320,8 @@ jobs:
     permissions:
       id-token: write
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/download-artifact@v4
+    - uses: actions/checkout@v6
+    - uses: actions/download-artifact@v6
       with:
         path: artifacts
         merge-multiple: true
@@ -371,4 +430,68 @@ jobs:
         done
 
         # Publish main package
+        npm publish --access public --provenance $TAG
+
+  publish-npm-wasm:
+    if: >-
+      github.event_name == 'push' && (
+        github.ref_type == 'tag' ||
+        github.ref_name == 'main'
+      )
+    needs: [version, build-wasm]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+    - uses: actions/checkout@v6
+    - uses: actions/download-artifact@v6
+      with:
+        name: wasm-package
+        path: npm/wasm
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+        registry-url: https://registry.npmjs.org
+
+    - name: Install dasel
+      env:
+        DASEL_VERSION: "3.2.1"
+      run: |
+        set -euxo pipefail
+        curl -sSLf \
+          "https://github.com/TomWright/dasel/releases/download/v${DASEL_VERSION}/dasel_linux_amd64" \
+          -o dasel
+        chmod +x dasel
+        echo "$PWD" >> "$GITHUB_PATH"
+
+    - name: Prepare WASM package
+      env:
+        VERSION: ${{ needs.version.outputs.version }}
+      run: |
+        set -euxo pipefail
+        cd npm/wasm
+
+        # Update version in package.json
+        dasel -i json --root "version = \"$VERSION\"" \
+          < package.json > package.json.tmp
+        mv package.json.tmp package.json
+
+        # Copy README
+        cp ../../README.md .
+
+    - name: Publish to npm
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        VERSION: ${{ needs.version.outputs.version }}
+      run: |
+        set -euxo pipefail
+        cd npm/wasm
+
+        # Determine tag for dev versions
+        if [[ "$VERSION" == *"-dev."* ]]; then
+          TAG="--tag dev"
+        else
+          TAG=""
+        fi
+
         npm publish --access public --provenance $TAG

@@ -1,0 +1,79 @@
+{
+  "name": "@hongdown/wasm",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "WASM-based Markdown formatter library for Hong Minhee's style conventions",
+  "license": "GPL-3.0-or-later",
+  "author": "Hong Minhee <hong@minhee.org>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dahlia/hongdown.git",
+    "directory": "npm/wasm"
+  },
+  "homepage": "https://github.com/dahlia/hongdown",
+  "keywords": [
+    "Markdown",
+    "formatter",
+    "WASM",
+    "WebAssembly"
+  ],
+  "imports": {
+    "#wasm-loader": {
+      "node": {
+        "import": {
+          "types": "./dist/loader-node.d.mts",
+          "default": "./dist/loader-node.mjs"
+        },
+        "require": {
+          "types": "./dist/loader-node.d.cts",
+          "default": "./dist/loader-node.cjs"
+        }
+      },
+      "default": {
+        "import": {
+          "types": "./dist/loader-web.d.mts",
+          "default": "./dist/loader-web.mjs"
+        },
+        "require": {
+          "types": "./dist/loader-web.d.cts",
+          "default": "./dist/loader-web.cjs"
+        }
+      }
+    }
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "test": "tsdown && node --experimental-transform-types --test test/*.test.ts && bun test test/ && deno test --allow-read test/",
+    "test:node": "tsdown && node --experimental-transform-types --test test/*.test.ts",
+    "test:bun": "tsdown && bun test test/",
+    "test:deno": "tsdown && deno test --allow-read test/",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsdown": "^0.20.0-beta.1",
+    "typescript": "^5.0.0"
+  }
+}

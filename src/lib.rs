@@ -14,6 +14,9 @@
 pub mod config;
 mod serializer;
 
+#[cfg(feature = "wasm")]
+mod wasm;
+
 pub use config::{DashSetting, OrderedListPad};
 pub use serializer::Warning;
 pub use serializer::punctuation::{PunctuationError, validate_dash_settings};

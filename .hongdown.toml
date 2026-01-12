@@ -1,4 +1,4 @@
 # Hongdown configuration file
 
 include = ["*.md", "**/*.md"]
-exclude = ["target/**"]
+exclude = ["target/**", "**/node_modules/**"]

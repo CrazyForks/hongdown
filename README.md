@@ -3,6 +3,7 @@ Hongdown
 
 [![crates.io][crates.io badge]][crates.io]
 [![npm][npm badge]][npm]
+[![@hongdown/wasm][@hongdown/wasm badge]][@hongdown/wasm]
 [![GitHub Actions][GitHub Actions badge]][GitHub Actions]
 
 Hongdown is a Markdown formatter that enforces [Hong Minhee's Markdown
@@ -15,6 +16,8 @@ output following a distinctive style used across multiple projects including
 [crates.io]: https://crates.io/crates/hongdown
 [npm badge]: https://img.shields.io/npm/v/hongdown?logo=npm
 [npm]: https://www.npmjs.com/package/hongdown
+[@hongdown/wasm badge]: https://img.shields.io/npm/v/@hongdown/wasm?logo=webassembly&label=%40hongdown%2Fwasm
+[@hongdown/wasm]: https://www.npmjs.com/package/@hongdown/wasm
 [GitHub Actions badge]: https://github.com/dahlia/hongdown/actions/workflows/main.yaml/badge.svg
 [GitHub Actions]: https://github.com/dahlia/hongdown/actions/workflows/main.yaml
 [Comrak]: https://comrak.ee/
@@ -306,6 +309,8 @@ formatter (contributed by [Lee Dogeon][moreal zed]):
 Library usage
 -------------
 
+### Rust
+
 Hongdown can also be used as a Rust library:
 
 ~~~~ rust
@@ -316,6 +321,43 @@ let options = Options::default();
 let output = format(input, &options).unwrap();
 println!("{}", output);
 ~~~~
+
+### JavaScript/TypeScript
+
+Hongdown is available as a WebAssembly-based library for JavaScript and
+TypeScript:
+
+~~~~ bash
+npm install @hongdown/wasm
+~~~~
+
+~~~~ typescript
+import { format, formatWithWarnings } from "@hongdown/wasm";
+
+// Basic usage
+const markdown = "# Hello\nWorld";
+const formatted = await format(markdown);
+
+// With options
+const result = await format(markdown, {
+  lineWidth: 100,
+  setextH1: false,
+  fenceChar: "`",
+});
+
+// Get warnings along with formatted output
+const { output, warnings } = await formatWithWarnings(markdown);
+if (warnings.length > 0) {
+  for (const warning of warnings) {
+    console.warn(`Line ${warning.line}: ${warning.message}`);
+  }
+}
+~~~~
+
+The library works in Node.js, Bun, Deno, and web browsers.  See the
+[TypeScript type definitions] for all available options.
+
+[TypeScript type definitions]: ./npm/wasm/src/types.ts
 
 
 Development

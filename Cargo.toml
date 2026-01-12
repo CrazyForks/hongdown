@@ -6,6 +6,13 @@ license = "GPL-3.0-or-later"
 description = "A Markdown formatter that enforces Hong Minhee's Markdown style conventions"
 repository = "https://github.com/dahlia/hongdown"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+wasm = ["wasm-bindgen", "serde-wasm-bindgen", "js-sys", "getrandom"]
+
 [dependencies]
 clap = { version = "4.5.54", features = ["derive"] }
 comrak = "0.49.0"
@@ -19,6 +26,12 @@ similar = "2.7.0"
 toml = "0.9.10"
 unicode-width = "0.2.2"
 walkdir = "2.5.0"
+
+# WASM dependencies (optional)
+wasm-bindgen = { version = "0.2", optional = true }
+serde-wasm-bindgen = { version = "0.6", optional = true }
+js-sys = { version = "0.3", optional = true }
+getrandom = { version = "0.3", features = ["wasm_js"], optional = true }
 
 [dev-dependencies]
 tempfile = "3.24.0"

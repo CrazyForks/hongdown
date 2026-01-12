@@ -1,5 +1,9 @@
 [tools]
-rust = { version = "latest", profile = "default", components = "rust-analyzer" }
+rust = { version = "latest", profile = "default", components = "rust-analyzer", targets = "wasm32-unknown-unknown" }
+node = "lts"
+bun = "latest"
+deno = "latest"
+"cargo:wasm-pack" = "latest"
 
 [tasks.fmt]
 description = "Format all files"
@@ -32,3 +36,12 @@ run = "cargo check"
 [tasks."check:markdown"]
 description = "Check Markdown formatting"
 run = "cargo run -- --check"
+
+[tasks."build:wasm"]
+description = "Build WASM package"
+run = """
+wasm-pack build --target web --features wasm
+mkdir -p npm/wasm/pkg
+cp -r pkg/* npm/wasm/pkg/
+cd npm/wasm && npm install && npm run build
+"""
