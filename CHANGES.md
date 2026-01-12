@@ -6,6 +6,9 @@ Version 0.1.1
 
 To be released.
 
+ -  Fixed a bug where an extra blank line was added between a nested list and
+    a following paragraph within the same list item.
+
 
 Version 0.1.0
 -------------

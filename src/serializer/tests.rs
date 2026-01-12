@@ -3128,3 +3128,27 @@ fn test_serialize_table_fullwidth_center_alignment() {
     let lines: Vec<&str> = result.lines().collect();
     assert_eq!(lines.len(), 4, "Table should have 4 lines");
 }
+
+#[test]
+fn test_nested_list_followed_by_paragraph_no_extra_blank_line() {
+    // Regression test: When a list item contains a nested list followed by a paragraph,
+    // there should be exactly one blank line between them, not two.
+    let input = " -  Foo bar.
+
+     -  Baz.
+     -  Qux.
+
+    Quux.
+
+ -  Another item.
+";
+    let result = parse_and_serialize(input);
+    // There should be only one blank line between the nested list and "Quux."
+    // (i.e., "\n\n    Quux", not "\n\n\n    Quux")
+    assert!(
+        !result.contains("\n\n\n"),
+        "Should not have double blank lines between nested list and following paragraph.\nGot:\n{}",
+        result
+    );
+    assert_eq!(result, input, "Output should match input exactly");
+}
