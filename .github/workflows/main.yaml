@@ -176,6 +176,9 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: '24'
+    - uses: pnpm/action-setup@v4
+      with:
+        version: latest
 
     - name: Install wasm-pack
       run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
@@ -206,18 +209,18 @@ jobs:
 
     - name: Build TypeScript wrapper
       run: |
-        mkdir -p npm/wasm/pkg
-        cp -r pkg/* npm/wasm/pkg/
-        cd npm/wasm
-        npm ci
-        npm run build
+        mkdir -p packages/wasm/pkg
+        cp -r pkg/* packages/wasm/pkg/
+        cd packages/wasm
+        pnpm install --frozen-lockfile
+        pnpm run build
 
     - uses: actions/upload-artifact@v6
       with:
         name: wasm-package
         path: |
-          npm/wasm/
-          !npm/wasm/node_modules/
+          packages/wasm/
+          !packages/wasm/node_modules/
 
   release:
     if: github.event_name == 'push' && github.ref_type == 'tag'
@@ -344,7 +347,7 @@ jobs:
         VERSION: ${{ needs.version.outputs.version }}
       run: |
         set -euxo pipefail
-        cd npm
+        cd packages/hongdown
 
         # Update version in main package
         dasel -i json --root "version = \"$VERSION\"" \
@@ -412,7 +415,7 @@ jobs:
         VERSION: ${{ needs.version.outputs.version }}
       run: |
         set -euxo pipefail
-        cd npm
+        cd packages/hongdown
 
         # Determine tag for dev versions
         if [[ "$VERSION" == *"-dev."* ]]; then
@@ -446,11 +449,14 @@ jobs:
     - uses: actions/download-artifact@v6
       with:
         name: wasm-package
-        path: npm/wasm
+        path: packages/wasm
     - uses: actions/setup-node@v4
       with:
         node-version: '24'
         registry-url: https://registry.npmjs.org
+    - uses: pnpm/action-setup@v4
+      with:
+        version: latest
 
     - name: Install dasel
       env:
@@ -468,7 +474,7 @@ jobs:
         VERSION: ${{ needs.version.outputs.version }}
       run: |
         set -euxo pipefail
-        cd npm/wasm
+        cd packages/wasm
 
         # Update version in package.json
         dasel -i json --root "version = \"$VERSION\"" \
@@ -480,10 +486,10 @@ jobs:
         VERSION: ${{ needs.version.outputs.version }}
       run: |
         set -euxo pipefail
-        cd npm/wasm
+        cd packages/wasm
 
         # Install dependencies for prepublishOnly script
-        npm ci
+        pnpm install --frozen-lockfile
 
         # Determine tag for dev versions
         if [[ "$VERSION" == *"-dev."* ]]; then
@@ -492,4 +498,4 @@ jobs:
           TAG=""
         fi
 
-        npm publish --access public --provenance $TAG
+        pnpm publish --access public --provenance $TAG

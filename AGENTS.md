@@ -38,11 +38,15 @@ hongdown/
 │       └── tests.rs      # Unit tests for serializer
 ├── tests/
 │   └── integration.rs    # Integration tests
-└── npm/
-    ├── package.json      # CLI npm package (hongdown)
-    └── wasm/             # WASM library package (@hongdown/wasm)
-        ├── src/          # TypeScript wrapper source
-        └── test/         # Tests for Node.js, Bun, Deno
+├── packages/
+│   ├── hongdown/         # CLI npm package (hongdown)
+│   │   ├── package.json
+│   │   └── bin/hongdown.js
+│   └── wasm/             # WASM library package (@hongdown/wasm)
+│       ├── src/          # TypeScript wrapper source
+│       └── test/         # Tests for Node.js, Bun, Deno
+├── pnpm-workspace.yaml   # pnpm workspace configuration
+└── package.json          # Root workspace package.json
 ~~~~
 
 
@@ -95,7 +99,7 @@ Tests are located in several places:
  -  *Rust unit tests*: *src/serializer/tests.rs* contains serializer tests
  -  *Rust integration tests*: *tests/integration.rs* contains CLI and full
     document tests
- -  *WASM package tests*: *npm/wasm/test/* contains tests that run on
+ -  *WASM package tests*: *packages/wasm/test/* contains tests that run on
     Node.js, Bun, and Deno
 
 Test helper functions in *src/serializer/tests.rs*:

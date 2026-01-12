@@ -53,7 +53,7 @@ Options
 All options are optional.  See the [TypeScript type definitions] for the
 complete list of available options.
 
-[TypeScript type definitions]: https://github.com/dahlia/hongdown/blob/main/npm/wasm/src/types.ts
+[TypeScript type definitions]: https://github.com/dahlia/hongdown/blob/main/packages/wasm/src/types.ts
 
 
 License

@@ -357,7 +357,7 @@ if (warnings.length > 0) {
 The library works in Node.js, Bun, Deno, and web browsers.  See the
 [TypeScript type definitions] for all available options.
 
-[TypeScript type definitions]: ./npm/wasm/src/types.ts
+[TypeScript type definitions]: ./packages/wasm/src/types.ts
 
 
 Development

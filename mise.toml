@@ -1,6 +1,7 @@
 [tools]
 rust = { version = "latest", profile = "default", components = "rust-analyzer", targets = "wasm32-unknown-unknown" }
 node = "lts"
+pnpm = "latest"
 bun = "latest"
 deno = "latest"
 "cargo:wasm-pack" = "latest"
@@ -48,13 +49,14 @@ run = "cargo test"
 [tasks."test:wasm"]
 description = "Run WASM package tests"
 depends = ["build:wasm"]
-run = "cd npm/wasm && npm run test"
+run = "pnpm --filter @hongdown/wasm test"
 
 [tasks."build:wasm"]
 description = "Build WASM package"
 run = """
 wasm-pack build --target web --features wasm
-mkdir -p npm/wasm/pkg
-cp -r pkg/* npm/wasm/pkg/
-cd npm/wasm && npm install && npm run build
+mkdir -p packages/wasm/pkg
+cp -r pkg/* packages/wasm/pkg/
+pnpm --filter @hongdown/wasm install
+pnpm --filter @hongdown/wasm build
 """

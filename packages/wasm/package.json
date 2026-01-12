@@ -8,7 +8,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/dahlia/hongdown.git",
-    "directory": "npm/wasm"
+    "directory": "packages/wasm"
   },
   "homepage": "https://github.com/dahlia/hongdown",
   "keywords": [
@@ -69,7 +69,7 @@
     "test:node": "tsdown && node --experimental-transform-types --test test/*.test.ts",
     "test:bun": "tsdown && bun test test/",
     "test:deno": "tsdown && deno test --allow-read test/",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "pnpm run build"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

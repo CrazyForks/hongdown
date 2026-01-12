@@ -5,8 +5,8 @@ result
 
 # wasm-pack output
 /pkg/
-/npm/wasm/pkg/
+/packages/wasm/pkg/
 
-# npm build artifacts
-/npm/wasm/dist/
+# build artifacts
+/packages/wasm/dist/
 node_modules/
