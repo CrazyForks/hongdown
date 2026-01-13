@@ -39,6 +39,30 @@ export interface FormatOptions {
   setextH2?: boolean;
 
   /**
+   * Convert headings to sentence case.
+   * When enabled, headings like "Getting Started With HONGDOWN" become
+   * "Getting started with Hongdown".
+   * @default false
+   */
+  headingSentenceCase?: boolean;
+
+  /**
+   * Additional proper nouns to preserve in sentence case.
+   * These are merged with built-in proper nouns (like "GitHub", "JavaScript").
+   * @example ["MyApp", "OpenAI"]
+   * @default []
+   */
+  headingProperNouns?: string[];
+
+  /**
+   * Words to treat as common nouns in sentence case.
+   * These are excluded from built-in proper nouns.
+   * @example ["react"]
+   * @default []
+   */
+  headingCommonNouns?: string[];
+
+  /**
    * Marker character for unordered lists: `"-"`, `"*"`, or `"+"`.
    * @default "-"
    */

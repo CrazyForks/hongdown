@@ -23,6 +23,17 @@ pub struct JsOptions {
     /// Use setext-style for h2 headings (default: true).
     pub setext_h2: Option<bool>,
 
+    /// Convert headings to sentence case (default: false).
+    pub heading_sentence_case: Option<bool>,
+
+    /// Additional proper nouns to preserve in sentence case.
+    /// These are merged with built-in proper nouns.
+    pub heading_proper_nouns: Option<Vec<String>>,
+
+    /// Words to treat as common nouns in sentence case.
+    /// These are excluded from built-in proper nouns.
+    pub heading_common_nouns: Option<Vec<String>>,
+
     /// Marker for unordered lists: "-", "*", or "+" (default: "-").
     pub unordered_marker: Option<String>,
 
@@ -119,6 +130,15 @@ impl JsOptions {
         }
         if let Some(v) = self.setext_h2 {
             opts.setext_h2 = v;
+        }
+        if let Some(v) = self.heading_sentence_case {
+            opts.heading_sentence_case = v;
+        }
+        if let Some(ref v) = self.heading_proper_nouns {
+            opts.heading_proper_nouns = v.clone();
+        }
+        if let Some(ref v) = self.heading_common_nouns {
+            opts.heading_common_nouns = v.clone();
         }
         if let Some(ref v) = self.unordered_marker {
             if let Some(c) = v.chars().next() {
@@ -313,5 +333,49 @@ mod tests {
             DashSetting::Pattern(p) => assert_eq!(p, "--"),
             _ => panic!("Expected Pattern"),
         }
+    }
+
+    #[test]
+    fn test_js_options_heading_sentence_case() {
+        let js_opts = JsOptions {
+            heading_sentence_case: Some(true),
+            ..Default::default()
+        };
+        let opts = js_opts.to_options();
+        assert!(opts.heading_sentence_case);
+    }
+
+    #[test]
+    fn test_js_options_heading_proper_nouns() {
+        let js_opts = JsOptions {
+            heading_proper_nouns: Some(vec!["MyApp".to_string(), "OpenAI".to_string()]),
+            ..Default::default()
+        };
+        let opts = js_opts.to_options();
+        assert_eq!(opts.heading_proper_nouns, vec!["MyApp", "OpenAI"]);
+    }
+
+    #[test]
+    fn test_js_options_heading_common_nouns() {
+        let js_opts = JsOptions {
+            heading_common_nouns: Some(vec!["react".to_string()]),
+            ..Default::default()
+        };
+        let opts = js_opts.to_options();
+        assert_eq!(opts.heading_common_nouns, vec!["react"]);
+    }
+
+    #[test]
+    fn test_js_options_heading_all() {
+        let js_opts = JsOptions {
+            heading_sentence_case: Some(true),
+            heading_proper_nouns: Some(vec!["Fedify".to_string()]),
+            heading_common_nouns: Some(vec!["api".to_string()]),
+            ..Default::default()
+        };
+        let opts = js_opts.to_options();
+        assert!(opts.heading_sentence_case);
+        assert_eq!(opts.heading_proper_nouns, vec!["Fedify"]);
+        assert_eq!(opts.heading_common_nouns, vec!["api"]);
     }
 }

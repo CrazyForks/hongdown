@@ -56,6 +56,45 @@ describe("format", () => {
     assert.equal(output, "## Heading\n");
   });
 
+  it("respects headingSentenceCase option", async () => {
+    const input = "# Getting Started With The App";
+    const options: FormatOptions = { headingSentenceCase: true };
+    const output = await format(input, options);
+    // "Getting" stays capitalized (first word), others become lowercase
+    assert.equal(output, "Getting started with the app\n============================\n");
+  });
+
+  it("respects headingProperNouns option", async () => {
+    const input = "# Using MyApp With JavaScript";
+    const options: FormatOptions = {
+      headingSentenceCase: true,
+      headingProperNouns: ["MyApp"],
+    };
+    const output = await format(input, options);
+    assert.ok(
+      output.includes("MyApp"),
+      "Output should preserve custom proper noun",
+    );
+    assert.ok(
+      output.includes("JavaScript"),
+      "Output should preserve built-in proper noun",
+    );
+  });
+
+  it("respects headingCommonNouns option", async () => {
+    const input = "# Using React Components";
+    const options: FormatOptions = {
+      headingSentenceCase: true,
+      headingCommonNouns: ["React"],
+    };
+    const output = await format(input, options);
+    // "React" is a built-in proper noun, but headingCommonNouns should exclude it
+    assert.ok(
+      output.includes("react"),
+      "Output should lowercase excluded proper noun",
+    );
+  });
+
   it("respects fenceChar option", async () => {
     const input = "```js\ncode\n```";
     const options: FormatOptions = { fenceChar: "`" };
@@ -119,6 +158,9 @@ describe("options", () => {
       lineWidth: 100,
       setextH1: true,
       setextH2: true,
+      headingSentenceCase: false,
+      headingProperNouns: [],
+      headingCommonNouns: [],
       unorderedMarker: "-",
       leadingSpaces: 1,
       trailingSpaces: 2,
