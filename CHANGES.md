@@ -87,6 +87,15 @@ To be released.
     from stdout.  If the formatter fails (non-zero exit, timeout, etc.), the
     original code is preserved and a warning is emitted.
 
+    To skip formatting for a specific code block, add `hongdown-no-format` after
+    the language identifier:
+
+    ~~~~~ markdown
+    ~~~~ python hongdown-no-format
+    def hello(): print("Hello, World!")
+    ~~~~
+    ~~~~~
+
     For WASM builds, use the `formatWithCodeFormatter` function with a callback:
 
     ~~~~ typescript

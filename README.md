@@ -359,6 +359,18 @@ Behavior:
     preserved and a warning is emitted
  -  External formatters are only available in CLI mode (not in WASM)
 
+To skip formatting for a specific code block, add `hongdown-no-format` after the
+language identifier:
+
+~~~~~ markdown
+~~~~ python hongdown-no-format
+def hello(): print("Hello, World!")
+~~~~
+~~~~~
+
+The `hongdown-no-format` keyword is preserved in the output, ensuring the code
+block remains unformatted on subsequent runs.
+
 For WASM builds, use the `formatWithCodeFormatter` function with a callback:
 
 ~~~~ typescript

@@ -3837,3 +3837,97 @@ fn test_code_block_formatter_with_default_language() {
     let result = parse_and_serialize_with_options(input, &options);
     assert_eq!(result, "~~~~ text\nHELLO\n~~~~\n");
 }
+
+// ============================================================================
+// hongdown-no-format tests
+// ============================================================================
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn test_code_block_no_format_skips_formatter() {
+    use crate::CodeFormatter;
+
+    let mut options = Options::default();
+    options.code_formatters.insert(
+        "upper".to_string(),
+        CodeFormatter {
+            command: vec!["tr".to_string(), "a-z".to_string(), "A-Z".to_string()],
+            timeout_secs: 5,
+        },
+    );
+
+    // With hongdown-no-format, the formatter should be skipped
+    let input = "~~~~ upper hongdown-no-format\nhello world\n~~~~\n";
+    let result = parse_and_serialize_with_options(input, &options);
+    // Content should NOT be uppercased
+    assert_eq!(result, "~~~~ upper hongdown-no-format\nhello world\n~~~~\n");
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn test_code_block_no_format_preserves_keyword_in_output() {
+    let options = Options::default();
+
+    let input = "~~~~ python hongdown-no-format\ndef hello(): pass\n~~~~\n";
+    let result = parse_and_serialize_with_options(input, &options);
+    // hongdown-no-format should be preserved in output
+    assert!(result.contains("hongdown-no-format"));
+    assert_eq!(
+        result,
+        "~~~~ python hongdown-no-format\ndef hello(): pass\n~~~~\n"
+    );
+}
+
+#[test]
+fn test_code_block_no_format_without_formatter_configured() {
+    let options = Options::default();
+
+    // Even without a formatter, hongdown-no-format should be preserved
+    let input = "~~~~ rust hongdown-no-format\nfn main() {}\n~~~~\n";
+    let result = parse_and_serialize_with_options(input, &options);
+    assert_eq!(result, "~~~~ rust hongdown-no-format\nfn main() {}\n~~~~\n");
+}
+
+#[test]
+fn test_code_block_no_format_idempotent() {
+    let options = Options::default();
+
+    let input = "~~~~ js hongdown-no-format\nconst x = 1;\n~~~~\n";
+    let result1 = parse_and_serialize_with_options(input, &options);
+    let result2 = parse_and_serialize_with_options(&result1, &options);
+    // Formatting should be idempotent
+    assert_eq!(result1, result2);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn test_code_block_no_format_in_list_item() {
+    use crate::CodeFormatter;
+
+    let mut options = Options::default();
+    options.code_formatters.insert(
+        "upper".to_string(),
+        CodeFormatter {
+            command: vec!["tr".to_string(), "a-z".to_string(), "A-Z".to_string()],
+            timeout_secs: 5,
+        },
+    );
+
+    let input = " -  Item:\n\n    ~~~~ upper hongdown-no-format\n    hello\n    ~~~~\n";
+    let result = parse_and_serialize_with_options(input, &options);
+    // Content should NOT be uppercased
+    assert!(result.contains("hello"));
+    assert!(!result.contains("HELLO"));
+    assert!(result.contains("hongdown-no-format"));
+}
+
+#[test]
+fn test_code_block_no_format_multiple_metadata() {
+    let options = Options::default();
+
+    // hongdown-no-format can appear with other metadata
+    let input = "~~~~ python some-other-info hongdown-no-format\ncode\n~~~~\n";
+    let result = parse_and_serialize_with_options(input, &options);
+    assert!(result.contains("hongdown-no-format"));
+    assert!(result.contains("some-other-info"));
+}

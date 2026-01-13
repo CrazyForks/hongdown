@@ -4,6 +4,36 @@ use comrak::nodes::NodeCodeBlock;
 
 use super::Serializer;
 
+/// The keyword to skip code formatting for a code block.
+const NO_FORMAT_KEYWORD: &str = "hongdown-no-format";
+
+/// Parse the code block info string to extract language and no-format flag.
+///
+/// The info string can contain a language identifier followed by optional
+/// metadata. If `hongdown-no-format` is present, formatting will be skipped.
+///
+/// Returns `(language, full_info_for_output, skip_format)`:
+/// - `language`: The language identifier for formatter lookup (without metadata)
+/// - `full_info_for_output`: The full info string to output (preserves hongdown-no-format)
+/// - `skip_format`: Whether to skip formatting
+fn parse_code_info(info: &str) -> (&str, &str, bool) {
+    let trimmed = info.trim();
+    if trimmed.is_empty() {
+        return ("", "", false);
+    }
+
+    // Check if hongdown-no-format is present
+    let has_no_format = trimmed
+        .split_whitespace()
+        .any(|word| word == NO_FORMAT_KEYWORD);
+
+    // Extract just the language (first word)
+    let language = trimmed.split_whitespace().next().unwrap_or("");
+
+    // Return the full info for output (to preserve hongdown-no-format)
+    (language, trimmed, has_no_format)
+}
+
 impl<'a> Serializer<'a> {
     /// Try to format code using an external formatter.
     ///
@@ -52,15 +82,25 @@ impl<'a> Serializer<'a> {
         let base_fence: String = std::iter::repeat_n(fence_char, min_len).collect();
         let long_fence: String = std::iter::repeat_n(fence_char, min_len + 1).collect();
 
-        // Determine language for formatter lookup
-        let language = if code.info.is_empty() {
+        // Parse info to get language and check for no-format flag
+        let (parsed_lang, info_output, skip_format) = parse_code_info(&code.info);
+
+        // Determine language for formatter lookup (use default if empty)
+        let language = if parsed_lang.is_empty() {
             &self.options.default_language
         } else {
-            &code.info
+            parsed_lang
         };
 
-        // Try to format the code if a formatter is configured
-        let formatted_literal = if !language.is_empty() {
+        // Determine the info string to output
+        let output_info = if info_output.is_empty() && !self.options.default_language.is_empty() {
+            self.options.default_language.as_str()
+        } else {
+            info_output
+        };
+
+        // Try to format the code if a formatter is configured and not skipped
+        let formatted_literal = if !language.is_empty() && !skip_format {
             self.try_format_code(language, &code.literal)
         } else {
             None
@@ -73,11 +113,11 @@ impl<'a> Serializer<'a> {
             &base_fence
         };
         self.output.push_str(fence);
-        if !code.info.is_empty() {
+        if !output_info.is_empty() {
             if self.options.space_after_fence {
                 self.output.push(' ');
             }
-            self.output.push_str(&code.info);
+            self.output.push_str(output_info);
         }
         self.output.push('\n');
         // Add indent to each line of code (skip indent for empty lines)
@@ -102,15 +142,25 @@ impl<'a> Serializer<'a> {
         let min_fence_length = self.options.min_fence_length;
         let fence_char = self.options.fence_char;
 
+        // Parse info to get language and check for no-format flag
+        let (parsed_lang, info_output, skip_format) = parse_code_info(info);
+
         // Use default_language if no language specified (empty string means no language)
-        let language = if info.is_empty() {
+        let language = if parsed_lang.is_empty() {
             &self.options.default_language
         } else {
-            info
+            parsed_lang
         };
 
-        // Try to format the code if a formatter is configured
-        let formatted_literal = if !language.is_empty() {
+        // Determine the info string to output
+        let output_info = if info_output.is_empty() && !self.options.default_language.is_empty() {
+            self.options.default_language.as_str()
+        } else {
+            info_output
+        };
+
+        // Try to format the code if a formatter is configured and not skipped
+        let formatted_literal = if !language.is_empty() && !skip_format {
             self.try_format_code(language, literal)
         } else {
             None
@@ -140,11 +190,11 @@ impl<'a> Serializer<'a> {
             self.output.push_str("> ");
         }
         self.output.push_str(&fence);
-        if !language.is_empty() {
+        if !output_info.is_empty() {
             if self.options.space_after_fence {
                 self.output.push(' ');
             }
-            self.output.push_str(language);
+            self.output.push_str(output_info);
         }
         self.output.push('\n');
 
@@ -181,15 +231,25 @@ impl<'a> Serializer<'a> {
         let min_fence_length = self.options.min_fence_length;
         let fence_char = self.options.fence_char;
 
+        // Parse info to get language and check for no-format flag
+        let (parsed_lang, info_output, skip_format) = parse_code_info(info);
+
         // Use default_language if no language specified
-        let language = if info.is_empty() {
+        let language = if parsed_lang.is_empty() {
             &self.options.default_language
         } else {
-            info
+            parsed_lang
         };
 
-        // Try to format the code if a formatter is configured
-        let formatted_literal = if !language.is_empty() {
+        // Determine the info string to output
+        let output_info = if info_output.is_empty() && !self.options.default_language.is_empty() {
+            self.options.default_language.as_str()
+        } else {
+            info_output
+        };
+
+        // Try to format the code if a formatter is configured and not skipped
+        let formatted_literal = if !language.is_empty() && !skip_format {
             self.try_format_code(language, literal)
         } else {
             None
@@ -216,11 +276,11 @@ impl<'a> Serializer<'a> {
 
         // Output opening fence with optional language
         self.output.push_str(&fence);
-        if !info.is_empty() {
+        if !output_info.is_empty() {
             if self.options.space_after_fence {
                 self.output.push(' ');
             }
-            self.output.push_str(info);
+            self.output.push_str(output_info);
         }
         self.output.push('\n');
 
