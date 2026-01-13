@@ -546,10 +546,45 @@ fn is_acronym(word: &str) -> bool {
     }
 
     // Check if first two characters are uppercase letters
-    chars[0].is_uppercase()
+    if chars[0].is_uppercase()
         && chars[0].is_alphabetic()
         && chars[1].is_uppercase()
         && chars[1].is_alphabetic()
+    {
+        return true;
+    }
+
+    // Check for acronyms with periods (e.g., "Ph.D.", "U.S.", "R.O.K.")
+    // Pattern: uppercase letter followed by period, repeated at least twice
+    let letters: Vec<char> = word.chars().filter(|c| c.is_alphabetic()).collect();
+    if letters.len() < 2 {
+        return false;
+    }
+
+    // Check if it matches the pattern: letter-period pairs
+    // e.g., "Ph.D." -> "P" "h" "." "D" "."
+    // We check if there are at least 2 uppercase letters with periods between/after them
+    let mut uppercase_count = 0;
+    let mut has_period = false;
+    let mut i = 0;
+
+    while i < chars.len() {
+        if chars[i].is_alphabetic() {
+            if chars[i].is_uppercase() {
+                uppercase_count += 1;
+            }
+            // Check if next char is a period
+            if i + 1 < chars.len() && chars[i + 1] == '.' {
+                has_period = true;
+                i += 2; // Skip the period
+                continue;
+            }
+        }
+        i += 1;
+    }
+
+    // If we have at least 2 letters (including at least 1 uppercase) and periods, treat as acronym
+    has_period && letters.len() >= 2 && uppercase_count >= 1
 }
 
 /// Find a proper noun match (case-insensitive search).
@@ -640,9 +675,75 @@ mod tests {
 
     #[test]
     fn test_preserve_acronyms() {
+        // Acronyms (2+ consecutive uppercase at start) should be preserved
         assert_eq!(
-            to_sentence_case("HTTP API Design", &[], &[]),
-            "HTTP API design"
+            to_sentence_case("Using API Endpoints", &[], &[]),
+            "Using API endpoints"
+        );
+        assert_eq!(
+            to_sentence_case("HTTP And HTTPS", &[], &[]),
+            "HTTP and HTTPS"
+        );
+    }
+
+    #[test]
+    fn test_preserve_acronyms_with_periods() {
+        // Acronyms with periods should be preserved
+        assert_eq!(
+            to_sentence_case("U.S.A. And U.K.", &[], &[]),
+            "U.S.A. and U.K."
+        );
+        assert_eq!(
+            to_sentence_case("R.O.K. Development", &[], &[]),
+            "R.O.K. development"
+        );
+        assert_eq!(
+            to_sentence_case("P.R.C. And R.O.C.", &[], &[]),
+            "P.R.C. and R.O.C."
+        );
+        assert_eq!(
+            to_sentence_case("Using U.S. Military", &[], &[]),
+            "Using U.S. military"
+        );
+    }
+
+    #[test]
+    fn test_preserve_academic_titles_with_periods() {
+        // Academic titles with periods should be preserved
+        assert_eq!(
+            to_sentence_case("Ph.D. Programs", &[], &[]),
+            "Ph.D. programs"
+        );
+        assert_eq!(
+            to_sentence_case("M.D. And Ph.D.", &[], &[]),
+            "M.D. and Ph.D."
+        );
+        assert_eq!(to_sentence_case("B.A. Degree", &[], &[]), "B.A. degree");
+    }
+
+    #[test]
+    fn test_lowercase_latin_abbreviations_preserved() {
+        // Latin abbreviations like "e.g." and "i.e." should stay lowercase
+        assert_eq!(
+            to_sentence_case("Using e.g. And i.e. In Text", &[], &[]),
+            "Using e.g. and i.e. in text"
+        );
+        assert_eq!(
+            to_sentence_case("Examples e.g. Foo", &[], &[]),
+            "Examples e.g. foo"
+        );
+        assert_eq!(
+            to_sentence_case("That Is i.e. This", &[], &[]),
+            "That is i.e. this"
+        );
+        // Other common Latin abbreviations
+        assert_eq!(
+            to_sentence_case("See cf. Section 3", &[], &[]),
+            "See cf. section 3"
+        );
+        assert_eq!(
+            to_sentence_case("And etc. At End", &[], &[]),
+            "And etc. at end"
         );
     }
 
