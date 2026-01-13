@@ -4,7 +4,7 @@ Hongdown changelog
 Version 0.2.1
 -------------
 
-To be released.
+Released on January 13, 2026.
 
  -  Fixed an issue where `heading.proper_nouns` entries containing slashes
     or hyphens (e.g., `@foo/javascript`, `my-custom-lib`) were not recognized
