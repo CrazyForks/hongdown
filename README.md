@@ -154,6 +154,9 @@ line_width = 80           # Maximum line width (default: 80)
 [heading]
 setext_h1 = true          # Use === underline for h1 (default: true)
 setext_h2 = true          # Use --- underline for h2 (default: true)
+sentence_case = false     # Convert headings to sentence case (default: false)
+proper_nouns = []         # Additional proper nouns to preserve (default: [])
+common_nouns = []         # Exclude built-in proper nouns (default: [])
 
 [list]
 unordered_marker = "-"    # "-", "*", or "+" (default: "-")
@@ -217,6 +220,7 @@ Hongdown enforces the following conventions:
 
  -  Level 1 and 2 use Setext-style (underlined with `=` or `-`)
  -  Level 3+ use ATX-style (`###`, `####`, etc.)
+ -  Optional sentence case conversion (disabled by default)
 
 ~~~~ markdown
 Document Title
@@ -227,6 +231,49 @@ Section
 
 ### Subsection
 ~~~~
+
+#### Sentence case (optional)
+
+When `sentence_case = true` is set in the configuration, Hongdown automatically
+converts headings to sentence case using intelligent heuristics:
+
+~~~~ markdown
+# Development Commands      → Development commands
+# Working With JSON APIs    → Working with JSON APIs
+# Using `MyClass` In Code   → Using `MyClass` in code
+~~~~
+
+The converter:
+
+ -  Capitalizes only the first word
+ -  Preserves code spans (text in backticks)
+ -  Preserves acronyms (2+ consecutive uppercase letters, e.g., `API`, `HTTP`)
+ -  Preserves proper nouns (built-in list + user-configured)
+ -  Handles hyphenated words (e.g., `JSON-RPC`)
+ -  Respects quoted text capitalization
+ -  Preserves non-Latin scripts (CJK, etc.)
+
+You can add custom proper nouns to preserve:
+
+~~~~ toml
+[heading]
+sentence_case = true
+proper_nouns = ["MyCompany", "MyProduct", "MyAPI"]
+~~~~
+
+You can also exclude built-in proper nouns by treating them as common nouns.
+This is useful for words like “Go” which can be either a programming language
+or a common verb:
+
+~~~~ toml
+[heading]
+sentence_case = true
+common_nouns = ["Go", "Swift"]  # Treat these as common nouns, not proper nouns
+~~~~
+
+Built-in proper nouns include common programming languages (JavaScript,
+TypeScript, Python, Rust, Go), technologies (GitHub, Docker, React, Node.js),
+databases (PostgreSQL, MySQL, MongoDB), and more.
 
 ### Lists
 

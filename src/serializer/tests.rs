@@ -3583,3 +3583,99 @@ fn test_nested_list_followed_by_paragraph_no_extra_blank_line() {
     );
     assert_eq!(result, input, "Output should match input exactly");
 }
+
+#[test]
+fn test_heading_sentence_case_basic() {
+    let input = "# Hello World";
+    let mut options = Options::default();
+    options.heading_sentence_case = true;
+    let result = parse_and_serialize_with_options(input, &options);
+    assert_eq!(result, "Hello world\n===========\n");
+}
+
+#[test]
+fn test_heading_sentence_case_with_acronyms() {
+    let input = "# Working With HTTP APIs";
+    let mut options = Options::default();
+    options.heading_sentence_case = true;
+    let result = parse_and_serialize_with_options(input, &options);
+    assert_eq!(result, "Working with HTTP APIs\n======================\n");
+}
+
+#[test]
+fn test_heading_sentence_case_with_proper_nouns() {
+    let input = "# Introduction To JavaScript";
+    let mut options = Options::default();
+    options.heading_sentence_case = true;
+    let result = parse_and_serialize_with_options(input, &options);
+    assert_eq!(
+        result,
+        "Introduction to JavaScript\n==========================\n"
+    );
+}
+
+#[test]
+fn test_heading_sentence_case_with_user_proper_nouns() {
+    let input = "# Getting Started With MyAPI";
+    let mut options = Options::default();
+    options.heading_sentence_case = true;
+    options.heading_proper_nouns = vec!["MyAPI".to_string()];
+    let result = parse_and_serialize_with_options(input, &options);
+    assert_eq!(
+        result,
+        "Getting started with MyAPI\n==========================\n"
+    );
+}
+
+#[test]
+fn test_heading_sentence_case_with_code_spans() {
+    let input = "# Using `MyClass` In Your Code";
+    let mut options = Options::default();
+    options.heading_sentence_case = true;
+    let result = parse_and_serialize_with_options(input, &options);
+    assert_eq!(
+        result,
+        "Using `MyClass` in your code\n============================\n"
+    );
+}
+
+#[test]
+fn test_heading_sentence_case_disabled() {
+    let input = "# Hello World";
+    let options = Options::default();
+    let result = parse_and_serialize_with_options(input, &options);
+    assert_eq!(result, "Hello World\n===========\n");
+}
+
+#[test]
+fn test_heading_sentence_case_atx_style() {
+    let input = "### Working With APIs";
+    let mut options = Options::default();
+    options.heading_sentence_case = true;
+    let result = parse_and_serialize_with_options(input, &options);
+    assert_eq!(result, "### Working with APIs\n");
+}
+
+#[test]
+fn test_heading_sentence_case_with_quotes() {
+    let input = "# Smart Suggestion: \"Did You Mean?\"";
+    let mut options = Options::default();
+    options.heading_sentence_case = true;
+    let result = parse_and_serialize_with_options(input, &options);
+    assert_eq!(
+        result,
+        "Smart suggestion: \u{201C}Did you mean?\u{201D}\n=================================\n"
+    );
+}
+
+#[test]
+fn test_heading_sentence_case_non_latin() {
+    let input = "# \u{D55C}\u{AE00} \u{C81C}\u{BAA9} With English";
+    let mut options = Options::default();
+    options.heading_sentence_case = true;
+    let result = parse_and_serialize_with_options(input, &options);
+    assert_eq!(
+        result,
+        "\u{D55C}\u{AE00} \u{C81C}\u{BAA9} with English\n======================\n"
+    );
+}

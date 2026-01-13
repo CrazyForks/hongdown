@@ -1,0 +1,148 @@
+# Proper nouns list for Hongdown sentence case conversion
+# One canonical form per line (comments start with #)
+# This file is read at build time to generate constants
+
+# Project name
+Hongdown
+
+# Programming languages
+Clojure
+Elixir
+Erlang
+Haskell
+Java
+JavaScript
+Kotlin
+PHP
+Perl
+Python
+Ruby
+Scala
+TypeScript
+
+# Web technologies
+Angular
+Bun
+Deno
+Express
+Gatsby
+Next.js
+Node.js
+Nuxt
+React
+Svelte
+Vue
+
+# Databases
+Cassandra
+CouchDB
+Elasticsearch
+MariaDB
+MongoDB
+MySQL
+Neo4j
+Oracle
+PostgreSQL
+Redis
+SQLite
+
+# Operating systems
+Android
+CentOS
+Debian
+Fedora
+FreeBSD
+iOS
+Linux
+macOS
+OpenBSD
+Ubuntu
+Windows
+
+# Package managers
+Cargo
+Composer
+Gradle
+Maven
+npm
+NuGet
+pip
+pnpm
+RubyGems
+Yarn
+
+# Cloud providers
+Amazon Web Services
+AWS
+Azure
+Cloudflare
+DigitalOcean
+GCP
+Google Cloud Platform
+Heroku
+Netlify
+Vercel
+
+# Version control and collaboration
+Bitbucket
+Codeberg
+Codeberg Pages
+GitHub
+GitHub Actions
+GitHub Pages
+GitLab
+Mercurial
+Subversion
+
+# Build tools and bundlers
+Babel
+Parcel
+Rollup
+Vite
+Webpack
+
+# Containerization and orchestration
+Docker
+Kubernetes
+OpenShift
+Podman
+
+# CI/CD
+CircleCI
+Jenkins
+
+# Testing frameworks
+JUnit
+Jest
+Mocha
+Pytest
+RSpec
+
+# Languages and locales
+Arabic
+Chinese
+English
+French
+German
+Hindi
+Italian
+Japanese
+Korean
+Portuguese
+Russian
+Spanish
+
+# Other technologies
+CSV
+CommonMark
+GraphQL
+gRPC
+JSON
+JWT
+Markdown
+OAuth
+OpenID
+TOML
+WebSocket
+XML
+YAML

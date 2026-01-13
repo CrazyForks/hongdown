@@ -369,7 +369,16 @@ impl<'a> Serializer<'a> {
 
     pub(super) fn serialize_heading<'b>(&mut self, node: &'b AstNode<'b>, level: u8) {
         // Collect heading text first
-        let heading_text = self.collect_text(node);
+        let mut heading_text = self.collect_text(node);
+
+        // Apply sentence case if enabled
+        if self.options.heading_sentence_case {
+            heading_text = super::heading::to_sentence_case(
+                &heading_text,
+                &self.options.heading_proper_nouns,
+                &self.options.heading_common_nouns,
+            );
+        }
 
         if level == 1 && self.options.setext_h1 {
             // Setext-style with '='

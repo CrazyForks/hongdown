@@ -35,6 +35,17 @@ pub struct Options {
     /// Use setext-style (underlined) for h2 headings. Default: true.
     pub setext_h2: bool,
 
+    /// Convert headings to sentence case. Default: false.
+    pub heading_sentence_case: bool,
+
+    /// Additional proper nouns to preserve (case-sensitive).
+    /// These are merged with built-in proper nouns.
+    pub heading_proper_nouns: Vec<String>,
+
+    /// Words to treat as common nouns (case-sensitive).
+    /// These are excluded from built-in proper nouns.
+    pub heading_common_nouns: Vec<String>,
+
     /// Marker character for unordered lists: `-`, `*`, or `+`. Default: `-`.
     pub unordered_marker: char,
 
@@ -115,6 +126,9 @@ impl Default for Options {
             line_width: 80,
             setext_h1: true,
             setext_h2: true,
+            heading_sentence_case: false,
+            heading_proper_nouns: Vec::new(),
+            heading_common_nouns: Vec::new(),
             unordered_marker: '-',
             leading_spaces: 1,
             trailing_spaces: 2,

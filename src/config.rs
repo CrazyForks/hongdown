@@ -69,6 +69,19 @@ pub struct HeadingConfig {
 
     /// Use `---` underline for h2 (default: true).
     pub setext_h2: bool,
+
+    /// Convert headings to sentence case (default: false).
+    pub sentence_case: bool,
+
+    /// Additional proper nouns to preserve (case-sensitive).
+    /// These are merged with built-in proper nouns.
+    pub proper_nouns: Vec<String>,
+
+    /// Words to treat as common nouns (case-sensitive).
+    /// These are excluded from built-in proper nouns.
+    /// Useful for words like "Go" which can be either a programming language
+    /// or a common verb depending on context.
+    pub common_nouns: Vec<String>,
 }
 
 impl Default for HeadingConfig {
@@ -76,6 +89,9 @@ impl Default for HeadingConfig {
         Self {
             setext_h1: true,
             setext_h2: true,
+            sentence_case: false,
+            proper_nouns: Vec::new(),
+            common_nouns: Vec::new(),
         }
     }
 }
@@ -493,6 +509,75 @@ setext_h2 = false
         .unwrap();
         assert!(!config.heading.setext_h1);
         assert!(!config.heading.setext_h2);
+    }
+
+    #[test]
+    fn test_parse_heading_sentence_case() {
+        let config = Config::from_toml(
+            r#"
+[heading]
+sentence_case = true
+"#,
+        )
+        .unwrap();
+        assert!(config.heading.sentence_case);
+    }
+
+    #[test]
+    fn test_parse_heading_proper_nouns() {
+        let config = Config::from_toml(
+            r#"
+[heading]
+proper_nouns = ["Hongdown", "MyCompany", "MyProduct"]
+"#,
+        )
+        .unwrap();
+        assert_eq!(
+            config.heading.proper_nouns,
+            vec!["Hongdown", "MyCompany", "MyProduct"]
+        );
+    }
+
+    #[test]
+    fn test_parse_heading_sentence_case_with_proper_nouns() {
+        let config = Config::from_toml(
+            r#"
+[heading]
+sentence_case = true
+proper_nouns = ["Hongdown", "MyAPI"]
+"#,
+        )
+        .unwrap();
+        assert!(config.heading.sentence_case);
+        assert_eq!(config.heading.proper_nouns, vec!["Hongdown", "MyAPI"]);
+    }
+
+    #[test]
+    fn test_parse_heading_common_nouns() {
+        let config = Config::from_toml(
+            r#"
+[heading]
+common_nouns = ["Go", "Swift"]
+"#,
+        )
+        .unwrap();
+        assert_eq!(config.heading.common_nouns, vec!["Go", "Swift"]);
+    }
+
+    #[test]
+    fn test_parse_heading_with_proper_and_common_nouns() {
+        let config = Config::from_toml(
+            r#"
+[heading]
+sentence_case = true
+proper_nouns = ["MyAPI"]
+common_nouns = ["Go"]
+"#,
+        )
+        .unwrap();
+        assert!(config.heading.sentence_case);
+        assert_eq!(config.heading.proper_nouns, vec!["MyAPI"]);
+        assert_eq!(config.heading.common_nouns, vec!["Go"]);
     }
 
     #[test]

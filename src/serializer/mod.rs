@@ -4,6 +4,7 @@ mod block;
 mod code;
 mod document;
 mod escape;
+pub mod heading;
 mod inline;
 mod link;
 mod list;

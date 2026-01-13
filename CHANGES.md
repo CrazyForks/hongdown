@@ -10,6 +10,28 @@ To be released.
     library.  This allows using Hongdown as a library in Node.js, Bun, Deno,
     and web browsers.  [[#7]]
 
+ -  Added heading sentence case conversion.  The formatter can now
+    automatically convert headings to sentence case (capitalizing only the
+    first word) while preserving proper nouns, acronyms, and code spans.
+    Configurable via the `[heading]` section in _.hongdown.toml_:  [[#8]]
+
+     -  `sentence_case`: Enable sentence case conversion (default: `false`)
+     -  `proper_nouns`: List of user-defined proper nouns to preserve
+     -  `common_nouns`: List of words to exclude from built-in proper nouns
+
+    The formatter includes ~135 built-in proper nouns (programming languages,
+    frameworks, cloud providers, etc.) and supports multi-word proper nouns
+    like “GitHub Actions” and “GitHub Pages”.  It applies intelligent
+    heuristics:
+
+     -  Preserves acronyms (2+ consecutive uppercase letters: API, HTTP)
+     -  Preserves proper nouns (case-insensitive matching)
+     -  Preserves code spans (backticks)
+     -  Handles quoted text based on original capitalization
+     -  Handles hyphenated words independently
+     -  Preserves all-caps words (intentional emphasis: IMPORTANT)
+     -  Preserves non-Latin scripts (CJK, etc.)
+
  -  Added SmartyPants-style punctuation transformation.  The formatter can now
     convert ASCII punctuation to typographically correct Unicode equivalents.
     Configurable via the `[punctuation]` section in _.hongdown.toml_:
@@ -41,6 +63,7 @@ To be released.
 [#3]: https://github.com/dahlia/hongdown/pull/3
 [#5]: https://github.com/dahlia/hongdown/pull/5
 [#7]: https://github.com/dahlia/hongdown/issues/7
+[#8]: https://github.com/dahlia/hongdown/issues/8
 
 
 Version 0.1.1
