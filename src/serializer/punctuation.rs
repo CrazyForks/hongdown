@@ -192,6 +192,18 @@ fn transform_single_quotes(text: &str) -> String {
                 continue;
             }
 
+            // Word-final apostrophes like goin', diggin' - leave for apostrophe transform
+            // BUT only if we're not expecting a closing quote (no unmatched opening quote)
+            // (letter followed by apostrophe followed by space, punctuation, or end of text)
+            if expecting_open
+                && prev_is_letter
+                && (next_char.is_none()
+                    || next_char.is_some_and(|c| c.is_whitespace() || c.is_ascii_punctuation()))
+            {
+                result.push(ch);
+                continue;
+            }
+
             // Decade abbreviations like '80s - always closing/apostrophe style
             if next_char.is_some_and(|c| c.is_ascii_digit()) {
                 result.push(RIGHT_SINGLE_QUOTE);
@@ -238,9 +250,13 @@ fn transform_single_quotes(text: &str) -> String {
 }
 
 /// Transform straight apostrophes within words to curly apostrophes.
+/// This function is conservative to avoid converting single quotes used as quotation marks.
 fn transform_apostrophes(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
     let chars: Vec<char> = text.chars().collect();
+
+    // Track unmatched opening single quotes to detect quotation marks
+    let mut open_single_quote_count = 0;
 
     for (i, &ch) in chars.iter().enumerate() {
         if ch == STRAIGHT_SINGLE_QUOTE {
@@ -253,24 +269,57 @@ fn transform_apostrophes(text: &str) -> String {
 
             let prev_is_letter_or_digit = prev_char.is_some_and(|c| c.is_alphanumeric());
             let next_is_letter_or_digit = next_char.is_some_and(|c| c.is_alphanumeric());
+            let prev_is_space_or_start =
+                prev_char.is_none() || prev_char.is_some_and(|c| c.is_whitespace());
+            let next_is_space_or_end =
+                next_char.is_none() || next_char.is_some_and(|c| c.is_whitespace());
 
-            // Apostrophe if between alphanumeric characters, or at end of word (possessive)
-            // e.g., "it's", "don't", "John's"
-            if prev_is_letter_or_digit
-                && (next_is_letter_or_digit || next_char.is_some_and(|c| c == 's' || c == 'S'))
-            {
+            // Mid-word apostrophe (surrounded by letters/digits) - always convert
+            // e.g., "it's", "don't", "rock'n'roll"
+            if prev_is_letter_or_digit && next_is_letter_or_digit {
                 result.push(RIGHT_SINGLE_QUOTE);
-            } else if prev_is_letter_or_digit && next_char.is_none() {
-                // Apostrophe at end of text after a letter
-                result.push(RIGHT_SINGLE_QUOTE);
-            } else if prev_is_letter_or_digit
-                && next_char.is_some_and(|c| c.is_whitespace() || c.is_ascii_punctuation())
-            {
-                // Apostrophe after letter followed by space or punctuation (possessive or contraction)
-                result.push(RIGHT_SINGLE_QUOTE);
-            } else {
-                result.push(ch);
+                continue;
             }
+
+            // Possessive with 's - convert if followed by 's' then word boundary
+            // e.g., "GitHub's", "John's"
+            if prev_is_letter_or_digit && next_char.is_some_and(|c| c == 's' || c == 'S') {
+                let after_s = if i + 2 < chars.len() {
+                    Some(chars[i + 2])
+                } else {
+                    None
+                };
+                // Make sure it's actually possessive (s followed by non-letter)
+                if after_s.is_none() || after_s.is_some_and(|c| !c.is_alphabetic()) {
+                    result.push(RIGHT_SINGLE_QUOTE);
+                    continue;
+                }
+            }
+
+            // Potential opening single quote (space/start followed by quote followed by letter)
+            if prev_is_space_or_start && next_is_letter_or_digit {
+                // This could be an opening quote - track it
+                open_single_quote_count += 1;
+                result.push(ch);
+                continue;
+            }
+
+            // Potential closing single quote (letter followed by quote followed by space/end)
+            if prev_is_letter_or_digit && next_is_space_or_end {
+                if open_single_quote_count > 0 {
+                    // There's an unmatched opening quote, so this is likely a closing quote
+                    open_single_quote_count -= 1;
+                    result.push(ch);
+                } else {
+                    // No unmatched opening quote - this is a word-final apostrophe
+                    // e.g., "goin'", "diggin'"
+                    result.push(RIGHT_SINGLE_QUOTE);
+                }
+                continue;
+            }
+
+            // Default: leave as-is
+            result.push(ch);
         } else {
             result.push(ch);
         }
@@ -610,6 +659,202 @@ mod tests {
         let result = transform_punctuation("the '80s were great", &options);
         // Decade abbreviation should use right single quote
         assert_eq!(result, format!("the {}80s were great", RIGHT_SINGLE_QUOTE));
+    }
+
+    #[test]
+    fn test_word_final_apostrophe_disabled_by_default() {
+        // Word-final apostrophes like goin', diggin' should remain straight
+        // when curly_apostrophes is disabled (default)
+        let options = default_options();
+        let result = transform_punctuation("we're goin' to the store", &options);
+        assert_eq!(result, "we're goin' to the store");
+    }
+
+    #[test]
+    fn test_word_final_apostrophe_enabled() {
+        // Word-final apostrophes should become curly when curly_apostrophes is enabled
+        let options = options_with(
+            true,
+            true,
+            true,
+            true,
+            DashSetting::Disabled,
+            DashSetting::Pattern("--".to_string()),
+        );
+        let result = transform_punctuation("we're goin' to the store", &options);
+        assert_eq!(
+            result,
+            format!(
+                "we{}re goin{} to the store",
+                RIGHT_SINGLE_QUOTE, RIGHT_SINGLE_QUOTE
+            )
+        );
+    }
+
+    #[test]
+    fn test_possessive_apostrophe_disabled_by_default() {
+        // Possessive apostrophes like GitHub's should remain straight by default
+        let options = default_options();
+        let result = transform_punctuation("GitHub's API is great", &options);
+        assert_eq!(result, "GitHub's API is great");
+    }
+
+    #[test]
+    fn test_possessive_apostrophe_enabled() {
+        // Possessive apostrophes should become curly when curly_apostrophes is enabled
+        let options = options_with(
+            true,
+            true,
+            true,
+            true,
+            DashSetting::Disabled,
+            DashSetting::Pattern("--".to_string()),
+        );
+        let result = transform_punctuation("GitHub's API is great", &options);
+        assert_eq!(
+            result,
+            format!("GitHub{}s API is great", RIGHT_SINGLE_QUOTE)
+        );
+    }
+
+    #[test]
+    fn test_single_quotes_and_apostrophe_mixed() {
+        // Test both single quotes as quotation marks and apostrophes in same text
+        let options = default_options();
+        let result = transform_punctuation("She said 'it's fine' to him", &options);
+        assert_eq!(
+            result,
+            format!(
+                "She said {}it's fine{} to him",
+                LEFT_SINGLE_QUOTE, RIGHT_SINGLE_QUOTE
+            )
+        );
+    }
+
+    #[test]
+    fn test_single_quotes_and_apostrophe_mixed_all_curly() {
+        // Test with both curly_single_quotes and curly_apostrophes enabled
+        let options = options_with(
+            true,
+            true,
+            true,
+            true,
+            DashSetting::Disabled,
+            DashSetting::Pattern("--".to_string()),
+        );
+        let result = transform_punctuation("She said 'it's fine' to him", &options);
+        assert_eq!(
+            result,
+            format!(
+                "She said {}it{}s fine{} to him",
+                LEFT_SINGLE_QUOTE, RIGHT_SINGLE_QUOTE, RIGHT_SINGLE_QUOTE
+            )
+        );
+    }
+
+    #[test]
+    fn test_curly_apostrophes_only_no_single_quotes() {
+        // curly_apostrophes enabled but curly_single_quotes disabled
+        let options = options_with(
+            true,
+            false,
+            true,
+            true,
+            DashSetting::Disabled,
+            DashSetting::Pattern("--".to_string()),
+        );
+        let result = transform_punctuation("She said 'it's fine' to him", &options);
+        // Single quotes stay straight, but apostrophe becomes curly
+        assert_eq!(
+            result,
+            format!("She said 'it{}s fine' to him", RIGHT_SINGLE_QUOTE)
+        );
+    }
+
+    #[test]
+    fn test_curly_single_quotes_only_no_apostrophes() {
+        // curly_single_quotes enabled but curly_apostrophes disabled
+        let options = options_with(
+            true,
+            true,
+            false,
+            true,
+            DashSetting::Disabled,
+            DashSetting::Pattern("--".to_string()),
+        );
+        let result = transform_punctuation("She said 'it's fine' to him", &options);
+        // Single quotes become curly, but apostrophe stays straight
+        assert_eq!(
+            result,
+            format!(
+                "She said {}it's fine{} to him",
+                LEFT_SINGLE_QUOTE, RIGHT_SINGLE_QUOTE
+            )
+        );
+    }
+
+    #[test]
+    fn test_multiple_word_final_apostrophes() {
+        // Multiple word-final apostrophes in same sentence
+        let options = options_with(
+            true,
+            true,
+            true,
+            true,
+            DashSetting::Disabled,
+            DashSetting::Pattern("--".to_string()),
+        );
+        let result = transform_punctuation("We're goin' and they're comin' too", &options);
+        assert_eq!(
+            result,
+            format!(
+                "We{}re goin{} and they{}re comin{} too",
+                RIGHT_SINGLE_QUOTE, RIGHT_SINGLE_QUOTE, RIGHT_SINGLE_QUOTE, RIGHT_SINGLE_QUOTE
+            )
+        );
+    }
+
+    #[test]
+    fn test_apostrophe_at_end_of_sentence() {
+        // Apostrophe at end of sentence (possessive at end)
+        let options = options_with(
+            true,
+            true,
+            true,
+            true,
+            DashSetting::Disabled,
+            DashSetting::Pattern("--".to_string()),
+        );
+        let result = transform_punctuation("That's John's.", &options);
+        assert_eq!(
+            result,
+            format!("That{}s John{}s.", RIGHT_SINGLE_QUOTE, RIGHT_SINGLE_QUOTE)
+        );
+    }
+
+    #[test]
+    fn test_decade_with_curly_single_quotes_disabled() {
+        // Decade abbreviation with curly_single_quotes disabled
+        // Should still convert to curly because it's handled specially
+        let options = options_with(
+            true,
+            false,
+            false,
+            true,
+            DashSetting::Disabled,
+            DashSetting::Pattern("--".to_string()),
+        );
+        let result = transform_punctuation("the '80s and '90s", &options);
+        // Even with single quotes disabled, decade abbreviations get curly
+        assert_eq!(result, "the '80s and '90s");
+    }
+
+    #[test]
+    fn test_decade_with_curly_single_quotes_enabled() {
+        // Decade abbreviation with curly_single_quotes enabled
+        let options = default_options();
+        let result = transform_punctuation("music from the '80s", &options);
+        assert_eq!(result, format!("music from the {}80s", RIGHT_SINGLE_QUOTE));
     }
 
     // ========== Em-dash tests ==========
