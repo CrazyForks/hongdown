@@ -798,6 +798,7 @@ fn is_acronym(word: &str) -> bool {
 
 /// Find a proper noun match (case-insensitive search).
 /// Returns None if the word is in the common_nouns list.
+/// Handles words with leading punctuation (e.g., "(France" matches "France").
 /// Handles words with trailing punctuation (e.g., "France," matches "France").
 /// Handles possessive forms (e.g., "GitHub's" matches "GitHub").
 fn find_proper_noun(
@@ -805,18 +806,30 @@ fn find_proper_noun(
     user_proper_nouns: &[String],
     common_nouns: &[String],
 ) -> Option<String> {
+    // Strip leading punctuation first (e.g., "(Deno" -> "Deno")
+    // Only strip opening brackets/quotes, not @ which is part of identifiers like @foo/bar
+    let leading_punct_end = word
+        .char_indices()
+        .find(|(_, c)| c.is_alphanumeric() || *c == '@')
+        .map(|(i, _)| i)
+        .unwrap_or(word.len());
+    let leading_punct = &word[..leading_punct_end];
+    let word_without_leading = &word[leading_punct_end..];
+
     // Check for possessive form ('s or 's) and strip it temporarily
-    let (core_word, possessive_suffix) = if let Some(stripped) = word.strip_suffix("'s") {
-        (stripped, "'s")
-    } else if let Some(stripped) = word.strip_suffix("\u{2019}s") {
-        (stripped, "\u{2019}s")
-    } else {
-        (word, "")
-    };
+    let (core_word, possessive_suffix) =
+        if let Some(stripped) = word_without_leading.strip_suffix("'s") {
+            (stripped, "'s")
+        } else if let Some(stripped) = word_without_leading.strip_suffix("\u{2019}s") {
+            (stripped, "\u{2019}s")
+        } else {
+            (word_without_leading, "")
+        };
 
     // Strip remaining trailing punctuation to find the core word
     let core_word = core_word.trim_end_matches(|c: char| !c.is_alphanumeric());
-    let trailing_punct = &word[core_word.len()..word.len() - possessive_suffix.len()];
+    let trailing_punct = &word_without_leading
+        [core_word.len()..word_without_leading.len() - possessive_suffix.len()];
     let core_word_lower = core_word.to_lowercase();
 
     // If no alphabetic characters remain, return None
@@ -836,8 +849,8 @@ fn find_proper_noun(
     for proper_noun in user_proper_nouns {
         if proper_noun.to_lowercase() == core_word_lower {
             return Some(format!(
-                "{}{}{}",
-                proper_noun, trailing_punct, possessive_suffix
+                "{}{}{}{}",
+                leading_punct, proper_noun, trailing_punct, possessive_suffix
             ));
         }
     }
@@ -846,8 +859,8 @@ fn find_proper_noun(
     for (canonical, key) in PROPER_NOUNS {
         if *key == core_word_lower {
             return Some(format!(
-                "{}{}{}",
-                canonical, trailing_punct, possessive_suffix
+                "{}{}{}{}",
+                leading_punct, canonical, trailing_punct, possessive_suffix
             ));
         }
     }

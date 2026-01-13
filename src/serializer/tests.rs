@@ -3721,6 +3721,18 @@ fn test_heading_sentence_case_starting_with_code_span() {
     assert_eq!(result, "`Foo` object\n============\n");
 }
 
+#[test]
+fn test_heading_sentence_case_proper_noun_in_parentheses() {
+    // Regression test: proper nouns inside parentheses should be preserved.
+    // Even though "Deno" is in the built-in proper nouns list, it was being
+    // lowercased because find_proper_noun() didn't strip leading punctuation.
+    let input = "# Test (Deno only)";
+    let mut options = Options::default();
+    options.heading_sentence_case = true;
+    let result = parse_and_serialize_with_options(input, &options);
+    assert_eq!(result, "Test (Deno only)\n================\n");
+}
+
 // ============================================================================
 // Code block formatter tests
 // ============================================================================
