@@ -340,11 +340,14 @@ impl<'a> Serializer<'a> {
                         );
                     }
                     NodeValue::List(_) => {
-                        // List as first child: output marker, newline, then list
-                        // The list will handle its own indentation via in_description_details
+                        // List as first child: output marker with 4 spaces, then list on same line
+                        // This ensures idempotent formatting - the list stays inside the definition
                         self.output.push_str(&blockquote_prefix);
-                        self.output.push_str(":\n");
+                        self.output.push_str(":    ");
+                        // Set flag so list knows first item shouldn't have base indentation
+                        self.description_details_first_list = true;
                         self.serialize_node(child);
+                        self.description_details_first_list = false;
                     }
                     NodeValue::BlockQuote | NodeValue::Alert(_) => {
                         // Block quotes and alerts as first child: output marker, newline,

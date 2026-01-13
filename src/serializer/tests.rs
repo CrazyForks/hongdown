@@ -1677,9 +1677,9 @@ fn test_abbreviation_definition_multiple() {
 fn test_definition_list_with_list_as_first_child() {
     let input = "Pros\n:    -  First item\n     -  Second item";
     let result = parse_and_serialize(input);
-    // Should have colon on its own line, then indented list
-    assert!(result.contains("Pros\n:\n"));
-    assert!(result.contains("     -  First item"));
+    // The list should be on the same line as the colon to ensure idempotent formatting
+    // Format: `:    -  First item` (colon + 4 spaces + list marker)
+    assert!(result.contains("Pros\n:    -  First item"));
     assert!(result.contains("     -  Second item"));
 }
 
@@ -4188,5 +4188,69 @@ Some content here.
         footnote_pos < disable_pos,
         "Footnote definition should appear before hongdown-disable-next-section directive.\nGot:\n{}",
         result
+    );
+}
+
+// =============================================================================
+// Regression tests for definition list with list as first child (idempotency)
+// =============================================================================
+
+#[test]
+fn test_definition_list_with_unordered_list_first_child_idempotent() {
+    // Definition list with an unordered list as the first child should be idempotent.
+    // The formatter must produce output that parses back to the same structure.
+    // Bug: Previously, the formatter output :\n followed by indented list, which
+    // broke the definition list structure on subsequent formatting passes.
+    let input = "Pros\n:    -  First item\n     -  Second item\n";
+    let first_pass = parse_and_serialize(input);
+
+    // Format again - should be identical (idempotent)
+    let second_pass = parse_and_serialize(&first_pass);
+    assert_eq!(
+        first_pass, second_pass,
+        "Formatting should be idempotent.\nFirst pass:\n{}\nSecond pass:\n{}",
+        first_pass, second_pass
+    );
+
+    // Format a third time to ensure stability
+    let third_pass = parse_and_serialize(&second_pass);
+    assert_eq!(
+        second_pass, third_pass,
+        "Formatting should be idempotent.\nSecond pass:\n{}\nThird pass:\n{}",
+        second_pass, third_pass
+    );
+}
+
+#[test]
+fn test_definition_list_with_ordered_list_first_child_idempotent() {
+    // Definition list with an ordered list as the first child should be idempotent.
+    let input = "Steps\n:    1.  First step\n     2.  Second step\n";
+    let first_pass = parse_and_serialize(input);
+
+    // Format again - should be identical (idempotent)
+    let second_pass = parse_and_serialize(&first_pass);
+    assert_eq!(
+        first_pass, second_pass,
+        "Formatting should be idempotent.\nFirst pass:\n{}\nSecond pass:\n{}",
+        first_pass, second_pass
+    );
+}
+
+#[test]
+fn test_definition_list_multiple_items_with_lists_idempotent() {
+    // Multiple definition list items, each with a list as first child.
+    let input = r#"Pros
+:    -  The actor URI is more predictable.
+
+Cons
+:    -  Changing the WebFinger username may break the existing network.
+"#;
+    let first_pass = parse_and_serialize(input);
+    let second_pass = parse_and_serialize(&first_pass);
+
+    assert_eq!(
+        first_pass, second_pass,
+        "Formatting should be idempotent.\nFirst pass:\n{}\nSecond pass:\n{}",
+        first_pass, second_pass
     );
 }
