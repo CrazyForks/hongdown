@@ -7,6 +7,19 @@ Version 0.3.0
 To be released.
 
 
+Version 0.2.4
+-------------
+
+Released on January 14, 2026.
+
+ -  Fixed a bug where definition lists with a list (ordered or unordered) as
+    the first block element would produce non-idempotent output.  The formatter
+    previously output `:` followed by a newline and indented list, which caused
+    the list to break out of the definition on subsequent formatting passes.
+    The list is now kept on the same line as the colon (`:    -  item`),
+    ensuring stable and idempotent formatting.
+
+
 Version 0.2.3
 -------------
 

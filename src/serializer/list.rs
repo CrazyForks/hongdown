@@ -83,9 +83,16 @@ impl<'a> Serializer<'a> {
             self.output.push_str("> ");
         }
 
+        // Check if this is the first item of a list that starts on the same line as `:` in
+        // definition details. In that case, skip base indentation for the first item only.
+        let is_first_item_on_colon_line = self.description_details_first_list
+            && self.list_item_index == 1
+            && self.list_depth == 1;
+
         // Add extra indentation if inside a description details block
         // (lists inside definition list details need 5-space base indent: "     ")
-        let desc_base_indent = if self.in_description_details {
+        // Skip this for the first item when it's on the same line as the colon
+        let desc_base_indent = if self.in_description_details && !is_first_item_on_colon_line {
             "     "
         } else {
             ""

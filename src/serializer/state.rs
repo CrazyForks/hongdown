@@ -256,6 +256,9 @@ pub struct Serializer<'a> {
     pub skip_mode: FormatSkipMode,
     /// Whether we're inside a description details block (for indentation)
     pub in_description_details: bool,
+    /// Whether we're serializing the first list inside description details on the same line as `:`.
+    /// When true, the first list item should not have base indentation (only marker).
+    pub description_details_first_list: bool,
     /// Warnings generated during formatting
     pub warnings: Vec<Warning>,
     /// Maximum number of items in the current ordered list (for padding calculation)
@@ -301,6 +304,7 @@ impl<'a> Serializer<'a> {
             list_depth: 0,
             skip_mode: FormatSkipMode::None,
             in_description_details: false,
+            description_details_first_list: false,
             warnings: Vec::new(),
             ordered_list_max_items: 0,
             source_ends_with_newline,
@@ -337,6 +341,7 @@ impl<'a> Serializer<'a> {
             list_depth: 0,
             skip_mode: FormatSkipMode::None,
             in_description_details: false,
+            description_details_first_list: false,
             warnings: Vec::new(),
             ordered_list_max_items: 0,
             source_ends_with_newline,
