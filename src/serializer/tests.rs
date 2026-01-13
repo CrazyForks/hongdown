@@ -3529,6 +3529,35 @@ fn test_punctuation_all_disabled() {
 }
 
 #[test]
+fn test_punctuation_bracket_possessive_stays_straight() {
+    // Possessive apostrophe after closing bracket in a link reference
+    // should stay straight when curly_apostrophes is disabled (default)
+    let input = "This package provides [Fedify]'s API.\n\n[Fedify]: https://fedify.dev/\n";
+    let result = parse_and_serialize(input);
+    // The apostrophe should remain straight
+    assert_eq!(
+        result,
+        "This package provides [Fedify]'s API.\n\n[Fedify]: https://fedify.dev/\n"
+    );
+}
+
+#[test]
+fn test_punctuation_bracket_possessive_curly_when_enabled() {
+    // Possessive apostrophe after closing bracket should become curly
+    // when curly_apostrophes is enabled
+    let mut options = Options::default();
+    options.curly_apostrophes = true;
+
+    let input = "This package provides [Fedify]'s API.\n\n[Fedify]: https://fedify.dev/\n";
+    let result = parse_and_serialize_with_options(input, &options);
+    let expected = format!(
+        "This package provides [Fedify]{}s API.\n\n[Fedify]: https://fedify.dev/\n",
+        RIGHT_SINGLE_QUOTE
+    );
+    assert_eq!(result, expected);
+}
+
+#[test]
 fn test_punctuation_decade_abbreviation() {
     // '80s style decade abbreviations
     let input = "The '80s were great.";
