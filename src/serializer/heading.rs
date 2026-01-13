@@ -433,12 +433,27 @@ fn process_text(
     let mut result = String::new();
     let mut current_word = String::new();
     let mut word_count = 0;
+    let mut after_delimiter = false; // Track if we're after :, ;, or —
 
     for ch in text_with_placeholders.chars() {
         if ch.is_whitespace() {
             if !current_word.is_empty() {
+                // Check if the current word starts with uppercase in original text
+                let original_is_uppercase = current_word
+                    .chars()
+                    .next()
+                    .map(|c| c.is_uppercase())
+                    .unwrap_or(false);
+
                 // Only the very first word (word_count == 0) gets first-word treatment
-                let should_capitalize = word_count == 0 && *is_first_word;
+                // Words after delimiters preserve their original capitalization
+                let should_capitalize = if word_count == 0 && *is_first_word {
+                    true
+                } else if after_delimiter {
+                    original_is_uppercase
+                } else {
+                    false
+                };
 
                 let processed = process_word(
                     &current_word,
@@ -450,16 +465,47 @@ fn process_text(
                 current_word.clear();
                 word_count += 1;
                 *is_first_word = false;
+                after_delimiter = false;
             }
             result.push(ch);
         } else {
-            current_word.push(ch);
+            // Check if this is a delimiter that should trigger capitalization check
+            if ch == ':' || ch == ';' || ch == '—' {
+                if !current_word.is_empty() {
+                    let processed = process_word(
+                        &current_word,
+                        word_count == 0 && *is_first_word,
+                        user_proper_nouns,
+                        common_nouns,
+                    );
+                    result.push_str(&processed);
+                    current_word.clear();
+                    word_count += 1;
+                    *is_first_word = false;
+                }
+                result.push(ch);
+                after_delimiter = true;
+            } else {
+                current_word.push(ch);
+            }
         }
     }
 
     // Process remaining word
     if !current_word.is_empty() {
-        let should_capitalize = word_count == 0 && *is_first_word;
+        let original_is_uppercase = current_word
+            .chars()
+            .next()
+            .map(|c| c.is_uppercase())
+            .unwrap_or(false);
+
+        let should_capitalize = if word_count == 0 && *is_first_word {
+            true
+        } else if after_delimiter {
+            original_is_uppercase
+        } else {
+            false
+        };
 
         let processed = process_word(
             &current_word,
@@ -1316,6 +1362,40 @@ mod tests {
         assert_eq!(
             to_sentence_case("Latin American Music", &[], &[]),
             "Latin American music"
+        );
+    }
+
+    #[test]
+    fn test_punctuation_with_capitalization() {
+        // Colon: preserve original capitalization after colon
+        assert_eq!(to_sentence_case("Part 1: Food", &[], &[]), "Part 1: Food");
+        assert_eq!(to_sentence_case("Part 1: food", &[], &[]), "Part 1: food");
+        // Colon with proper nouns should preserve them
+        assert_eq!(
+            to_sentence_case("Part 1: East Asia", &[], &[]),
+            "Part 1: East Asia"
+        );
+        assert_eq!(
+            to_sentence_case("Chapter 2: JavaScript Basics", &[], &[]),
+            "Chapter 2: JavaScript basics"
+        );
+        // Semicolon should work the same way
+        assert_eq!(
+            to_sentence_case("Note; This Is Important", &[], &[]),
+            "Note; This is important"
+        );
+        assert_eq!(
+            to_sentence_case("Warning; Python Required", &[], &[]),
+            "Warning; Python required"
+        );
+        // Em dash should work the same way
+        assert_eq!(
+            to_sentence_case("Introduction—A Brief Overview", &[], &[]),
+            "Introduction—A brief overview"
+        );
+        assert_eq!(
+            to_sentence_case("Section 1—Europe And Asia", &[], &[]),
+            "Section 1—Europe and Asia"
         );
     }
 }
