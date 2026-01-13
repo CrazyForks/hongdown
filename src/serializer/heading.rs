@@ -36,6 +36,7 @@ pub fn to_sentence_case(
         match token {
             Token::CodeSpan(content) => {
                 result.push_str(&content);
+                is_first_word = false;
             }
             Token::Quote(content, is_double) => {
                 let processed =

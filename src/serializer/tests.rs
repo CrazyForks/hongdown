@@ -3709,6 +3709,18 @@ fn test_heading_sentence_case_non_latin() {
     );
 }
 
+#[test]
+fn test_heading_sentence_case_starting_with_code_span() {
+    // Regression test: when a heading starts with a code span, the word
+    // following the code span should NOT be capitalized (the code span itself
+    // counts as the first word).
+    let input = "# `Foo` object";
+    let mut options = Options::default();
+    options.heading_sentence_case = true;
+    let result = parse_and_serialize_with_options(input, &options);
+    assert_eq!(result, "`Foo` object\n============\n");
+}
+
 // ============================================================================
 // Code block formatter tests
 // ============================================================================

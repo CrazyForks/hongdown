@@ -15,6 +15,11 @@ To be released.
     were incorrectly moved below the directive.  The definitions now correctly
     stay above the directive where they were originally placed.
 
+ -  Fixed a bug where headings starting with a code span (e.g.,
+    `` # `Foo` object ``) would incorrectly capitalize the word following
+    the code span when `heading.sentence_case` was enabled.  Now the code span
+    counts as the first word, so subsequent words are correctly lowercased.
+
 
 Version 0.2.1
 -------------
