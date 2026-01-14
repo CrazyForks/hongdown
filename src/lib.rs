@@ -20,8 +20,8 @@ mod serializer;
 mod wasm;
 
 pub use config::{
-    DashSetting, FenceChar, IndentWidth, LeadingSpaces, LineWidth, MinFenceLength, OrderedListPad,
-    OrderedMarker, ThematicBreakStyle, TrailingSpaces, UnorderedMarker,
+    DashPattern, DashSetting, FenceChar, IndentWidth, LeadingSpaces, LineWidth, MinFenceLength,
+    OrderedListPad, OrderedMarker, ThematicBreakStyle, TrailingSpaces, UnorderedMarker,
 };
 pub use serializer::Warning;
 pub use serializer::punctuation::{PunctuationError, validate_dash_settings};
@@ -175,7 +175,7 @@ impl Default for Options {
             curly_apostrophes: false,
             ellipsis: true,
             en_dash: DashSetting::Disabled,
-            em_dash: DashSetting::Pattern("--".to_string()),
+            em_dash: DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap()),
             code_formatters: HashMap::new(),
         }
     }
@@ -315,6 +315,9 @@ mod tests {
         assert!(!options.curly_apostrophes);
         assert!(options.ellipsis);
         assert_eq!(options.en_dash, DashSetting::Disabled);
-        assert_eq!(options.em_dash, DashSetting::Pattern("--".to_string()));
+        assert_eq!(
+            options.em_dash,
+            DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap())
+        );
     }
 }

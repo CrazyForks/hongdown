@@ -3350,7 +3350,8 @@ fn test_punctuation_em_dash_disabled() {
 #[test]
 fn test_punctuation_em_dash_triple_hyphen() {
     let mut options = Options::default();
-    options.em_dash = crate::DashSetting::Pattern("---".to_string());
+    options.em_dash =
+        crate::DashSetting::Pattern(crate::DashPattern::new("---".to_string()).unwrap());
     let input = "Hello---world";
     let result = parse_and_serialize_with_options(input, &options);
     let expected = format!("Hello{}world\n", EM_DASH);
@@ -3370,8 +3371,10 @@ fn test_punctuation_en_dash_disabled_by_default() {
 #[test]
 fn test_punctuation_en_dash_enabled() {
     let mut options = Options::default();
-    options.em_dash = crate::DashSetting::Pattern("---".to_string());
-    options.en_dash = crate::DashSetting::Pattern("--".to_string());
+    options.em_dash =
+        crate::DashSetting::Pattern(crate::DashPattern::new("---".to_string()).unwrap());
+    options.en_dash =
+        crate::DashSetting::Pattern(crate::DashPattern::new("--".to_string()).unwrap());
     let input = "Pages 10--20 and a long---dash";
     let result = parse_and_serialize_with_options(input, &options);
     let expected = format!("Pages 10{}20 and a long{}dash\n", EN_DASH, EM_DASH);
@@ -3565,7 +3568,8 @@ fn test_punctuation_decade_abbreviation() {
 fn test_punctuation_single_hyphen_em_dash_with_spaces() {
     // Single hyphen with spaces should transform when em_dash = "-"
     let mut options = Options::default();
-    options.em_dash = crate::DashSetting::Pattern("-".to_string());
+    options.em_dash =
+        crate::DashSetting::Pattern(crate::DashPattern::new("-".to_string()).unwrap());
     let input = "word - word";
     let result = parse_and_serialize_with_options(input, &options);
     let expected = format!("word {} word\n", EM_DASH);
@@ -3576,7 +3580,8 @@ fn test_punctuation_single_hyphen_em_dash_with_spaces() {
 fn test_punctuation_single_hyphen_em_dash_without_spaces() {
     // Single hyphen without spaces should NOT transform when em_dash = "-"
     let mut options = Options::default();
-    options.em_dash = crate::DashSetting::Pattern("-".to_string());
+    options.em_dash =
+        crate::DashSetting::Pattern(crate::DashPattern::new("-".to_string()).unwrap());
     let input = "word-word";
     let result = parse_and_serialize_with_options(input, &options);
     // Hyphen should remain because it's not surrounded by spaces

@@ -7,8 +7,8 @@ use wasm_bindgen::prelude::*;
 
 use crate::Options;
 use crate::config::{
-    DashSetting, FenceChar, IndentWidth, LeadingSpaces, LineWidth, MinFenceLength, OrderedListPad,
-    OrderedMarker, ThematicBreakStyle, TrailingSpaces, UnorderedMarker,
+    DashPattern, DashSetting, FenceChar, IndentWidth, LeadingSpaces, LineWidth, MinFenceLength,
+    OrderedListPad, OrderedMarker, ThematicBreakStyle, TrailingSpaces, UnorderedMarker,
 };
 
 /// JavaScript-friendly options struct.
@@ -115,7 +115,9 @@ impl JsDashSetting {
         match self {
             JsDashSetting::Disabled(false) => DashSetting::Disabled,
             JsDashSetting::Disabled(true) => DashSetting::Disabled,
-            JsDashSetting::Pattern(s) => DashSetting::Pattern(s.clone()),
+            JsDashSetting::Pattern(s) => DashPattern::new(s.clone())
+                .map(DashSetting::Pattern)
+                .unwrap_or(DashSetting::Disabled),
         }
     }
 }
@@ -439,7 +441,7 @@ mod tests {
     fn test_js_dash_setting_pattern() {
         let setting = JsDashSetting::Pattern("--".to_string());
         match setting.to_dash_setting() {
-            DashSetting::Pattern(p) => assert_eq!(p, "--"),
+            DashSetting::Pattern(p) => assert_eq!(p.as_str(), "--"),
             _ => panic!("Expected Pattern"),
         }
     }

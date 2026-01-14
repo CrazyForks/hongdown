@@ -658,6 +658,47 @@ impl Default for ThematicBreakConfig {
     }
 }
 
+/// Dash pattern for en-dash or em-dash transformation.
+/// Must be a non-empty string of valid characters.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DashPattern(String);
+
+impl DashPattern {
+    /// Create a new DashPattern.
+    ///
+    /// Returns an error if the pattern is empty or contains invalid characters.
+    pub fn new(pattern: String) -> Result<Self, String> {
+        if pattern.is_empty() {
+            return Err("dash pattern cannot be empty.".to_string());
+        }
+
+        // Check for non-printable or whitespace characters
+        if pattern.chars().any(|c| !c.is_ascii_graphic()) {
+            return Err(format!(
+                "dash pattern must only contain printable ASCII characters (no whitespace), got {:?}.",
+                pattern
+            ));
+        }
+
+        Ok(Self(pattern))
+    }
+
+    /// Get the inner value.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for DashPattern {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::new(value).map_err(serde::de::Error::custom)
+    }
+}
+
 /// Dash transformation setting.
 /// Can be `false` (disabled) or a string pattern to match.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -666,7 +707,7 @@ pub enum DashSetting {
     #[default]
     Disabled,
     /// Transform the given pattern to a dash character.
-    Pattern(String),
+    Pattern(DashPattern),
 }
 
 impl<'de> Deserialize<'de> for DashSetting {
@@ -702,14 +743,18 @@ impl<'de> Deserialize<'de> for DashSetting {
             where
                 E: de::Error,
             {
-                Ok(DashSetting::Pattern(value.to_string()))
+                DashPattern::new(value.to_string())
+                    .map(DashSetting::Pattern)
+                    .map_err(de::Error::custom)
             }
 
             fn visit_string<E>(self, value: String) -> Result<DashSetting, E>
             where
                 E: de::Error,
             {
-                Ok(DashSetting::Pattern(value))
+                DashPattern::new(value)
+                    .map(DashSetting::Pattern)
+                    .map_err(de::Error::custom)
             }
         }
 
@@ -756,7 +801,7 @@ impl Default for PunctuationConfig {
             curly_apostrophes: false,
             ellipsis: true,
             en_dash: DashSetting::Disabled,
-            em_dash: DashSetting::Pattern("--".to_string()),
+            em_dash: DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap()),
         }
     }
 }
@@ -1299,7 +1344,10 @@ exclude = ["vendor/**"]
         assert!(!config.curly_apostrophes);
         assert!(config.ellipsis);
         assert_eq!(config.en_dash, DashSetting::Disabled);
-        assert_eq!(config.em_dash, DashSetting::Pattern("--".to_string()));
+        assert_eq!(
+            config.em_dash,
+            DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap())
+        );
     }
 
     #[test]
@@ -1322,11 +1370,11 @@ em_dash = "---"
         assert!(!config.punctuation.ellipsis);
         assert_eq!(
             config.punctuation.en_dash,
-            DashSetting::Pattern("--".to_string())
+            DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap())
         );
         assert_eq!(
             config.punctuation.em_dash,
-            DashSetting::Pattern("---".to_string())
+            DashSetting::Pattern(DashPattern::new("---".to_string()).unwrap())
         );
     }
 
@@ -1353,7 +1401,7 @@ en_dash = "---"
         .unwrap();
         assert_eq!(
             config.punctuation.en_dash,
-            DashSetting::Pattern("---".to_string())
+            DashSetting::Pattern(DashPattern::new("---".to_string()).unwrap())
         );
     }
 
@@ -1373,7 +1421,7 @@ em_dash = "--"
         assert!(config.punctuation.curly_double_quotes);
         assert_eq!(
             config.punctuation.em_dash,
-            DashSetting::Pattern("--".to_string())
+            DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap())
         );
     }
 
@@ -1945,5 +1993,68 @@ style = "--"
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("must contain at least 3"));
+    }
+}
+
+#[cfg(test)]
+mod dash_pattern_tests {
+    use super::*;
+
+    #[test]
+    fn test_dash_pattern_valid() {
+        assert!(DashPattern::new("--".to_string()).is_ok());
+        assert!(DashPattern::new("---".to_string()).is_ok());
+        assert!(DashPattern::new("-".to_string()).is_ok());
+        assert_eq!(DashPattern::new("--".to_string()).unwrap().as_str(), "--");
+    }
+
+    #[test]
+    fn test_dash_pattern_empty() {
+        let result = DashPattern::new("".to_string());
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "dash pattern cannot be empty.");
+    }
+
+    #[test]
+    fn test_dash_pattern_with_whitespace() {
+        // Patterns cannot contain whitespace
+        assert!(DashPattern::new("- -".to_string()).is_err());
+        assert!(DashPattern::new(" --".to_string()).is_err());
+        assert!(DashPattern::new("-- ".to_string()).is_err());
+        let result = DashPattern::new("- -".to_string());
+        assert!(
+            result
+                .unwrap_err()
+                .contains("must only contain printable ASCII characters")
+        );
+    }
+
+    #[test]
+    fn test_dash_pattern_parse_valid() {
+        let config = Config::from_toml(
+            r#"
+[punctuation]
+em_dash = "--"
+"#,
+        )
+        .unwrap();
+        if let DashSetting::Pattern(p) = &config.punctuation.em_dash {
+            assert_eq!(p.as_str(), "--");
+        } else {
+            panic!("Expected Pattern");
+        }
+    }
+
+    #[test]
+    fn test_dash_pattern_parse_invalid() {
+        let result = Config::from_toml(
+            r#"
+[punctuation]
+em_dash = ""
+"#,
+        );
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("dash pattern cannot be empty"));
     }
 }
