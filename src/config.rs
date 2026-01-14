@@ -13,8 +13,13 @@ use serde::Deserialize;
 /// The default configuration file name.
 pub const CONFIG_FILE_NAME: &str = ".hongdown.toml";
 
+/// Default value for `git_aware` (true).
+fn default_git_aware() -> bool {
+    true
+}
+
 /// Configuration for the Hongdown formatter.
-#[derive(Debug, Clone, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Config {
     /// Maximum line width for wrapping (default: 80).
@@ -26,6 +31,10 @@ pub struct Config {
 
     /// Glob patterns for files to exclude (default: empty).
     pub exclude: Vec<String>,
+
+    /// Respect `.gitignore` files and skip `.git` directory (default: true).
+    #[serde(default = "default_git_aware")]
+    pub git_aware: bool,
 
     /// Heading formatting options.
     pub heading: HeadingConfig,
@@ -44,6 +53,23 @@ pub struct Config {
 
     /// Punctuation transformation options (SmartyPants-style).
     pub punctuation: PunctuationConfig,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            line_width: LineWidth::default(),
+            include: Vec::new(),
+            exclude: Vec::new(),
+            git_aware: true,
+            heading: HeadingConfig::default(),
+            unordered_list: UnorderedListConfig::default(),
+            ordered_list: OrderedListConfig::default(),
+            code_block: CodeBlockConfig::default(),
+            thematic_break: ThematicBreakConfig::default(),
+            punctuation: PunctuationConfig::default(),
+        }
+    }
 }
 
 /// Heading formatting options.
@@ -874,7 +900,9 @@ impl Config {
         // This efficiently skips directories that don't match patterns
         let walker = WalkBuilder::new(base_dir)
             .hidden(false) // Don't automatically ignore hidden files
-            .git_ignore(false) // Don't use .gitignore files
+            .git_ignore(self.git_aware) // Respect .gitignore if git_aware is enabled
+            .git_global(false) // Don't use global gitignore (for consistency)
+            .git_exclude(self.git_aware) // Respect .git/info/exclude if git_aware is enabled
             .overrides(overrides)
             .build();
 
@@ -952,6 +980,7 @@ mod tests {
     fn test_default_config() {
         let config = Config::default();
         assert_eq!(config.line_width.get(), 80);
+        assert!(config.git_aware);
         assert!(config.heading.setext_h1);
         assert!(config.heading.setext_h2);
         assert_eq!(

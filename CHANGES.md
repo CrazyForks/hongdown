@@ -6,6 +6,13 @@ Version 0.3.0
 
 To be released.
 
+ -  Added `git_aware` configuration option (default: `true`).  When enabled,
+    Hongdown respects `.gitignore` files and automatically skips the `.git`
+    directory during file collection.  This is particularly useful when using
+    `include` patterns like `**/*.md` to avoid formatting files that are
+    intentionally ignored by Git.  Set `git_aware = false` in your
+    _.hongdown.toml_ to disable this behavior and traverse all files.
+
  -  Dramatically improved file collection performance when using `include` and
     `exclude` patterns in configuration files.  The implementation now uses the
     [`ignore`] crate instead of [`glob`], which efficiently skips excluded

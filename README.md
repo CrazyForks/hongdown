@@ -172,6 +172,7 @@ default values:
 # File patterns (glob syntax)
 include = []              # Files to format (default: none, specify on CLI)
 exclude = []              # Files to skip (default: none)
+git_aware = true          # Respect .gitignore and skip .git directory (default: true)
 
 # Formatting options
 line_width = 80           # Maximum line width (min: 8, default: 80)
