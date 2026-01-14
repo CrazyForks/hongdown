@@ -21,7 +21,7 @@ To be released.
      -  `MinFenceLength` newtype: Ensures minimum fence length is at least 3
      -  `LeadingSpaces` newtype: Validates leading spaces are between 0–3
         (CommonMark requirement)
-     -  `TrailingSpaces` newtype: Validates trailing spaces are between 1–2
+     -  `TrailingSpaces` newtype: Validates trailing spaces are between 0–3
      -  `IndentWidth` newtype: Ensures indentation width is at least 1
      -  `LineWidth` newtype: Ensures line width is at least 8 (warns if below
         40 for readability)

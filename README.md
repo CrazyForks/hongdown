@@ -186,7 +186,7 @@ common_nouns = []         # Exclude built-in proper nouns (default: [])
 [unordered_list]
 unordered_marker = "-"    # "-", "*", or "+" (default: "-")
 leading_spaces = 1        # Spaces before marker (0–3, default: 1)
-trailing_spaces = 2       # Spaces after marker (1–2, default: 2)
+trailing_spaces = 2       # Spaces after marker (0–3, default: 2)
 indent_width = 4          # Indentation for nested items (min: 1, default: 4)
 
 [ordered_list]
