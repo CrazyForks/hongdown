@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use clap::Parser;
 use hongdown::config::Config;
-use hongdown::{CodeFormatter, Options, format_with_warnings, validate_dash_settings};
+use hongdown::{CodeFormatter, LineWidth, Options, format_with_warnings, validate_dash_settings};
 use rayon::prelude::*;
 use similar::{ChangeTag, TextDiff};
 use walkdir::WalkDir;
@@ -55,7 +55,10 @@ fn main() -> ExitCode {
 
     // Build options, with CLI args overriding config file
     let options = Options {
-        line_width: args.line_width.unwrap_or(config.line_width),
+        line_width: args
+            .line_width
+            .map(|w| LineWidth::new(w).expect("Invalid line width"))
+            .unwrap_or(config.line_width),
         setext_h1: config.heading.setext_h1,
         setext_h2: config.heading.setext_h2,
         heading_sentence_case: config.heading.sentence_case,

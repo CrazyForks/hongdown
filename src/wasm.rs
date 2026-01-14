@@ -7,7 +7,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::Options;
 use crate::config::{
-    DashSetting, FenceChar, IndentWidth, LeadingSpaces, MinFenceLength, OrderedListPad,
+    DashSetting, FenceChar, IndentWidth, LeadingSpaces, LineWidth, MinFenceLength, OrderedListPad,
     OrderedMarker, TrailingSpaces, UnorderedMarker,
 };
 
@@ -126,7 +126,9 @@ impl JsOptions {
         let mut opts = Options::default();
 
         if let Some(v) = self.line_width {
-            opts.line_width = v;
+            if let Ok(lw) = LineWidth::new(v) {
+                opts.line_width = lw;
+            }
         }
         if let Some(v) = self.setext_h1 {
             opts.setext_h1 = v;
@@ -407,7 +409,7 @@ mod tests {
     fn test_js_options_default() {
         let js_opts = JsOptions::default();
         let opts = js_opts.to_options();
-        assert_eq!(opts.line_width, 80);
+        assert_eq!(opts.line_width.get(), 80);
         assert!(opts.setext_h1);
         assert!(opts.setext_h2);
     }
@@ -420,7 +422,7 @@ mod tests {
             ..Default::default()
         };
         let opts = js_opts.to_options();
-        assert_eq!(opts.line_width, 100);
+        assert_eq!(opts.line_width.get(), 100);
         assert!(!opts.setext_h1);
         assert!(opts.setext_h2); // default
     }

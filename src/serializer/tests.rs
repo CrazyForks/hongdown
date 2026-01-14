@@ -1,4 +1,5 @@
 use super::*;
+use crate::LineWidth;
 use comrak::{Arena, Options as ComrakOptions, parse_document};
 
 fn comrak_options() -> ComrakOptions<'static> {
@@ -374,7 +375,7 @@ fn parse_and_serialize_with_width(input: &str, line_width: usize) -> String {
     let options = ComrakOptions::default();
     let root = parse_document(&arena, input, &options);
     let format_options = Options {
-        line_width,
+        line_width: LineWidth::new(line_width).unwrap(),
         ..Options::default()
     };
     serialize_with_source(root, &format_options, None)
@@ -771,7 +772,7 @@ fn parse_and_serialize_with_alerts_and_width(input: &str, line_width: usize) -> 
     options.extension.alerts = true;
     let root = parse_document(&arena, input, &options);
     let format_options = Options {
-        line_width,
+        line_width: LineWidth::new(line_width).unwrap(),
         ..Options::default()
     };
     serialize_with_source(root, &format_options, None)

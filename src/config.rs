@@ -14,11 +14,11 @@ use serde::Deserialize;
 pub const CONFIG_FILE_NAME: &str = ".hongdown.toml";
 
 /// Configuration for the Hongdown formatter.
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Default)]
 #[serde(default)]
 pub struct Config {
     /// Maximum line width for wrapping (default: 80).
-    pub line_width: usize,
+    pub line_width: LineWidth,
 
     /// Glob patterns for files to include (default: empty, meaning all files
     /// must be specified on command line).
@@ -44,22 +44,6 @@ pub struct Config {
 
     /// Punctuation transformation options (SmartyPants-style).
     pub punctuation: PunctuationConfig,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            line_width: 80,
-            include: Vec::new(),
-            exclude: Vec::new(),
-            heading: HeadingConfig::default(),
-            unordered_list: UnorderedListConfig::default(),
-            ordered_list: OrderedListConfig::default(),
-            code_block: CodeBlockConfig::default(),
-            thematic_break: ThematicBreakConfig::default(),
-            punctuation: PunctuationConfig::default(),
-        }
-    }
 }
 
 /// Heading formatting options.
@@ -250,6 +234,59 @@ impl Default for IndentWidth {
 }
 
 impl<'de> serde::Deserialize<'de> for IndentWidth {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = usize::deserialize(deserializer)?;
+        Self::new(value).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Maximum line width for text wrapping (must be at least 8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LineWidth(usize);
+
+impl LineWidth {
+    /// Minimum allowed line width.
+    pub const MIN: usize = 8;
+
+    /// Recommended minimum line width.
+    pub const RECOMMENDED_MIN: usize = 40;
+
+    /// Create a new LineWidth.
+    ///
+    /// Returns an error if the value is less than 8.
+    pub fn new(value: usize) -> Result<Self, String> {
+        if value < Self::MIN {
+            Err(format!(
+                "line_width must be at least {}, got {}.",
+                Self::MIN,
+                value
+            ))
+        } else {
+            Ok(Self(value))
+        }
+    }
+
+    /// Get the inner value.
+    pub fn get(self) -> usize {
+        self.0
+    }
+
+    /// Check if the line width is below the recommended minimum.
+    pub fn is_below_recommended(self) -> bool {
+        self.0 < Self::RECOMMENDED_MIN
+    }
+}
+
+impl Default for LineWidth {
+    fn default() -> Self {
+        Self(80)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for LineWidth {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -764,7 +801,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
-        assert_eq!(config.line_width, 80);
+        assert_eq!(config.line_width.get(), 80);
         assert!(config.heading.setext_h1);
         assert!(config.heading.setext_h2);
         assert_eq!(
@@ -801,7 +838,7 @@ mod tests {
     #[test]
     fn test_parse_line_width() {
         let config = Config::from_toml("line_width = 100").unwrap();
-        assert_eq!(config.line_width, 100);
+        assert_eq!(config.line_width.get(), 100);
     }
 
     #[test]
@@ -1044,7 +1081,7 @@ style = "---"
         assert!(result.is_some());
         let (path, config) = result.unwrap();
         assert_eq!(path, config_path);
-        assert_eq!(config.line_width, 90);
+        assert_eq!(config.line_width.get(), 90);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
@@ -1227,7 +1264,7 @@ em_dash = "--"
 "#,
         )
         .unwrap();
-        assert_eq!(config.line_width, 100);
+        assert_eq!(config.line_width.get(), 100);
         assert!(config.punctuation.curly_double_quotes);
         assert_eq!(
             config.punctuation.em_dash,
@@ -1655,5 +1692,55 @@ min_fence_length = 0
 "#,
         );
         assert!(result.is_err());
+    }
+}
+
+#[cfg(test)]
+mod line_width_tests {
+    use super::*;
+
+    #[test]
+    fn test_line_width_default() {
+        assert_eq!(LineWidth::default().get(), 80);
+    }
+
+    #[test]
+    fn test_line_width_valid() {
+        assert_eq!(LineWidth::new(8).unwrap().get(), 8);
+        assert_eq!(LineWidth::new(40).unwrap().get(), 40);
+        assert_eq!(LineWidth::new(80).unwrap().get(), 80);
+        assert_eq!(LineWidth::new(120).unwrap().get(), 120);
+    }
+
+    #[test]
+    fn test_line_width_below_recommended() {
+        assert!(LineWidth::new(8).unwrap().is_below_recommended());
+        assert!(LineWidth::new(39).unwrap().is_below_recommended());
+        assert!(!LineWidth::new(40).unwrap().is_below_recommended());
+        assert!(!LineWidth::new(80).unwrap().is_below_recommended());
+    }
+
+    #[test]
+    fn test_line_width_invalid() {
+        assert!(LineWidth::new(0).is_err());
+        assert!(LineWidth::new(7).is_err());
+        assert_eq!(
+            LineWidth::new(5).unwrap_err(),
+            "line_width must be at least 8, got 5."
+        );
+    }
+
+    #[test]
+    fn test_line_width_parse_valid() {
+        let config = Config::from_toml("line_width = 100").unwrap();
+        assert_eq!(config.line_width.get(), 100);
+    }
+
+    #[test]
+    fn test_line_width_parse_invalid() {
+        let result = Config::from_toml("line_width = 5");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("line_width must be at least 8"));
     }
 }

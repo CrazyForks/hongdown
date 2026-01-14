@@ -322,7 +322,7 @@ impl<'a> Serializer<'a> {
                             content.trim(),
                             "",
                             &continuation,
-                            self.options.line_width,
+                            self.options.line_width.get(),
                         );
                         self.output.push_str(&wrapped);
                         self.output.push('\n');
@@ -380,7 +380,7 @@ impl<'a> Serializer<'a> {
                             content.trim(),
                             "",
                             &continuation,
-                            self.options.line_width,
+                            self.options.line_width.get(),
                         );
                         self.output.push_str(&wrapped);
                         self.output.push('\n');
@@ -512,10 +512,10 @@ impl<'a> Serializer<'a> {
                 base_indent
             };
             let wrapped = wrap::wrap_text_first_line(
-                &inline_content,
+                inline_content.trim(),
                 "",
                 &continuation,
-                self.options.line_width,
+                self.options.line_width.get(),
             );
             self.output.push_str(&wrapped);
         } else {
@@ -525,7 +525,7 @@ impl<'a> Serializer<'a> {
             } else {
                 String::new()
             };
-            let wrapped = wrap::wrap_text(&inline_content, &prefix, self.options.line_width);
+            let wrapped = wrap::wrap_text(&inline_content, &prefix, self.options.line_width.get());
             self.output.push_str(&wrapped);
             self.output.push('\n');
         }
