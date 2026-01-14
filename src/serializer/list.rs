@@ -18,12 +18,12 @@ impl<'a> Serializer<'a> {
         match self.list_type {
             Some(ListType::Bullet) => {
                 // " -  " = leading_spaces + 1 (marker) + trailing_spaces
-                self.options.leading_spaces + 1 + self.options.trailing_spaces
+                self.options.leading_spaces.get() + 1 + self.options.trailing_spaces.get()
             }
             Some(ListType::Ordered) => {
                 // Fixed width based on ordered_list_indent_width (default 4)
                 // e.g., "1.  " (4), "10. " (4), "100." (4, min 1 trailing space)
-                self.options.ordered_list_indent_width
+                self.options.ordered_list_indent_width.get()
             }
             None => 0,
         }
@@ -103,8 +103,8 @@ impl<'a> Serializer<'a> {
         // Level 2+: indent_width spaces per nesting level, then " -  " prefix
         // Use different indent_width for ordered vs unordered lists
         let indent_width = match self.list_type {
-            Some(ListType::Ordered) => self.options.ordered_list_indent_width,
-            _ => self.options.indent_width,
+            Some(ListType::Ordered) => self.options.ordered_list_indent_width.get(),
+            _ => self.options.indent_width.get(),
         };
         if self.list_depth > 1 {
             let indent = format!(
@@ -119,9 +119,9 @@ impl<'a> Serializer<'a> {
 
         match self.list_type {
             Some(ListType::Bullet) => {
-                let marker = self.options.unordered_marker;
-                let leading = " ".repeat(self.options.leading_spaces);
-                let trailing = " ".repeat(self.options.trailing_spaces);
+                let marker = self.options.unordered_marker.as_char();
+                let leading = " ".repeat(self.options.leading_spaces.get());
+                let trailing = " ".repeat(self.options.trailing_spaces.get());
                 if self.in_description_details && self.list_depth == 1 {
                     // Inside description details at top level: "-  " (no leading space)
                     self.output.push(marker);
@@ -136,9 +136,9 @@ impl<'a> Serializer<'a> {
             Some(ListType::Ordered) => {
                 // Determine marker based on nesting level (odd=1,3,5..., even=2,4,6...)
                 let marker = if self.list_depth % 2 == 1 {
-                    self.options.odd_level_marker
+                    self.options.odd_level_marker.as_char()
                 } else {
-                    self.options.even_level_marker
+                    self.options.even_level_marker.as_char()
                 };
 
                 let current_num = self.list_item_index.to_string();
@@ -147,7 +147,7 @@ impl<'a> Serializer<'a> {
                 // Calculate trailing spaces to maintain fixed marker width
                 // marker_width = number + marker_char + trailing
                 // trailing = marker_width - number - 1 (minimum 1)
-                let marker_width = self.options.ordered_list_indent_width;
+                let marker_width = self.options.ordered_list_indent_width.get();
                 let trailing_count = marker_width.saturating_sub(current_num_width + 1).max(1);
 
                 self.output.push_str(&current_num);
@@ -177,11 +177,11 @@ impl<'a> Serializer<'a> {
             match self.list_type {
                 Some(ListType::Bullet) => {
                     // "-  " = 1 (marker) + trailing_spaces (no leading space)
-                    1 + self.options.trailing_spaces
+                    1 + self.options.trailing_spaces.get()
                 }
                 Some(ListType::Ordered) => {
                     // For ordered lists in description details, still use full width
-                    self.options.ordered_list_indent_width
+                    self.options.ordered_list_indent_width.get()
                 }
                 None => 0,
             }

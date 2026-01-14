@@ -19,7 +19,10 @@ mod serializer;
 #[cfg(feature = "wasm")]
 mod wasm;
 
-pub use config::{DashSetting, OrderedListPad};
+pub use config::{
+    DashPattern, DashSetting, FenceChar, IndentWidth, LeadingSpaces, LineWidth, MinFenceLength,
+    OrderedListPad, OrderedMarker, ThematicBreakStyle, TrailingSpaces, UnorderedMarker,
+};
 pub use serializer::Warning;
 pub use serializer::punctuation::{PunctuationError, validate_dash_settings};
 
@@ -38,7 +41,7 @@ pub struct CodeFormatter {
 #[derive(Debug, Clone)]
 pub struct Options {
     /// Line width for wrapping. Default: 80.
-    pub line_width: usize,
+    pub line_width: LineWidth,
 
     /// Use setext-style (underlined) for h1 headings. Default: true.
     pub setext_h1: bool,
@@ -58,36 +61,36 @@ pub struct Options {
     pub heading_common_nouns: Vec<String>,
 
     /// Marker character for unordered lists: `-`, `*`, or `+`. Default: `-`.
-    pub unordered_marker: char,
+    pub unordered_marker: UnorderedMarker,
 
     /// Number of leading spaces before the list marker. Default: 1.
-    pub leading_spaces: usize,
+    pub leading_spaces: LeadingSpaces,
 
     /// Number of trailing spaces after the list marker. Default: 2.
-    pub trailing_spaces: usize,
+    pub trailing_spaces: TrailingSpaces,
 
     /// Indentation width for nested list items. Default: 4.
-    pub indent_width: usize,
+    pub indent_width: IndentWidth,
 
     /// Marker style for ordered lists at odd nesting levels (1st, 3rd, etc.).
     /// Use `.` for `1.` or `)` for `1)`. Default: `.`.
-    pub odd_level_marker: char,
+    pub odd_level_marker: OrderedMarker,
 
     /// Marker style for ordered lists at even nesting levels (2nd, 4th, etc.).
     /// Use `.` for `1.` or `)` for `1)`. Default: `)`.
-    pub even_level_marker: char,
+    pub even_level_marker: OrderedMarker,
 
     /// Padding style for ordered list numbers. Default: `Start`.
     pub ordered_list_pad: OrderedListPad,
 
     /// Indentation width for nested ordered list items. Default: 4.
-    pub ordered_list_indent_width: usize,
+    pub ordered_list_indent_width: IndentWidth,
 
     /// Fence character for code blocks: `~` or `` ` ``. Default: `~`.
-    pub fence_char: char,
+    pub fence_char: FenceChar,
 
     /// Minimum fence length for code blocks. Default: 4.
-    pub min_fence_length: usize,
+    pub min_fence_length: MinFenceLength,
 
     /// Add space between fence and language identifier. Default: true.
     pub space_after_fence: bool,
@@ -98,11 +101,11 @@ pub struct Options {
     pub default_language: String,
 
     /// The style string for thematic breaks. Default: 37 spaced dashes.
-    pub thematic_break_style: String,
+    pub thematic_break_style: ThematicBreakStyle,
 
     /// Number of leading spaces before thematic breaks (0-3). Default: 3.
     /// CommonMark allows 0-3 leading spaces for thematic breaks.
-    pub thematic_break_leading_spaces: usize,
+    pub thematic_break_leading_spaces: LeadingSpaces,
 
     /// Convert straight double quotes to curly quotes. Default: true.
     /// `"text"` becomes `"text"` (U+201C and U+201D).
@@ -147,34 +150,32 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            line_width: 80,
+            line_width: LineWidth::default(),
             setext_h1: true,
             setext_h2: true,
             heading_sentence_case: false,
             heading_proper_nouns: Vec::new(),
             heading_common_nouns: Vec::new(),
-            unordered_marker: '-',
-            leading_spaces: 1,
-            trailing_spaces: 2,
-            indent_width: 4,
-            odd_level_marker: '.',
-            even_level_marker: ')',
+            unordered_marker: UnorderedMarker::default(),
+            leading_spaces: LeadingSpaces::default(),
+            trailing_spaces: TrailingSpaces::default(),
+            indent_width: IndentWidth::default(),
+            odd_level_marker: OrderedMarker::default(),
+            even_level_marker: OrderedMarker::Parenthesis,
             ordered_list_pad: OrderedListPad::Start,
-            ordered_list_indent_width: 4,
-            fence_char: '~',
-            min_fence_length: 4,
+            ordered_list_indent_width: IndentWidth::default(),
+            fence_char: FenceChar::default(),
+            min_fence_length: MinFenceLength::default(),
             space_after_fence: true,
             default_language: String::new(),
-            thematic_break_style:
-                "- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -"
-                    .to_string(),
-            thematic_break_leading_spaces: 3,
+            thematic_break_style: ThematicBreakStyle::default(),
+            thematic_break_leading_spaces: LeadingSpaces::new(3).unwrap(),
             curly_double_quotes: true,
             curly_single_quotes: true,
             curly_apostrophes: false,
             ellipsis: true,
             en_dash: DashSetting::Disabled,
-            em_dash: DashSetting::Pattern("--".to_string()),
+            em_dash: DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap()),
             code_formatters: HashMap::new(),
         }
     }
@@ -314,6 +315,9 @@ mod tests {
         assert!(!options.curly_apostrophes);
         assert!(options.ellipsis);
         assert_eq!(options.en_dash, DashSetting::Disabled);
-        assert_eq!(options.em_dash, DashSetting::Pattern("--".to_string()));
+        assert_eq!(
+            options.em_dash,
+            DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap())
+        );
     }
 }

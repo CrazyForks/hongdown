@@ -322,7 +322,7 @@ impl<'a> Serializer<'a> {
                             content.trim(),
                             "",
                             &continuation,
-                            self.options.line_width,
+                            self.options.line_width.get(),
                         );
                         self.output.push_str(&wrapped);
                         self.output.push('\n');
@@ -380,7 +380,7 @@ impl<'a> Serializer<'a> {
                             content.trim(),
                             "",
                             &continuation,
-                            self.options.line_width,
+                            self.options.line_width.get(),
                         );
                         self.output.push_str(&wrapped);
                         self.output.push('\n');
@@ -490,7 +490,7 @@ impl<'a> Serializer<'a> {
                 // Inside description details, add extra 5-space indent for `:    ` prefix.
                 // For unordered lists at top level, the marker is `-  ` (3 chars, no leading space).
                 // For nested lists, use the standard 4-char indent.
-                let first_level_marker_width = 1 + self.options.trailing_spaces; // `-` + trailing
+                let first_level_marker_width = 1 + self.options.trailing_spaces.get(); // `-` + trailing
                 let nested_indent = "    ".repeat(inner_list_depth.saturating_sub(1));
                 format!(
                     "     {}{}",
@@ -512,10 +512,10 @@ impl<'a> Serializer<'a> {
                 base_indent
             };
             let wrapped = wrap::wrap_text_first_line(
-                &inline_content,
+                inline_content.trim(),
                 "",
                 &continuation,
-                self.options.line_width,
+                self.options.line_width.get(),
             );
             self.output.push_str(&wrapped);
         } else {
@@ -525,7 +525,7 @@ impl<'a> Serializer<'a> {
             } else {
                 String::new()
             };
-            let wrapped = wrap::wrap_text(&inline_content, &prefix, self.options.line_width);
+            let wrapped = wrap::wrap_text(&inline_content, &prefix, self.options.line_width.get());
             self.output.push_str(&wrapped);
             self.output.push('\n');
         }
@@ -859,9 +859,8 @@ impl<'a> Serializer<'a> {
     }
 
     pub(super) fn serialize_thematic_break(&mut self) {
-        let style = &self.options.thematic_break_style;
-        // Clamp leading spaces to 0-3 for CommonMark compatibility
-        let leading_spaces = self.options.thematic_break_leading_spaces.min(3);
+        let style = self.options.thematic_break_style.as_str();
+        let leading_spaces = self.options.thematic_break_leading_spaces.get();
 
         // Determine the prefix based on blockquote context
         if self.in_block_quote {

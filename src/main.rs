@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use clap::Parser;
 use hongdown::config::Config;
-use hongdown::{CodeFormatter, Options, format_with_warnings, validate_dash_settings};
+use hongdown::{CodeFormatter, LineWidth, Options, format_with_warnings, validate_dash_settings};
 use rayon::prelude::*;
 use similar::{ChangeTag, TextDiff};
 use walkdir::WalkDir;
@@ -55,7 +55,10 @@ fn main() -> ExitCode {
 
     // Build options, with CLI args overriding config file
     let options = Options {
-        line_width: args.line_width.unwrap_or(config.line_width),
+        line_width: args
+            .line_width
+            .map(|w| LineWidth::new(w).expect("Invalid line width"))
+            .unwrap_or(config.line_width),
         setext_h1: config.heading.setext_h1,
         setext_h2: config.heading.setext_h2,
         heading_sentence_case: config.heading.sentence_case,
@@ -74,7 +77,7 @@ fn main() -> ExitCode {
         space_after_fence: config.code_block.space_after_fence,
         default_language: config.code_block.default_language.clone(),
         thematic_break_style: config.thematic_break.style.clone(),
-        thematic_break_leading_spaces: config.thematic_break.leading_spaces.min(3),
+        thematic_break_leading_spaces: config.thematic_break.leading_spaces,
         curly_double_quotes: config.punctuation.curly_double_quotes,
         curly_single_quotes: config.punctuation.curly_single_quotes,
         curly_apostrophes: config.punctuation.curly_apostrophes,
@@ -103,15 +106,6 @@ fn main() -> ExitCode {
             eprintln!("Error: formatter for '{}': {}", lang, msg);
             return ExitCode::FAILURE;
         }
-    }
-
-    // Warn if thematic_break.leading_spaces exceeds CommonMark limit
-    if config.thematic_break.leading_spaces > 3 {
-        eprintln!(
-            "warning: thematic_break.leading_spaces value {} exceeds CommonMark limit, \
-             clamped to 3",
-            config.thematic_break.leading_spaces
-        );
     }
 
     // Validate punctuation settings

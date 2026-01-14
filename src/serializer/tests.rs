@@ -1,4 +1,5 @@
 use super::*;
+use crate::{LineWidth, ThematicBreakStyle};
 use comrak::{Arena, Options as ComrakOptions, parse_document};
 
 fn comrak_options() -> ComrakOptions<'static> {
@@ -374,7 +375,7 @@ fn parse_and_serialize_with_width(input: &str, line_width: usize) -> String {
     let options = ComrakOptions::default();
     let root = parse_document(&arena, input, &options);
     let format_options = Options {
-        line_width,
+        line_width: LineWidth::new(line_width).unwrap(),
         ..Options::default()
     };
     serialize_with_source(root, &format_options, None)
@@ -771,7 +772,7 @@ fn parse_and_serialize_with_alerts_and_width(input: &str, line_width: usize) -> 
     options.extension.alerts = true;
     let root = parse_document(&arena, input, &options);
     let format_options = Options {
-        line_width,
+        line_width: LineWidth::new(line_width).unwrap(),
         ..Options::default()
     };
     serialize_with_source(root, &format_options, None)
@@ -1501,8 +1502,8 @@ fn test_thematic_break_default_leading_spaces() {
 fn test_thematic_break_custom_style() {
     let input = "Before\n\n---\n\nAfter";
     let mut options = Options::default();
-    options.thematic_break_style = "---".to_string();
-    options.thematic_break_leading_spaces = 0;
+    options.thematic_break_style = ThematicBreakStyle::new("---".to_string()).unwrap();
+    options.thematic_break_leading_spaces = LeadingSpaces::new(0).unwrap();
     let result = parse_and_serialize_with_options(input, &options);
     assert!(
         result.contains("\n---\n"),
@@ -1515,28 +1516,13 @@ fn test_thematic_break_custom_style() {
 fn test_thematic_break_leading_spaces() {
     let input = "Before\n\n---\n\nAfter";
     let mut options = Options::default();
-    options.thematic_break_style = "*  *  *".to_string();
-    options.thematic_break_leading_spaces = 3;
+    options.thematic_break_style = ThematicBreakStyle::new("*  *  *".to_string()).unwrap();
+    options.thematic_break_leading_spaces = LeadingSpaces::new(3).unwrap();
     let result = parse_and_serialize_with_options(input, &options);
     // 3 leading spaces should be applied
     assert!(
         result.contains("\n   *  *  *\n"),
         "Expected 3 leading spaces, got:\n{}",
-        result
-    );
-}
-
-#[test]
-fn test_thematic_break_leading_spaces_clamped() {
-    let input = "Before\n\n---\n\nAfter";
-    let mut options = Options::default();
-    options.thematic_break_style = "*  *  *".to_string();
-    options.thematic_break_leading_spaces = 10; // Should be clamped to 3
-    let result = parse_and_serialize_with_options(input, &options);
-    // Should be clamped to max 3 spaces
-    assert!(
-        result.contains("\n   *  *  *\n"),
-        "Expected max 3 leading spaces (clamped), got:\n{}",
         result
     );
 }
@@ -1855,7 +1841,7 @@ fn test_heading_setext_h2_enabled() {
 #[test]
 fn test_list_unordered_marker_asterisk() {
     let options = Options {
-        unordered_marker: '*',
+        unordered_marker: crate::UnorderedMarker::Asterisk,
         ..Options::default()
     };
     let result = parse_and_serialize_with_options(" -  Item one\n -  Item two", &options);
@@ -1865,7 +1851,7 @@ fn test_list_unordered_marker_asterisk() {
 #[test]
 fn test_list_unordered_marker_plus() {
     let options = Options {
-        unordered_marker: '+',
+        unordered_marker: crate::UnorderedMarker::Plus,
         ..Options::default()
     };
     let result = parse_and_serialize_with_options(" -  Item one\n -  Item two", &options);
@@ -1882,7 +1868,7 @@ fn test_list_unordered_marker_default() {
 #[test]
 fn test_list_leading_spaces_zero() {
     let options = Options {
-        leading_spaces: 0,
+        leading_spaces: LeadingSpaces::new(0).unwrap(),
         ..Options::default()
     };
     let result = parse_and_serialize_with_options(" -  Item one\n -  Item two", &options);
@@ -1892,7 +1878,7 @@ fn test_list_leading_spaces_zero() {
 #[test]
 fn test_list_leading_spaces_two() {
     let options = Options {
-        leading_spaces: 2,
+        leading_spaces: LeadingSpaces::new(2).unwrap(),
         ..Options::default()
     };
     let result = parse_and_serialize_with_options(" -  Item one\n -  Item two", &options);
@@ -1902,7 +1888,7 @@ fn test_list_leading_spaces_two() {
 #[test]
 fn test_list_trailing_spaces_one() {
     let options = Options {
-        trailing_spaces: 1,
+        trailing_spaces: TrailingSpaces::new(1).unwrap(),
         ..Options::default()
     };
     let result = parse_and_serialize_with_options(" -  Item one\n -  Item two", &options);
@@ -1912,7 +1898,7 @@ fn test_list_trailing_spaces_one() {
 #[test]
 fn test_list_trailing_spaces_three() {
     let options = Options {
-        trailing_spaces: 3,
+        trailing_spaces: TrailingSpaces::new(3).unwrap(),
         ..Options::default()
     };
     let result = parse_and_serialize_with_options(" -  Item one\n -  Item two", &options);
@@ -1924,7 +1910,7 @@ fn test_list_indent_width_two() {
     // indent_width=2: nested list has 2 spaces indent before " -  " prefix
     // Result: 2 spaces + " -  " = "   -  " (3 spaces before marker)
     let options = Options {
-        indent_width: 2,
+        indent_width: IndentWidth::new(2).unwrap(),
         ..Options::default()
     };
     let result = parse_and_serialize_with_options(" -  Item one\n     -  Nested", &options);
@@ -1943,7 +1929,7 @@ fn test_list_indent_width_default() {
 #[test]
 fn test_ordered_list_odd_level_marker() {
     let options = Options {
-        odd_level_marker: ')',
+        odd_level_marker: crate::OrderedMarker::Parenthesis,
         ..Options::default()
     };
     // trailing_spaces=2, so "N)  " format
@@ -1954,7 +1940,7 @@ fn test_ordered_list_odd_level_marker() {
 #[test]
 fn test_ordered_list_even_level_marker() {
     let options = Options {
-        even_level_marker: '.',
+        even_level_marker: crate::OrderedMarker::Period,
         ..Options::default()
     };
     // Nested ordered list (level 2)
@@ -1981,10 +1967,12 @@ fn test_ordered_list_alternating_markers() {
     assert!(result.contains("2)  Nested second"), "got: {}", result);
 }
 
+use crate::{FenceChar, IndentWidth, LeadingSpaces, MinFenceLength, TrailingSpaces};
+
 #[test]
 fn test_code_block_fence_char_backtick() {
     let options = Options {
-        fence_char: '`',
+        fence_char: FenceChar::Backtick,
         ..Options::default()
     };
     let result = parse_and_serialize_with_options("~~~~ rust\nfn main() {}\n~~~~", &options);
@@ -2002,7 +1990,7 @@ fn test_code_block_fence_char_default() {
 #[test]
 fn test_code_block_min_fence_length_three() {
     let options = Options {
-        min_fence_length: 3,
+        min_fence_length: MinFenceLength::new(3).unwrap(),
         ..Options::default()
     };
     let result = parse_and_serialize_with_options("~~~~ rust\nfn main() {}\n~~~~", &options);
@@ -2013,7 +2001,7 @@ fn test_code_block_min_fence_length_three() {
 #[test]
 fn test_code_block_min_fence_length_six() {
     let options = Options {
-        min_fence_length: 6,
+        min_fence_length: MinFenceLength::new(6).unwrap(),
         ..Options::default()
     };
     let result = parse_and_serialize_with_options("~~~~ rust\nfn main() {}\n~~~~", &options);
@@ -3362,7 +3350,8 @@ fn test_punctuation_em_dash_disabled() {
 #[test]
 fn test_punctuation_em_dash_triple_hyphen() {
     let mut options = Options::default();
-    options.em_dash = crate::DashSetting::Pattern("---".to_string());
+    options.em_dash =
+        crate::DashSetting::Pattern(crate::DashPattern::new("---".to_string()).unwrap());
     let input = "Hello---world";
     let result = parse_and_serialize_with_options(input, &options);
     let expected = format!("Hello{}world\n", EM_DASH);
@@ -3382,8 +3371,10 @@ fn test_punctuation_en_dash_disabled_by_default() {
 #[test]
 fn test_punctuation_en_dash_enabled() {
     let mut options = Options::default();
-    options.em_dash = crate::DashSetting::Pattern("---".to_string());
-    options.en_dash = crate::DashSetting::Pattern("--".to_string());
+    options.em_dash =
+        crate::DashSetting::Pattern(crate::DashPattern::new("---".to_string()).unwrap());
+    options.en_dash =
+        crate::DashSetting::Pattern(crate::DashPattern::new("--".to_string()).unwrap());
     let input = "Pages 10--20 and a long---dash";
     let result = parse_and_serialize_with_options(input, &options);
     let expected = format!("Pages 10{}20 and a long{}dash\n", EN_DASH, EM_DASH);
@@ -3577,7 +3568,8 @@ fn test_punctuation_decade_abbreviation() {
 fn test_punctuation_single_hyphen_em_dash_with_spaces() {
     // Single hyphen with spaces should transform when em_dash = "-"
     let mut options = Options::default();
-    options.em_dash = crate::DashSetting::Pattern("-".to_string());
+    options.em_dash =
+        crate::DashSetting::Pattern(crate::DashPattern::new("-".to_string()).unwrap());
     let input = "word - word";
     let result = parse_and_serialize_with_options(input, &options);
     let expected = format!("word {} word\n", EM_DASH);
@@ -3588,7 +3580,8 @@ fn test_punctuation_single_hyphen_em_dash_with_spaces() {
 fn test_punctuation_single_hyphen_em_dash_without_spaces() {
     // Single hyphen without spaces should NOT transform when em_dash = "-"
     let mut options = Options::default();
-    options.em_dash = crate::DashSetting::Pattern("-".to_string());
+    options.em_dash =
+        crate::DashSetting::Pattern(crate::DashPattern::new("-".to_string()).unwrap());
     let input = "word-word";
     let result = parse_and_serialize_with_options(input, &options);
     // Hyphen should remain because it's not surrounded by spaces

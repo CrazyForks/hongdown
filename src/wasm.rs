@@ -6,7 +6,10 @@ use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
 use crate::Options;
-use crate::config::{DashSetting, OrderedListPad};
+use crate::config::{
+    DashPattern, DashSetting, FenceChar, IndentWidth, LeadingSpaces, LineWidth, MinFenceLength,
+    OrderedListPad, OrderedMarker, ThematicBreakStyle, TrailingSpaces, UnorderedMarker,
+};
 
 /// JavaScript-friendly options struct.
 ///
@@ -112,7 +115,9 @@ impl JsDashSetting {
         match self {
             JsDashSetting::Disabled(false) => DashSetting::Disabled,
             JsDashSetting::Disabled(true) => DashSetting::Disabled,
-            JsDashSetting::Pattern(s) => DashSetting::Pattern(s.clone()),
+            JsDashSetting::Pattern(s) => DashPattern::new(s.clone())
+                .map(DashSetting::Pattern)
+                .unwrap_or(DashSetting::Disabled),
         }
     }
 }
@@ -123,7 +128,9 @@ impl JsOptions {
         let mut opts = Options::default();
 
         if let Some(v) = self.line_width {
-            opts.line_width = v;
+            if let Ok(lw) = LineWidth::new(v) {
+                opts.line_width = lw;
+            }
         }
         if let Some(v) = self.setext_h1 {
             opts.setext_h1 = v;
@@ -141,28 +148,38 @@ impl JsOptions {
             opts.heading_common_nouns = v.clone();
         }
         if let Some(ref v) = self.unordered_marker {
-            if let Some(c) = v.chars().next() {
-                opts.unordered_marker = c;
-            }
+            opts.unordered_marker = match v.as_str() {
+                "*" => UnorderedMarker::Asterisk,
+                "+" => UnorderedMarker::Plus,
+                _ => UnorderedMarker::Hyphen,
+            };
         }
         if let Some(v) = self.leading_spaces {
-            opts.leading_spaces = v;
+            if let Ok(leading) = LeadingSpaces::new(v) {
+                opts.leading_spaces = leading;
+            }
         }
         if let Some(v) = self.trailing_spaces {
-            opts.trailing_spaces = v;
+            if let Ok(trailing) = TrailingSpaces::new(v) {
+                opts.trailing_spaces = trailing;
+            }
         }
         if let Some(v) = self.indent_width {
-            opts.indent_width = v;
+            if let Ok(width) = IndentWidth::new(v) {
+                opts.indent_width = width;
+            }
         }
         if let Some(ref v) = self.odd_level_marker {
-            if let Some(c) = v.chars().next() {
-                opts.odd_level_marker = c;
-            }
+            opts.odd_level_marker = match v.as_str() {
+                ")" => OrderedMarker::Parenthesis,
+                _ => OrderedMarker::Period,
+            };
         }
         if let Some(ref v) = self.even_level_marker {
-            if let Some(c) = v.chars().next() {
-                opts.even_level_marker = c;
-            }
+            opts.even_level_marker = match v.as_str() {
+                "." => OrderedMarker::Period,
+                _ => OrderedMarker::Parenthesis,
+            };
         }
         if let Some(ref v) = self.ordered_list_pad {
             opts.ordered_list_pad = match v.as_str() {
@@ -171,15 +188,20 @@ impl JsOptions {
             };
         }
         if let Some(v) = self.ordered_list_indent_width {
-            opts.ordered_list_indent_width = v;
-        }
-        if let Some(ref v) = self.fence_char {
-            if let Some(c) = v.chars().next() {
-                opts.fence_char = c;
+            if let Ok(width) = IndentWidth::new(v) {
+                opts.ordered_list_indent_width = width;
             }
         }
+        if let Some(ref v) = self.fence_char {
+            opts.fence_char = match v.as_str() {
+                "`" => FenceChar::Backtick,
+                _ => FenceChar::Tilde,
+            };
+        }
         if let Some(v) = self.min_fence_length {
-            opts.min_fence_length = v;
+            if let Ok(min_len) = MinFenceLength::new(v) {
+                opts.min_fence_length = min_len;
+            }
         }
         if let Some(v) = self.space_after_fence {
             opts.space_after_fence = v;
@@ -188,10 +210,14 @@ impl JsOptions {
             opts.default_language = v.clone();
         }
         if let Some(ref v) = self.thematic_break_style {
-            opts.thematic_break_style = v.clone();
+            if let Ok(style) = ThematicBreakStyle::new(v.clone()) {
+                opts.thematic_break_style = style;
+            }
         }
         if let Some(v) = self.thematic_break_leading_spaces {
-            opts.thematic_break_leading_spaces = v;
+            if let Ok(leading) = LeadingSpaces::new(v) {
+                opts.thematic_break_leading_spaces = leading;
+            }
         }
         if let Some(v) = self.curly_double_quotes {
             opts.curly_double_quotes = v;
@@ -387,7 +413,7 @@ mod tests {
     fn test_js_options_default() {
         let js_opts = JsOptions::default();
         let opts = js_opts.to_options();
-        assert_eq!(opts.line_width, 80);
+        assert_eq!(opts.line_width.get(), 80);
         assert!(opts.setext_h1);
         assert!(opts.setext_h2);
     }
@@ -400,7 +426,7 @@ mod tests {
             ..Default::default()
         };
         let opts = js_opts.to_options();
-        assert_eq!(opts.line_width, 100);
+        assert_eq!(opts.line_width.get(), 100);
         assert!(!opts.setext_h1);
         assert!(opts.setext_h2); // default
     }
@@ -415,7 +441,7 @@ mod tests {
     fn test_js_dash_setting_pattern() {
         let setting = JsDashSetting::Pattern("--".to_string());
         match setting.to_dash_setting() {
-            DashSetting::Pattern(p) => assert_eq!(p, "--"),
+            DashSetting::Pattern(p) => assert_eq!(p.as_str(), "--"),
             _ => panic!("Expected Pattern"),
         }
     }

@@ -5,6 +5,9 @@
 
 use crate::{DashSetting, Options};
 
+#[cfg(test)]
+use crate::DashPattern;
+
 // Unicode constants for punctuation characters
 // Using escape sequences because Claude normalizes curly quotes to straight quotes
 
@@ -58,7 +61,9 @@ pub fn validate_dash_settings(options: &Options) -> Result<(), PunctuationError>
         (&options.en_dash, &options.em_dash)
         && en == em
     {
-        return Err(PunctuationError::ConflictingDashPatterns(en.clone()));
+        return Err(PunctuationError::ConflictingDashPatterns(
+            en.as_str().to_string(),
+        ));
     }
     Ok(())
 }
@@ -78,12 +83,12 @@ pub fn transform_punctuation(text: &str, options: &Options) -> String {
 
     // 1. Em-dash (process longer pattern first if applicable)
     if let DashSetting::Pattern(pattern) = &options.em_dash {
-        result = transform_dashes(&result, pattern, EM_DASH);
+        result = transform_dashes(&result, pattern.as_str(), EM_DASH);
     }
 
     // 2. En-dash
     if let DashSetting::Pattern(pattern) = &options.en_dash {
-        result = transform_dashes(&result, pattern, EN_DASH);
+        result = transform_dashes(&result, pattern.as_str(), EN_DASH);
     }
 
     // 3. Ellipsis
@@ -544,7 +549,7 @@ mod tests {
             false,
             false,
             DashSetting::Disabled,
-            DashSetting::Pattern("--".to_string()),
+            DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap()),
         );
         let result = transform_punctuation("Wait...", &options);
         assert_eq!(result, "Wait...");
@@ -614,7 +619,7 @@ mod tests {
             false,
             true,
             DashSetting::Disabled,
-            DashSetting::Pattern("--".to_string()),
+            DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap()),
         );
         let result = transform_punctuation("He said \"hello\" to her.", &options);
         assert_eq!(result, "He said \"hello\" to her.");
@@ -654,7 +659,7 @@ mod tests {
             false,
             true,
             DashSetting::Disabled,
-            DashSetting::Pattern("--".to_string()),
+            DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap()),
         );
         let result = transform_punctuation("She said 'hello' to him.", &options);
         assert_eq!(result, "She said 'hello' to him.");
@@ -701,7 +706,7 @@ mod tests {
             true, // curly_apostrophes enabled
             true,
             DashSetting::Disabled,
-            DashSetting::Pattern("--".to_string()),
+            DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap()),
         );
 
         let result = transform_punctuation("'s API", &options);
@@ -716,7 +721,7 @@ mod tests {
             true,
             true,
             DashSetting::Disabled,
-            DashSetting::Pattern("--".to_string()),
+            DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap()),
         );
         let result = transform_punctuation("it's a test", &options);
         assert_eq!(result, format!("it{}s a test", RIGHT_SINGLE_QUOTE));
@@ -730,7 +735,7 @@ mod tests {
             true,
             true,
             DashSetting::Disabled,
-            DashSetting::Pattern("--".to_string()),
+            DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap()),
         );
         let result = transform_punctuation("don't do it", &options);
         assert_eq!(result, format!("don{}t do it", RIGHT_SINGLE_QUOTE));
@@ -762,7 +767,7 @@ mod tests {
             true,
             true,
             DashSetting::Disabled,
-            DashSetting::Pattern("--".to_string()),
+            DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap()),
         );
         let result = transform_punctuation("we're goin' to the store", &options);
         assert_eq!(
@@ -791,7 +796,7 @@ mod tests {
             true,
             true,
             DashSetting::Disabled,
-            DashSetting::Pattern("--".to_string()),
+            DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap()),
         );
         let result = transform_punctuation("GitHub's API is great", &options);
         assert_eq!(
@@ -823,7 +828,7 @@ mod tests {
             true,
             true,
             DashSetting::Disabled,
-            DashSetting::Pattern("--".to_string()),
+            DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap()),
         );
         let result = transform_punctuation("She said 'it's fine' to him", &options);
         assert_eq!(
@@ -844,7 +849,7 @@ mod tests {
             true,
             true,
             DashSetting::Disabled,
-            DashSetting::Pattern("--".to_string()),
+            DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap()),
         );
         let result = transform_punctuation("She said 'it's fine' to him", &options);
         // Single quotes stay straight, but apostrophe becomes curly
@@ -863,7 +868,7 @@ mod tests {
             false,
             true,
             DashSetting::Disabled,
-            DashSetting::Pattern("--".to_string()),
+            DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap()),
         );
         let result = transform_punctuation("She said 'it's fine' to him", &options);
         // Single quotes become curly, but apostrophe stays straight
@@ -885,7 +890,7 @@ mod tests {
             true,
             true,
             DashSetting::Disabled,
-            DashSetting::Pattern("--".to_string()),
+            DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap()),
         );
         let result = transform_punctuation("We're goin' and they're comin' too", &options);
         assert_eq!(
@@ -906,7 +911,7 @@ mod tests {
             true,
             true,
             DashSetting::Disabled,
-            DashSetting::Pattern("--".to_string()),
+            DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap()),
         );
         let result = transform_punctuation("That's John's.", &options);
         assert_eq!(
@@ -925,7 +930,7 @@ mod tests {
             false,
             true,
             DashSetting::Disabled,
-            DashSetting::Pattern("--".to_string()),
+            DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap()),
         );
         let result = transform_punctuation("the '80s and '90s", &options);
         // Even with single quotes disabled, decade abbreviations get curly
@@ -970,7 +975,7 @@ mod tests {
             true, // curly_apostrophes enabled
             true,
             DashSetting::Disabled,
-            DashSetting::Pattern("--".to_string()),
+            DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap()),
         );
 
         let result = transform_punctuation("[Fedify]'s API", &options);
@@ -994,7 +999,7 @@ mod tests {
             false,
             true,
             DashSetting::Disabled,
-            DashSetting::Pattern("---".to_string()),
+            DashSetting::Pattern(DashPattern::new("---".to_string()).unwrap()),
         );
         let result = transform_punctuation("Hello---world", &options);
         assert_eq!(result, format!("Hello{}world", EM_DASH));
@@ -1008,7 +1013,7 @@ mod tests {
             false,
             true,
             DashSetting::Disabled,
-            DashSetting::Pattern("-".to_string()),
+            DashSetting::Pattern(DashPattern::new("-".to_string()).unwrap()),
         );
         let result = transform_punctuation("word - word", &options);
         assert_eq!(result, format!("word {} word", EM_DASH));
@@ -1022,7 +1027,7 @@ mod tests {
             false,
             true,
             DashSetting::Disabled,
-            DashSetting::Pattern("-".to_string()),
+            DashSetting::Pattern(DashPattern::new("-".to_string()).unwrap()),
         );
         let result = transform_punctuation("word-word", &options);
         // Single hyphen without surrounding spaces should not be transformed
@@ -1060,8 +1065,8 @@ mod tests {
             true,
             false,
             true,
-            DashSetting::Pattern("--".to_string()),
-            DashSetting::Pattern("---".to_string()),
+            DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap()),
+            DashSetting::Pattern(DashPattern::new("---".to_string()).unwrap()),
         );
         let result = transform_punctuation("pages 10--20", &options);
         assert_eq!(result, format!("pages 10{}20", EN_DASH));
@@ -1074,8 +1079,8 @@ mod tests {
             true,
             false,
             true,
-            DashSetting::Pattern("--".to_string()),
-            DashSetting::Pattern("---".to_string()),
+            DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap()),
+            DashSetting::Pattern(DashPattern::new("---".to_string()).unwrap()),
         );
         let result = transform_punctuation("em---dash and en--dash", &options);
         assert_eq!(result, format!("em{}dash and en{}dash", EM_DASH, EN_DASH));
@@ -1090,8 +1095,8 @@ mod tests {
             true,
             false,
             true,
-            DashSetting::Pattern("--".to_string()),
-            DashSetting::Pattern("--".to_string()),
+            DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap()),
+            DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap()),
         );
         let result = validate_dash_settings(&options);
         assert!(result.is_err());
@@ -1108,8 +1113,8 @@ mod tests {
             true,
             false,
             true,
-            DashSetting::Pattern("--".to_string()),
-            DashSetting::Pattern("---".to_string()),
+            DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap()),
+            DashSetting::Pattern(DashPattern::new("---".to_string()).unwrap()),
         );
         let result = validate_dash_settings(&options);
         assert!(result.is_ok());
@@ -1138,8 +1143,8 @@ mod tests {
             true,
             true,
             true,
-            DashSetting::Pattern("--".to_string()),
-            DashSetting::Pattern("---".to_string()),
+            DashSetting::Pattern(DashPattern::new("--".to_string()).unwrap()),
+            DashSetting::Pattern(DashPattern::new("---".to_string()).unwrap()),
         );
         let input = "He said \"It's... amazing---isn't it?\" she replied 'yes'";
         let result = transform_punctuation(input, &options);

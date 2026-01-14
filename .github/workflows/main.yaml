@@ -41,6 +41,8 @@ jobs:
     steps:
     - uses: actions/checkout@v6
     - uses: jdx/mise-action@v3
+      with:
+        cache_key_prefix: mise-v1
     - uses: Swatinem/rust-cache@v2
     - run: mise run check
 
