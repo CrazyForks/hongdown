@@ -19,7 +19,7 @@ mod serializer;
 #[cfg(feature = "wasm")]
 mod wasm;
 
-pub use config::{DashSetting, OrderedListPad};
+pub use config::{DashSetting, OrderedListPad, UnorderedMarker};
 pub use serializer::Warning;
 pub use serializer::punctuation::{PunctuationError, validate_dash_settings};
 
@@ -58,7 +58,7 @@ pub struct Options {
     pub heading_common_nouns: Vec<String>,
 
     /// Marker character for unordered lists: `-`, `*`, or `+`. Default: `-`.
-    pub unordered_marker: char,
+    pub unordered_marker: UnorderedMarker,
 
     /// Number of leading spaces before the list marker. Default: 1.
     pub leading_spaces: usize,
@@ -153,7 +153,7 @@ impl Default for Options {
             heading_sentence_case: false,
             heading_proper_nouns: Vec::new(),
             heading_common_nouns: Vec::new(),
-            unordered_marker: '-',
+            unordered_marker: UnorderedMarker::default(),
             leading_spaces: 1,
             trailing_spaces: 2,
             indent_width: 4,

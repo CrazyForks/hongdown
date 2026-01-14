@@ -1855,7 +1855,7 @@ fn test_heading_setext_h2_enabled() {
 #[test]
 fn test_list_unordered_marker_asterisk() {
     let options = Options {
-        unordered_marker: '*',
+        unordered_marker: crate::UnorderedMarker::Asterisk,
         ..Options::default()
     };
     let result = parse_and_serialize_with_options(" -  Item one\n -  Item two", &options);
@@ -1865,7 +1865,7 @@ fn test_list_unordered_marker_asterisk() {
 #[test]
 fn test_list_unordered_marker_plus() {
     let options = Options {
-        unordered_marker: '+',
+        unordered_marker: crate::UnorderedMarker::Plus,
         ..Options::default()
     };
     let result = parse_and_serialize_with_options(" -  Item one\n -  Item two", &options);

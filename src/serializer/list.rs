@@ -119,7 +119,7 @@ impl<'a> Serializer<'a> {
 
         match self.list_type {
             Some(ListType::Bullet) => {
-                let marker = self.options.unordered_marker;
+                let marker = self.options.unordered_marker.as_char();
                 let leading = " ".repeat(self.options.leading_spaces);
                 let trailing = " ".repeat(self.options.trailing_spaces);
                 if self.in_description_details && self.list_depth == 1 {

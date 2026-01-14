@@ -98,12 +98,38 @@ impl Default for HeadingConfig {
     }
 }
 
+/// Marker character for unordered lists.
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Default)]
+pub enum UnorderedMarker {
+    /// Hyphen marker (`-`)
+    #[default]
+    #[serde(rename = "-")]
+    Hyphen,
+    /// Asterisk marker (`*`)
+    #[serde(rename = "*")]
+    Asterisk,
+    /// Plus marker (`+`)
+    #[serde(rename = "+")]
+    Plus,
+}
+
+impl UnorderedMarker {
+    /// Get the character representation of this marker.
+    pub fn as_char(self) -> char {
+        match self {
+            Self::Hyphen => '-',
+            Self::Asterisk => '*',
+            Self::Plus => '+',
+        }
+    }
+}
+
 /// Unordered list formatting options.
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct UnorderedListConfig {
     /// Marker character: `-`, `*`, or `+` (default: `-`).
-    pub unordered_marker: char,
+    pub unordered_marker: UnorderedMarker,
 
     /// Spaces before the marker (default: 1).
     pub leading_spaces: usize,
@@ -118,7 +144,7 @@ pub struct UnorderedListConfig {
 impl Default for UnorderedListConfig {
     fn default() -> Self {
         Self {
-            unordered_marker: '-',
+            unordered_marker: UnorderedMarker::default(),
             leading_spaces: 1,
             trailing_spaces: 2,
             indent_width: 4,
@@ -528,7 +554,10 @@ mod tests {
         assert_eq!(config.line_width, 80);
         assert!(config.heading.setext_h1);
         assert!(config.heading.setext_h2);
-        assert_eq!(config.unordered_list.unordered_marker, '-');
+        assert_eq!(
+            config.unordered_list.unordered_marker,
+            UnorderedMarker::Hyphen
+        );
         assert_eq!(config.unordered_list.leading_spaces, 1);
         assert_eq!(config.unordered_list.trailing_spaces, 2);
         assert_eq!(config.unordered_list.indent_width, 4);
@@ -654,7 +683,10 @@ indent_width = 2
 "#,
         )
         .unwrap();
-        assert_eq!(config.unordered_list.unordered_marker, '*');
+        assert_eq!(
+            config.unordered_list.unordered_marker,
+            UnorderedMarker::Asterisk
+        );
         assert_eq!(config.unordered_list.leading_spaces, 0);
         assert_eq!(config.unordered_list.trailing_spaces, 1);
         assert_eq!(config.unordered_list.indent_width, 2);
@@ -1117,5 +1149,111 @@ javascript = ["deno", "fmt", "-"]
                 .validate()
                 .is_ok()
         );
+    }
+}
+
+#[cfg(test)]
+mod unordered_marker_tests {
+    use super::*;
+
+    #[test]
+    fn test_unordered_marker_default() {
+        let marker = UnorderedMarker::default();
+        assert_eq!(marker, UnorderedMarker::Hyphen);
+        assert_eq!(marker.as_char(), '-');
+    }
+
+    #[test]
+    fn test_unordered_marker_hyphen() {
+        let config = Config::from_toml(
+            r#"
+[unordered_list]
+unordered_marker = "-"
+"#,
+        )
+        .unwrap();
+        assert_eq!(
+            config.unordered_list.unordered_marker,
+            UnorderedMarker::Hyphen
+        );
+        assert_eq!(config.unordered_list.unordered_marker.as_char(), '-');
+    }
+
+    #[test]
+    fn test_unordered_marker_asterisk() {
+        let config = Config::from_toml(
+            r#"
+[unordered_list]
+unordered_marker = "*"
+"#,
+        )
+        .unwrap();
+        assert_eq!(
+            config.unordered_list.unordered_marker,
+            UnorderedMarker::Asterisk
+        );
+        assert_eq!(config.unordered_list.unordered_marker.as_char(), '*');
+    }
+
+    #[test]
+    fn test_unordered_marker_plus() {
+        let config = Config::from_toml(
+            r#"
+[unordered_list]
+unordered_marker = "+"
+"#,
+        )
+        .unwrap();
+        assert_eq!(
+            config.unordered_list.unordered_marker,
+            UnorderedMarker::Plus
+        );
+        assert_eq!(config.unordered_list.unordered_marker.as_char(), '+');
+    }
+
+    #[test]
+    fn test_unordered_marker_invalid_period() {
+        let result = Config::from_toml(
+            r#"
+[unordered_list]
+unordered_marker = "."
+"#,
+        );
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("unordered_marker"));
+    }
+
+    #[test]
+    fn test_unordered_marker_invalid_letter() {
+        let result = Config::from_toml(
+            r#"
+[unordered_list]
+unordered_marker = "x"
+"#,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_unordered_marker_invalid_number() {
+        let result = Config::from_toml(
+            r#"
+[unordered_list]
+unordered_marker = "1"
+"#,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_unordered_marker_invalid_empty() {
+        let result = Config::from_toml(
+            r#"
+[unordered_list]
+unordered_marker = ""
+"#,
+        );
+        assert!(result.is_err());
     }
 }
