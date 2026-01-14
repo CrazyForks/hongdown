@@ -183,7 +183,7 @@ sentence_case = false     # Convert headings to sentence case (default: false)
 proper_nouns = []         # Additional proper nouns to preserve (default: [])
 common_nouns = []         # Exclude built-in proper nouns (default: [])
 
-[list]
+[unordered_list]
 unordered_marker = "-"    # "-", "*", or "+" (default: "-")
 leading_spaces = 1        # Spaces before marker (default: 1)
 trailing_spaces = 2       # Spaces after marker (default: 2)
