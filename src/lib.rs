@@ -19,7 +19,7 @@ mod serializer;
 #[cfg(feature = "wasm")]
 mod wasm;
 
-pub use config::{DashSetting, OrderedListPad, OrderedMarker, UnorderedMarker};
+pub use config::{DashSetting, FenceChar, OrderedListPad, OrderedMarker, UnorderedMarker};
 pub use serializer::Warning;
 pub use serializer::punctuation::{PunctuationError, validate_dash_settings};
 
@@ -84,7 +84,7 @@ pub struct Options {
     pub ordered_list_indent_width: usize,
 
     /// Fence character for code blocks: `~` or `` ` ``. Default: `~`.
-    pub fence_char: char,
+    pub fence_char: FenceChar,
 
     /// Minimum fence length for code blocks. Default: 4.
     pub min_fence_length: usize,
@@ -161,7 +161,7 @@ impl Default for Options {
             even_level_marker: OrderedMarker::Parenthesis,
             ordered_list_pad: OrderedListPad::Start,
             ordered_list_indent_width: 4,
-            fence_char: '~',
+            fence_char: FenceChar::default(),
             min_fence_length: 4,
             space_after_fence: true,
             default_language: String::new(),

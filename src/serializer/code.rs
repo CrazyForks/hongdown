@@ -77,7 +77,7 @@ impl<'a> Serializer<'a> {
 
     /// Serialize a code block with indent for description list details.
     pub(super) fn serialize_code_block_with_indent(&mut self, code: &NodeCodeBlock, indent: &str) {
-        let fence_char = self.options.fence_char;
+        let fence_char = self.options.fence_char.as_char();
         let min_len = self.options.min_fence_length;
         let base_fence: String = std::iter::repeat_n(fence_char, min_len).collect();
         let long_fence: String = std::iter::repeat_n(fence_char, min_len + 1).collect();
@@ -140,7 +140,7 @@ impl<'a> Serializer<'a> {
     pub(super) fn serialize_code_block(&mut self, info: &str, literal: &str) {
         // Determine the minimum fence length from options
         let min_fence_length = self.options.min_fence_length;
-        let fence_char = self.options.fence_char;
+        let fence_char = self.options.fence_char.as_char();
 
         // Parse info to get language and check for no-format flag
         let (parsed_lang, info_output, skip_format) = parse_code_info(info);
@@ -229,7 +229,7 @@ impl<'a> Serializer<'a> {
     ) {
         // Determine the minimum fence length from options
         let min_fence_length = self.options.min_fence_length;
-        let fence_char = self.options.fence_char;
+        let fence_char = self.options.fence_char.as_char();
 
         // Parse info to get language and check for no-format flag
         let (parsed_lang, info_output, skip_format) = parse_code_info(info);

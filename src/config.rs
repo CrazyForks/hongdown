@@ -266,12 +266,34 @@ impl FormatterConfig {
     }
 }
 
+/// Fence character for code blocks.
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Default)]
+pub enum FenceChar {
+    /// Tilde fence (`~`)
+    #[default]
+    #[serde(rename = "~")]
+    Tilde,
+    /// Backtick fence (`` ` ``)
+    #[serde(rename = "`")]
+    Backtick,
+}
+
+impl FenceChar {
+    /// Get the character representation of this fence character.
+    pub fn as_char(self) -> char {
+        match self {
+            Self::Tilde => '~',
+            Self::Backtick => '`',
+        }
+    }
+}
+
 /// Code block formatting options.
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct CodeBlockConfig {
     /// Fence character: `~` or `` ` `` (default: `~`).
-    pub fence_char: char,
+    pub fence_char: FenceChar,
 
     /// Minimum fence length (default: 4).
     pub min_fence_length: usize,
@@ -294,7 +316,7 @@ pub struct CodeBlockConfig {
 impl Default for CodeBlockConfig {
     fn default() -> Self {
         Self {
-            fence_char: '~',
+            fence_char: FenceChar::default(),
             min_fence_length: 4,
             space_after_fence: true,
             default_language: String::new(),
@@ -590,7 +612,7 @@ mod tests {
         );
         assert_eq!(config.ordered_list.pad, OrderedListPad::Start);
         assert_eq!(config.ordered_list.indent_width, 4);
-        assert_eq!(config.code_block.fence_char, '~');
+        assert_eq!(config.code_block.fence_char, FenceChar::Tilde);
         assert_eq!(config.code_block.min_fence_length, 4);
         assert!(config.code_block.space_after_fence);
         assert_eq!(config.code_block.default_language, "");
@@ -770,7 +792,7 @@ space_after_fence = false
 "#,
         )
         .unwrap();
-        assert_eq!(config.code_block.fence_char, '`');
+        assert_eq!(config.code_block.fence_char, FenceChar::Backtick);
         assert_eq!(config.code_block.min_fence_length, 3);
         assert!(!config.code_block.space_after_fence);
         assert_eq!(config.code_block.default_language, ""); // Default is empty
@@ -1367,6 +1389,68 @@ odd_level_marker = "a"
             r#"
 [ordered_list]
 odd_level_marker = ""
+"#,
+        );
+        assert!(result.is_err());
+    }
+}
+
+#[cfg(test)]
+mod fence_char_tests {
+    use super::*;
+
+    #[test]
+    fn test_fence_char_default_is_tilde() {
+        assert_eq!(FenceChar::default(), FenceChar::Tilde);
+    }
+
+    #[test]
+    fn test_fence_char_as_char() {
+        assert_eq!(FenceChar::Tilde.as_char(), '~');
+        assert_eq!(FenceChar::Backtick.as_char(), '`');
+    }
+
+    #[test]
+    fn test_fence_char_parse_tilde() {
+        let config = Config::from_toml(
+            r#"
+[code_block]
+fence_char = "~"
+"#,
+        )
+        .unwrap();
+        assert_eq!(config.code_block.fence_char, FenceChar::Tilde);
+    }
+
+    #[test]
+    fn test_fence_char_parse_backtick() {
+        let config = Config::from_toml(
+            r#"
+[code_block]
+fence_char = "`"
+"#,
+        )
+        .unwrap();
+        assert_eq!(config.code_block.fence_char, FenceChar::Backtick);
+    }
+
+    #[test]
+    fn test_fence_char_invalid_char() {
+        let result = Config::from_toml(
+            r##"
+[code_block]
+fence_char = "#"
+"##,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_fence_char_invalid_empty() {
+        let result = Config::from_toml(
+            r#"
+[code_block]
+fence_char = ""
 "#,
         );
         assert!(result.is_err());

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
 use crate::Options;
-use crate::config::{DashSetting, OrderedListPad};
+use crate::config::{DashSetting, FenceChar, OrderedListPad, OrderedMarker, UnorderedMarker};
 
 /// JavaScript-friendly options struct.
 ///
@@ -141,9 +141,11 @@ impl JsOptions {
             opts.heading_common_nouns = v.clone();
         }
         if let Some(ref v) = self.unordered_marker {
-            if let Some(c) = v.chars().next() {
-                opts.unordered_marker = c;
-            }
+            opts.unordered_marker = match v.as_str() {
+                "*" => UnorderedMarker::Asterisk,
+                "+" => UnorderedMarker::Plus,
+                _ => UnorderedMarker::Hyphen,
+            };
         }
         if let Some(v) = self.leading_spaces {
             opts.leading_spaces = v;
@@ -155,14 +157,16 @@ impl JsOptions {
             opts.indent_width = v;
         }
         if let Some(ref v) = self.odd_level_marker {
-            if let Some(c) = v.chars().next() {
-                opts.odd_level_marker = c;
-            }
+            opts.odd_level_marker = match v.as_str() {
+                ")" => OrderedMarker::Parenthesis,
+                _ => OrderedMarker::Period,
+            };
         }
         if let Some(ref v) = self.even_level_marker {
-            if let Some(c) = v.chars().next() {
-                opts.even_level_marker = c;
-            }
+            opts.even_level_marker = match v.as_str() {
+                "." => OrderedMarker::Period,
+                _ => OrderedMarker::Parenthesis,
+            };
         }
         if let Some(ref v) = self.ordered_list_pad {
             opts.ordered_list_pad = match v.as_str() {
@@ -174,9 +178,10 @@ impl JsOptions {
             opts.ordered_list_indent_width = v;
         }
         if let Some(ref v) = self.fence_char {
-            if let Some(c) = v.chars().next() {
-                opts.fence_char = c;
-            }
+            opts.fence_char = match v.as_str() {
+                "`" => FenceChar::Backtick,
+                _ => FenceChar::Tilde,
+            };
         }
         if let Some(v) = self.min_fence_length {
             opts.min_fence_length = v;

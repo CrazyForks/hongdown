@@ -1981,10 +1981,12 @@ fn test_ordered_list_alternating_markers() {
     assert!(result.contains("2)  Nested second"), "got: {}", result);
 }
 
+use crate::FenceChar;
+
 #[test]
 fn test_code_block_fence_char_backtick() {
     let options = Options {
-        fence_char: '`',
+        fence_char: FenceChar::Backtick,
         ..Options::default()
     };
     let result = parse_and_serialize_with_options("~~~~ rust\nfn main() {}\n~~~~", &options);
