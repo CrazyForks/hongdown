@@ -1502,7 +1502,7 @@ fn test_thematic_break_custom_style() {
     let input = "Before\n\n---\n\nAfter";
     let mut options = Options::default();
     options.thematic_break_style = "---".to_string();
-    options.thematic_break_leading_spaces = 0;
+    options.thematic_break_leading_spaces = LeadingSpaces::new(0).unwrap();
     let result = parse_and_serialize_with_options(input, &options);
     assert!(
         result.contains("\n---\n"),
@@ -1516,27 +1516,12 @@ fn test_thematic_break_leading_spaces() {
     let input = "Before\n\n---\n\nAfter";
     let mut options = Options::default();
     options.thematic_break_style = "*  *  *".to_string();
-    options.thematic_break_leading_spaces = 3;
+    options.thematic_break_leading_spaces = LeadingSpaces::new(3).unwrap();
     let result = parse_and_serialize_with_options(input, &options);
     // 3 leading spaces should be applied
     assert!(
         result.contains("\n   *  *  *\n"),
         "Expected 3 leading spaces, got:\n{}",
-        result
-    );
-}
-
-#[test]
-fn test_thematic_break_leading_spaces_clamped() {
-    let input = "Before\n\n---\n\nAfter";
-    let mut options = Options::default();
-    options.thematic_break_style = "*  *  *".to_string();
-    options.thematic_break_leading_spaces = 10; // Should be clamped to 3
-    let result = parse_and_serialize_with_options(input, &options);
-    // Should be clamped to max 3 spaces
-    assert!(
-        result.contains("\n   *  *  *\n"),
-        "Expected max 3 leading spaces (clamped), got:\n{}",
         result
     );
 }
@@ -1882,7 +1867,7 @@ fn test_list_unordered_marker_default() {
 #[test]
 fn test_list_leading_spaces_zero() {
     let options = Options {
-        leading_spaces: 0,
+        leading_spaces: LeadingSpaces::new(0).unwrap(),
         ..Options::default()
     };
     let result = parse_and_serialize_with_options(" -  Item one\n -  Item two", &options);
@@ -1892,7 +1877,7 @@ fn test_list_leading_spaces_zero() {
 #[test]
 fn test_list_leading_spaces_two() {
     let options = Options {
-        leading_spaces: 2,
+        leading_spaces: LeadingSpaces::new(2).unwrap(),
         ..Options::default()
     };
     let result = parse_and_serialize_with_options(" -  Item one\n -  Item two", &options);
@@ -1981,7 +1966,7 @@ fn test_ordered_list_alternating_markers() {
     assert!(result.contains("2)  Nested second"), "got: {}", result);
 }
 
-use crate::{FenceChar, MinFenceLength};
+use crate::{FenceChar, LeadingSpaces, MinFenceLength};
 
 #[test]
 fn test_code_block_fence_char_backtick() {

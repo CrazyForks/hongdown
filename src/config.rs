@@ -124,6 +124,51 @@ impl UnorderedMarker {
     }
 }
 
+/// Leading spaces before a list marker or thematic break (0-3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LeadingSpaces(usize);
+
+impl LeadingSpaces {
+    /// Maximum allowed leading spaces (CommonMark requirement).
+    pub const MAX: usize = 3;
+
+    /// Create a new LeadingSpaces.
+    ///
+    /// Returns an error if the value is greater than 3.
+    pub fn new(value: usize) -> Result<Self, String> {
+        if value > Self::MAX {
+            Err(format!(
+                "leading_spaces must be at most {}, got {}.",
+                Self::MAX,
+                value
+            ))
+        } else {
+            Ok(Self(value))
+        }
+    }
+
+    /// Get the inner value.
+    pub fn get(self) -> usize {
+        self.0
+    }
+}
+
+impl Default for LeadingSpaces {
+    fn default() -> Self {
+        Self(1)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for LeadingSpaces {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = usize::deserialize(deserializer)?;
+        Self::new(value).map_err(serde::de::Error::custom)
+    }
+}
+
 /// Unordered list formatting options.
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(default)]
@@ -132,7 +177,7 @@ pub struct UnorderedListConfig {
     pub unordered_marker: UnorderedMarker,
 
     /// Spaces before the marker (default: 1).
-    pub leading_spaces: usize,
+    pub leading_spaces: LeadingSpaces,
 
     /// Spaces after the marker (default: 2).
     pub trailing_spaces: usize,
@@ -145,7 +190,7 @@ impl Default for UnorderedListConfig {
     fn default() -> Self {
         Self {
             unordered_marker: UnorderedMarker::default(),
-            leading_spaces: 1,
+            leading_spaces: LeadingSpaces::default(),
             trailing_spaces: 2,
             indent_width: 4,
         }
@@ -377,9 +422,9 @@ pub struct ThematicBreakConfig {
     /// The style string for thematic breaks (default: `*  *  *`).
     pub style: String,
 
-    /// Number of leading spaces before the thematic break (0-3, default: 0).
+    /// Number of leading spaces before the thematic break (0-3, default: 3).
     /// CommonMark allows 0-3 leading spaces for thematic breaks.
-    pub leading_spaces: usize,
+    pub leading_spaces: LeadingSpaces,
 }
 
 impl Default for ThematicBreakConfig {
@@ -387,7 +432,7 @@ impl Default for ThematicBreakConfig {
         Self {
             style: "- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -"
                 .to_string(),
-            leading_spaces: 3,
+            leading_spaces: LeadingSpaces::new(3).unwrap(),
         }
     }
 }
@@ -647,7 +692,7 @@ mod tests {
             config.unordered_list.unordered_marker,
             UnorderedMarker::Hyphen
         );
-        assert_eq!(config.unordered_list.leading_spaces, 1);
+        assert_eq!(config.unordered_list.leading_spaces.get(), 1);
         assert_eq!(config.unordered_list.trailing_spaces, 2);
         assert_eq!(config.unordered_list.indent_width, 4);
         assert_eq!(config.ordered_list.odd_level_marker, OrderedMarker::Period);
@@ -665,7 +710,7 @@ mod tests {
             config.thematic_break.style,
             "- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -"
         );
-        assert_eq!(config.thematic_break.leading_spaces, 3);
+        assert_eq!(config.thematic_break.leading_spaces.get(), 3);
     }
 
     #[test]
@@ -779,7 +824,7 @@ indent_width = 2
             config.unordered_list.unordered_marker,
             UnorderedMarker::Asterisk
         );
-        assert_eq!(config.unordered_list.leading_spaces, 0);
+        assert_eq!(config.unordered_list.leading_spaces.get(), 0);
         assert_eq!(config.unordered_list.trailing_spaces, 1);
         assert_eq!(config.unordered_list.indent_width, 2);
     }

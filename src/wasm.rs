@@ -7,7 +7,8 @@ use wasm_bindgen::prelude::*;
 
 use crate::Options;
 use crate::config::{
-    DashSetting, FenceChar, MinFenceLength, OrderedListPad, OrderedMarker, UnorderedMarker,
+    DashSetting, FenceChar, LeadingSpaces, MinFenceLength, OrderedListPad, OrderedMarker,
+    UnorderedMarker,
 };
 
 /// JavaScript-friendly options struct.
@@ -150,7 +151,9 @@ impl JsOptions {
             };
         }
         if let Some(v) = self.leading_spaces {
-            opts.leading_spaces = v;
+            if let Ok(leading) = LeadingSpaces::new(v) {
+                opts.leading_spaces = leading;
+            }
         }
         if let Some(v) = self.trailing_spaces {
             opts.trailing_spaces = v;
@@ -200,7 +203,9 @@ impl JsOptions {
             opts.thematic_break_style = v.clone();
         }
         if let Some(v) = self.thematic_break_leading_spaces {
-            opts.thematic_break_leading_spaces = v;
+            if let Ok(leading) = LeadingSpaces::new(v) {
+                opts.thematic_break_leading_spaces = leading;
+            }
         }
         if let Some(v) = self.curly_double_quotes {
             opts.curly_double_quotes = v;

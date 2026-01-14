@@ -860,8 +860,7 @@ impl<'a> Serializer<'a> {
 
     pub(super) fn serialize_thematic_break(&mut self) {
         let style = &self.options.thematic_break_style;
-        // Clamp leading spaces to 0-3 for CommonMark compatibility
-        let leading_spaces = self.options.thematic_break_leading_spaces.min(3);
+        let leading_spaces = self.options.thematic_break_leading_spaces.get();
 
         // Determine the prefix based on blockquote context
         if self.in_block_quote {

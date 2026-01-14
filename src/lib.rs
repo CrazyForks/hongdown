@@ -20,7 +20,8 @@ mod serializer;
 mod wasm;
 
 pub use config::{
-    DashSetting, FenceChar, MinFenceLength, OrderedListPad, OrderedMarker, UnorderedMarker,
+    DashSetting, FenceChar, LeadingSpaces, MinFenceLength, OrderedListPad, OrderedMarker,
+    UnorderedMarker,
 };
 pub use serializer::Warning;
 pub use serializer::punctuation::{PunctuationError, validate_dash_settings};
@@ -63,7 +64,7 @@ pub struct Options {
     pub unordered_marker: UnorderedMarker,
 
     /// Number of leading spaces before the list marker. Default: 1.
-    pub leading_spaces: usize,
+    pub leading_spaces: LeadingSpaces,
 
     /// Number of trailing spaces after the list marker. Default: 2.
     pub trailing_spaces: usize,
@@ -104,7 +105,7 @@ pub struct Options {
 
     /// Number of leading spaces before thematic breaks (0-3). Default: 3.
     /// CommonMark allows 0-3 leading spaces for thematic breaks.
-    pub thematic_break_leading_spaces: usize,
+    pub thematic_break_leading_spaces: LeadingSpaces,
 
     /// Convert straight double quotes to curly quotes. Default: true.
     /// `"text"` becomes `"text"` (U+201C and U+201D).
@@ -156,7 +157,7 @@ impl Default for Options {
             heading_proper_nouns: Vec::new(),
             heading_common_nouns: Vec::new(),
             unordered_marker: UnorderedMarker::default(),
-            leading_spaces: 1,
+            leading_spaces: LeadingSpaces::default(),
             trailing_spaces: 2,
             indent_width: 4,
             odd_level_marker: OrderedMarker::default(),
@@ -170,7 +171,7 @@ impl Default for Options {
             thematic_break_style:
                 "- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -"
                     .to_string(),
-            thematic_break_leading_spaces: 3,
+            thematic_break_leading_spaces: LeadingSpaces::new(3).unwrap(),
             curly_double_quotes: true,
             curly_single_quotes: true,
             curly_apostrophes: false,
