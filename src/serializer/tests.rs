@@ -4318,3 +4318,68 @@ fn test_possessive_apostrophe_after_digit_curly_when_enabled() {
         result
     );
 }
+
+#[test]
+fn test_serialize_windows_path_in_italic() {
+    let input = r"*C:\Users\Alice\Documents*";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(result, "*C:\\\\Users\\\\Alice\\\\Documents*\n");
+}
+
+#[test]
+fn test_serialize_windows_path_idempotent() {
+    let input = r"*C:\Users\Alice\Documents*";
+    let first_pass = parse_and_serialize_with_source(input);
+    let second_pass = parse_and_serialize_with_source(&first_pass.trim_end());
+    let third_pass = parse_and_serialize_with_source(&second_pass.trim_end());
+
+    assert_eq!(
+        first_pass, second_pass,
+        "First and second pass should match"
+    );
+    assert_eq!(
+        second_pass, third_pass,
+        "Second and third pass should match"
+    );
+}
+
+#[test]
+fn test_serialize_mixed_escapes_in_italic() {
+    // Mix of path backslashes and Markdown escapes
+    let input = r"*node\_modules at C:\Program Files*";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(result, "*node\\_modules at C:\\\\Program Files*\n");
+}
+
+#[test]
+fn test_serialize_multiple_backslashes() {
+    let input = r"*path\\to\\file*";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(result, "*path\\\\to\\\\file*\n");
+
+    // Test idempotency
+    let second_pass = parse_and_serialize_with_source(&result.trim_end());
+    assert_eq!(result, second_pass);
+}
+
+#[test]
+fn test_serialize_backslash_before_space() {
+    // Test backslash followed by space (not escaping the closing marker)
+    let input = r"*C:\Program Files\ folder*";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(result, "*C:\\\\Program Files\\\\ folder*\n");
+}
+
+#[test]
+fn test_serialize_windows_path_in_strong() {
+    let input = r"**C:\Users**";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(result, "**C:\\\\Users**\n");
+}
+
+#[test]
+fn test_serialize_windows_path_plain_text() {
+    let input = r"C:\Users\Alice\Documents";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(result, "C:\\\\Users\\\\Alice\\\\Documents\n");
+}

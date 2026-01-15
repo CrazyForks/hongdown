@@ -16,7 +16,7 @@ To be released.
          -  Linux: *$XDG\_CONFIG\_HOME/hongdown/config.toml* or
             *~/.config/hongdown/config.toml*
          -  macOS: *~/Library/Application Support/hongdown/config.toml*
-         -  Windows: `%APPDATA%\hongdown\config.toml`
+         -  Windows: *%APPDATA%\\hongdown\\config.toml*
     4)  Project: *.hongdown.toml* in current or parent directories
 
     Settings from higher-priority configurations override those from
@@ -106,11 +106,19 @@ To be released.
     WASM and CLI users are unaffected as the types are automatically converted
     from configuration values.
 
+ -  Fixed non-idempotent backslash escaping in emphasis text.  The formatter
+    was producing different output on each pass when processing backslashes
+    inside italic or bold text (e.g., `*C:\Users\Alice\Documents*`).  Each
+    formatting pass would add more backslashes, causing `--check` to
+    perpetually report files as needing formatting even immediately after
+    `--write`.  [[#18]]
+
 [`ignore`]: https://crates.io/crates/ignore
 [`glob`]: https://crates.io/crates/glob
 [#14]: https://github.com/dahlia/hongdown/issues/14
 [#15]: https://github.com/dahlia/hongdown/issues/15
 [#16]: https://github.com/dahlia/hongdown/pull/16
+[#18]: https://github.com/dahlia/hongdown/issues/18
 
 
 Version 0.2.6

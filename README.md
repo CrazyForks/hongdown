@@ -171,7 +171,7 @@ highest priority):
      -  Linux: *$XDG\_CONFIG\_HOME/hongdown/config.toml* or
         *~/.config/hongdown/config.toml*
      -  macOS: *~/Library/Application Support/hongdown/config.toml*
-     -  Windows: `%APPDATA%\hongdown\config.toml`
+     -  Windows: *%APPDATA%\\hongdown\\config.toml*
 4.  **Project**: *.hongdown.toml* in the current directory or any parent
     directory
 

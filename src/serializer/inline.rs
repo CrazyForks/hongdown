@@ -306,20 +306,49 @@ impl<'a> Serializer<'a> {
             let source_char = source_chars[source_idx];
 
             if source_char == '\\' && source_idx + 1 < source_chars.len() {
-                // Source has an escape sequence
-                let escaped_char = source_chars[source_idx + 1];
-                if escaped_char == text_char {
-                    // The escape in source corresponds to this character in text
-                    // Preserve the escape
-                    result.push('\\');
-                    result.push(escaped_char);
-                    text_idx += 1;
-                    source_idx += 2;
+                if text_char == '\\' {
+                    // Both source and text have a backslash
+                    // Check if source has an escaped backslash (\\)
+                    if source_chars[source_idx + 1] == '\\' {
+                        // Source has \\ and text has \ - preserve the escaped backslash
+                        result.push_str("\\\\");
+                        text_idx += 1;
+                        source_idx += 2;
+                    } else {
+                        // Source has \ followed by non-backslash, text has \
+                        // It's a literal backslash that needs escaping
+                        result.push_str(&escape::escape_text(&text_char.to_string()));
+                        text_idx += 1;
+                        source_idx += 1;
+                    }
                 } else {
-                    // Escape doesn't match - use normal escaping
-                    result.push_str(&escape::escape_text(&text_char.to_string()));
-                    text_idx += 1;
-                    // Don't advance source_idx - the escape might be for something else
+                    // Source has an escape sequence, text doesn't have a backslash
+                    let escaped_char = source_chars[source_idx + 1];
+                    if escaped_char == text_char {
+                        // The escape in source corresponds to this character in text
+                        // Check if this character actually needs escaping in Markdown
+                        let escaped_form = escape::escape_text(&text_char.to_string());
+                        let needs_escaping =
+                            escaped_form.len() > 1 && escaped_form.starts_with('\\');
+
+                        if needs_escaping {
+                            // Preserve the escape from source (e.g., \_ → \_)
+                            result.push('\\');
+                            result.push(escaped_char);
+                        } else {
+                            // Character doesn't need escaping, so backslash should be literal
+                            // Output escaped backslash + character (e.g., \U → \\U)
+                            result.push_str("\\\\");
+                            result.push(text_char);
+                        }
+                        text_idx += 1;
+                        source_idx += 2;
+                    } else {
+                        // Escape doesn't match - use normal escaping
+                        result.push_str(&escape::escape_text(&text_char.to_string()));
+                        text_idx += 1;
+                        // Don't advance source_idx - the escape might be for something else
+                    }
                 }
             } else if source_char == '&' {
                 // Check for HTML entity
