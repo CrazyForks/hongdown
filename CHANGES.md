@@ -4,7 +4,7 @@ Hongdown changelog
 Version 0.3.0
 -------------
 
-To be released.
+Released on January 17, 2026.
 
  -  Added support for cascading configuration files from multiple locations.
     Hongdown now loads and merges configuration files in the following order
