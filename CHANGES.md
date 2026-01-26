@@ -6,6 +6,16 @@ Version 0.3.2
 
 To be released.
 
+ -  Improved footnote formatting to properly handle multiple paragraphs and
+    complex block structures.  The formatter now correctly:
+
+     -  Preserves blank lines between multiple paragraphs within footnotes
+     -  Maintains line breaks within blockquotes inside footnotes
+     -  Applies proper continuation indentation to all block elements
+
+    Previously, multiple paragraphs in footnotes would be concatenated without
+    blank lines, and multiline blockquotes would collapse into single lines.
+
 
 Version 0.3.1
 -------------

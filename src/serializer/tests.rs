@@ -4416,3 +4416,147 @@ fn test_footnote_with_code_block() {
         result
     );
 }
+
+#[test]
+fn test_footnote_with_blockquote() {
+    let input = r#"Text with footnote.[^1]
+
+[^1]: Footnote with a blockquote:
+
+      > This is a quote
+      > in the footnote.
+"#;
+    let result = parse_and_serialize_with_footnotes(input);
+
+    assert!(
+        result.contains("> This is a quote"),
+        "Blockquote should be preserved in footnote.\nGot:\n{}",
+        result
+    );
+    assert!(
+        result.contains("> in the footnote."),
+        "Multiline blockquote should preserve line breaks.\nGot:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_footnote_with_unordered_list() {
+    let input = r#"Text with footnote.[^1]
+
+[^1]: Footnote with a list:
+
+       -  First item
+       -  Second item
+       -  Third item
+"#;
+    let result = parse_and_serialize_with_footnotes(input);
+
+    assert!(
+        result.contains(" -  First item"),
+        "List should be preserved in footnote.\nGot:\n{}",
+        result
+    );
+    assert!(
+        result.contains(" -  Second item"),
+        "All list items should be preserved.\nGot:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_footnote_with_ordered_list() {
+    let input = r#"Text with footnote.[^1]
+
+[^1]: Footnote with an ordered list:
+
+      1.  First item
+      2.  Second item
+      3.  Third item
+"#;
+    let result = parse_and_serialize_with_footnotes(input);
+
+    assert!(
+        result.contains("1.  First item"),
+        "Ordered list should be preserved in footnote.\nGot:\n{}",
+        result
+    );
+    assert!(
+        result.contains("2.  Second item"),
+        "All ordered list items should be preserved.\nGot:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_footnote_with_multiple_paragraphs_separated() {
+    let input = r#"Text with footnote.[^1]
+
+[^1]: First paragraph in footnote.
+
+      Second paragraph here.
+
+      Third paragraph here.
+"#;
+    let result = parse_and_serialize_with_footnotes(input);
+
+    assert!(
+        result.contains("First paragraph in footnote."),
+        "First paragraph should be preserved.\nGot:\n{}",
+        result
+    );
+    assert!(
+        result.contains("Second paragraph here."),
+        "Second paragraph should be preserved.\nGot:\n{}",
+        result
+    );
+    assert!(
+        result.contains("Third paragraph here."),
+        "Third paragraph should be preserved.\nGot:\n{}",
+        result
+    );
+    // Check that paragraphs are separated by blank lines
+    assert!(
+        result.contains("footnote.\n\n"),
+        "Blank line should separate paragraphs.\nGot:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_footnote_with_mixed_blocks() {
+    let input = r#"Text with footnote.[^1]
+
+[^1]: First paragraph.
+
+      > A blockquote.
+
+      ~~~~ python
+      print("code")
+      ~~~~
+
+       -  A list item
+"#;
+    let result = parse_and_serialize_with_footnotes(input);
+
+    assert!(
+        result.contains("First paragraph."),
+        "Paragraph should be preserved.\nGot:\n{}",
+        result
+    );
+    assert!(
+        result.contains("> A blockquote."),
+        "Blockquote should be preserved.\nGot:\n{}",
+        result
+    );
+    assert!(
+        result.contains("print(\"code\")"),
+        "Code block should be preserved.\nGot:\n{}",
+        result
+    );
+    assert!(
+        result.contains(" -  A list item"),
+        "List should be preserved.\nGot:\n{}",
+        result
+    );
+}
