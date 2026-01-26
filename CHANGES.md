@@ -6,6 +6,11 @@ Version 0.3.1
 
 To be released.
 
+ -  Fixed a bug where code blocks inside footnotes were being silently dropped
+    during formatting.  The formatter now properly preserves block elements
+    (code blocks, block quotes, lists, tables) within footnote definitions,
+    outputting them with correct indentation.
+
 
 Version 0.3.0
 -------------
