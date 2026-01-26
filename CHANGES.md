@@ -4,7 +4,7 @@ Hongdown changelog
 Version 0.3.2
 -------------
 
-To be released.
+Released on January 26, 2026.
 
  -  Fixed a bug where footnote definitions with simple inline text were
     always wrapped at 80 characters, ignoring the `line_width` configuration
