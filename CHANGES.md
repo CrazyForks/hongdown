@@ -6,6 +6,13 @@ Version 0.3.2
 
 To be released.
 
+ -  Fixed a bug where footnote definitions with simple inline text were
+    always wrapped at 80 characters, ignoring the `line_width` configuration
+    option.  Footnotes now correctly respect the configured line width when
+    wrapping their content.  This fix applies to footnotes containing only
+    inline text; footnotes with block elements (paragraphs, lists, code
+    blocks) were already honoring the line width setting.
+
  -  Improved footnote formatting to properly handle multiple paragraphs and
     complex block structures.  The formatter now correctly:
 

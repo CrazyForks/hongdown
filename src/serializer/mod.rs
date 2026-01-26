@@ -399,7 +399,7 @@ impl<'a> Serializer<'a> {
         self.flush_footnote_references_before(None);
     }
 
-    /// Write a single footnote definition to output, wrapping at 80 characters
+    /// Write a single footnote definition to output, wrapping at line_width
     fn write_footnote(&mut self, footnote: &state::FootnoteDefinition) {
         let prefix = format!("[^{}]: ", footnote.name);
         // Continuation indent matches prefix length for alignment
@@ -425,9 +425,10 @@ impl<'a> Serializer<'a> {
             return;
         }
 
-        // Wrap content at 80 chars, accounting for prefix on first line
-        let first_line_width = 80 - prefix.width();
-        let continuation_width = 80 - continuation_indent.len();
+        // Wrap content at line_width, accounting for prefix on first line
+        let line_width = self.options.line_width.get();
+        let first_line_width = line_width - prefix.width();
+        let continuation_width = line_width - continuation_indent.len();
 
         // Replace SoftBreak marker (\x00) with space before processing
         let content = footnote.content.replace('\x00', " ");
