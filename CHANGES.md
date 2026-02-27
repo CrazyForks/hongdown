@@ -4,7 +4,7 @@ Hongdown changelog
 Version 0.3.3
 -------------
 
-To be released.
+Released on February 27, 2026.
 
  -  Fixed a bug where tables inside list items were emitted without a separating
     blank line and without continuation indentation on every table row.  Tables
