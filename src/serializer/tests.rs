@@ -646,6 +646,47 @@ fn test_serialize_table_with_multiple_pipes_in_code_span() {
     );
 }
 
+#[test]
+fn test_table_inside_list_item_has_blank_line_and_indentation() {
+    let input = r#"4.  **Properties of embedded types** — when a property's value is an object type
+    that is **serialized inline** (not just referenced by URL), the context must
+    also cover all of that embedded type's properties. This is the most commonly
+    missed case.
+
+    Common embedded types and the context URLs that cover them:
+
+    | Embedded type                       | Context URL to include                        |
+    | ----------------------------------- | --------------------------------------------- |
+    | `DataIntegrityProof` (from `proof`) | `https://w3id.org/security/data-integrity/v1` |
+    | `Key` (from `publicKey`)            | `https://w3id.org/security/v1`                |
+"#;
+
+    let first_pass = parse_and_serialize(input);
+
+    assert!(
+        first_pass.contains("cover them:\n\n    | Embedded type                       | Context URL to include                        |"),
+        "Table should be separated from the paragraph by a blank line and indented as list item content, got:\n{}",
+        first_pass
+    );
+    assert!(
+        first_pass.contains("\n    | ----------------------------------- | --------------------------------------------- |"),
+        "Table separator row should be indented inside list item, got:\n{}",
+        first_pass
+    );
+    assert!(
+        first_pass.contains("\n    | `DataIntegrityProof` (from `proof`) | `https://w3id.org/security/data-integrity/v1` |"),
+        "Table data row should be indented inside list item, got:\n{}",
+        first_pass
+    );
+
+    let second_pass = parse_and_serialize(&first_pass);
+    assert_eq!(
+        first_pass, second_pass,
+        "Formatting should be idempotent.\nFirst pass:\n{}\nSecond pass:\n{}",
+        first_pass, second_pass
+    );
+}
+
 fn parse_and_serialize_with_description_list(input: &str) -> String {
     let arena = Arena::new();
     let mut options = ComrakOptions::default();

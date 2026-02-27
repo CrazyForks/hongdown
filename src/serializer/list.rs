@@ -270,6 +270,15 @@ impl<'a> Serializer<'a> {
                         &base_indent,
                     );
                 }
+                NodeValue::Table(_) => {
+                    // Tables in list items need a blank line separator like other block elements.
+                    if !is_first {
+                        self.output.push_str("\n\n");
+                    } else {
+                        self.output.push('\n');
+                    }
+                    self.serialize_node(child);
+                }
                 NodeValue::BlockQuote | NodeValue::Alert(_) => {
                     // Block quotes and alerts in list items need blank line
                     // The indentation is handled by the blockquote/alert serialization itself
