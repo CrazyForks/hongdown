@@ -4,7 +4,7 @@ Hongdown changelog
 Version 0.3.4
 -------------
 
-To be released.
+Released on February 27, 2026.
 
  -  Fixed a bug where fenced code blocks inside blockquotes that were nested
     inside list items were not formatted idempotently.  The code fence lines
