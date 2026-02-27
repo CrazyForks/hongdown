@@ -4775,3 +4775,19 @@ fn test_footnote_respects_custom_line_width_with_ordered_list() {
         result
     );
 }
+
+#[test]
+fn test_blockquote_with_code_fence_in_list_item_idempotent() {
+    // A blockquote containing a fenced code block, nested inside a list item,
+    // was not formatted idempotently: the code fence lost its list-continuation
+    // indentation on the first pass, then lost its blank separator on the second
+    // pass.  After formatting, the output must be stable (idempotent).
+    let input = "1.  Item:\n\n    > Blockquote.\n    >\n    > ~~~~ text\n    > code\n    > ~~~~\n";
+    let first = parse_and_serialize(input);
+    let second = parse_and_serialize(&first);
+    assert_eq!(
+        first, second,
+        "Formatting should be idempotent.\nFirst pass:\n{}\nSecond pass:\n{}",
+        first, second
+    );
+}

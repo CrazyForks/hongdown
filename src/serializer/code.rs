@@ -187,7 +187,8 @@ impl<'a> Serializer<'a> {
 
         // Opening fence
         if self.in_block_quote {
-            self.output.push_str("> ");
+            self.output.push_str(&self.blockquote_outer_indent);
+            self.output.push_str(&self.blockquote_prefix);
         }
         self.output.push_str(&fence);
         if !output_info.is_empty() {
@@ -201,10 +202,11 @@ impl<'a> Serializer<'a> {
         // Content lines
         for line in content.lines() {
             if self.in_block_quote {
+                self.output.push_str(&self.blockquote_outer_indent);
                 if line.is_empty() {
-                    self.output.push('>');
+                    self.output.push_str(self.blockquote_prefix.trim_end());
                 } else {
-                    self.output.push_str("> ");
+                    self.output.push_str(&self.blockquote_prefix);
                 }
             }
             self.output.push_str(line);
@@ -213,7 +215,8 @@ impl<'a> Serializer<'a> {
 
         // Closing fence
         if self.in_block_quote {
-            self.output.push_str("> ");
+            self.output.push_str(&self.blockquote_outer_indent);
+            self.output.push_str(&self.blockquote_prefix);
         }
         self.output.push_str(&fence);
         self.output.push('\n');

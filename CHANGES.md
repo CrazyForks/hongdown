@@ -7,6 +7,18 @@ Version 0.4.0
 To be released.
 
 
+Version 0.3.4
+-------------
+
+Released on February 27, 2026.
+
+ -  Fixed a bug where fenced code blocks inside blockquotes that were nested
+    inside list items were not formatted idempotently.  The code fence lines
+    (opening, content, and closing) were missing the list item's continuation
+    indentation, causing the code block to appear outside the blockquote
+    context on subsequent formatting passes.
+
+
 Version 0.3.3
 -------------
 

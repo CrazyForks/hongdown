@@ -217,10 +217,41 @@ branches and eventually to `main`.
 
 
     > [!IMPORTANT]
-    > Do *not* copy changelog entries to `main`.  The `main` branch tracks
-    > the next major/minor release, so patch release entries should not be
-    > duplicated there.  Just resolve conflicts and keep the existing
-    > unreleased section as-is.
+    > **Do not add patch release entries into `main`'s unreleased
+    > section.**  The unreleased section (e.g., `Version 1.3.0`) should
+    > only contain entries planned for the next major/minor release.  Keep
+    > it unchanged.
+    >
+    > **Do keep all released version sections from the merged tag.**
+    > Released version sections (e.g., `Version 1.2.3`) are historical
+    > records.  They must remain in *CHANGES.md* as their own separate
+    > sections placed after the unreleased section — never delete them
+    > when resolving conflicts.
+    >
+    > After conflict resolution, *CHANGES.md* on `main` should look like
+    > this (note: `Version 1.3.0` section is unchanged; `Version 1.2.3`
+    > section is preserved from the merged tag):
+
+> ~~~~ markdown
+> Version 1.3.0
+> -------------
+>
+> To be released.
+>
+>  -  (existing planned entries, untouched)
+>
+>
+> Version 1.2.3
+> -------------
+>
+> Released on January 6, 2026.
+>
+>  -  Fixed a crash on startup.
+>
+>
+> Version 1.2.2
+> ...
+> ~~~~
 
 
 Major/minor releases
@@ -402,7 +433,11 @@ Checklist summary
      -  [ ] Copy changelog entries to unreleased version (above existing entries)
      -  [ ] Run tests and complete merge commit
      -  [ ] Create patch release for that branch
- -  [ ] Merge to `main` (if no newer maintenance branches)
+ -  [ ] Merge to `main` (if no newer maintenance branches):
+     -  [ ] Resolve *CHANGES.md* conflict: keep `main`'s unreleased section
+        unchanged; retain all released version sections from the merged tag
+     -  [ ] Resolve *Cargo.toml* and *Cargo.lock* conflicts: keep `main`'s version
+     -  [ ] Run tests and push
 
 ### Major/minor release checklist
 
