@@ -7,6 +7,13 @@ use super::Serializer;
 use super::escape;
 
 impl<'a> Serializer<'a> {
+    fn write_table_prefix(&mut self) {
+        self.output.push_str(&self.list_item_indent);
+        if self.in_block_quote {
+            self.output.push_str(&self.blockquote_prefix);
+        }
+    }
+
     pub(super) fn serialize_table<'b>(&mut self, node: &'b AstNode<'b>, table: &NodeTable) {
         let alignments = &table.alignments;
         let expected_cols = alignments.len();
@@ -52,9 +59,7 @@ impl<'a> Serializer<'a> {
 
         // Output header row
         if let Some(header_cells) = all_cells.first() {
-            if self.in_block_quote {
-                self.output.push_str("> ");
-            }
+            self.write_table_prefix();
             self.output.push('|');
             for (i, cell) in header_cells.iter().enumerate() {
                 self.output.push(' ');
@@ -68,9 +73,7 @@ impl<'a> Serializer<'a> {
         }
 
         // Output separator row with alignment
-        if self.in_block_quote {
-            self.output.push_str("> ");
-        }
+        self.write_table_prefix();
         self.output.push('|');
         for (i, alignment) in alignments.iter().enumerate() {
             self.output.push(' ');
@@ -99,9 +102,7 @@ impl<'a> Serializer<'a> {
 
         // Output data rows (skip header)
         for row_cells in all_cells.iter().skip(1) {
-            if self.in_block_quote {
-                self.output.push_str("> ");
-            }
+            self.write_table_prefix();
             self.output.push('|');
             for (i, cell) in row_cells.iter().enumerate() {
                 self.output.push(' ');

@@ -6,6 +6,11 @@ Version 0.3.3
 
 To be released.
 
+ -  Fixed a bug where tables inside list items were emitted without a separating
+    blank line and without continuation indentation on every table row.  Tables
+    in list items are now formatted as proper nested block content and remain
+    stable across repeated formatting passes.
+
 
 Version 0.3.2
 -------------
