@@ -7,6 +7,40 @@ Version 0.4.0
 To be released.
 
 
+Version 0.3.3
+-------------
+
+Released on February 27, 2026.
+
+ -  Fixed a bug where tables inside list items were emitted without a separating
+    blank line and without continuation indentation on every table row.  Tables
+    in list items are now formatted as proper nested block content and remain
+    stable across repeated formatting passes.
+
+
+Version 0.3.2
+-------------
+
+Released on January 26, 2026.
+
+ -  Fixed a bug where footnote definitions with simple inline text were
+    always wrapped at 80 characters, ignoring the `line_width` configuration
+    option.  Footnotes now correctly respect the configured line width when
+    wrapping their content.  This fix applies to footnotes containing only
+    inline text; footnotes with block elements (paragraphs, lists, code
+    blocks) were already honoring the line width setting.
+
+ -  Improved footnote formatting to properly handle multiple paragraphs and
+    complex block structures.  The formatter now correctly:
+
+     -  Preserves blank lines between multiple paragraphs within footnotes
+     -  Maintains line breaks within blockquotes inside footnotes
+     -  Applies proper continuation indentation to all block elements
+
+    Previously, multiple paragraphs in footnotes would be concatenated without
+    blank lines, and multiline blockquotes would collapse into single lines.
+
+
 Version 0.3.1
 -------------
 
