@@ -7,6 +7,20 @@ Version 0.4.0
 To be released.
 
 
+Version 0.3.7
+-------------
+
+Released on March 1, 2026.
+
+ -  Fixed a regression where square brackets in unresolved reference-style
+    link text were escaped during source-preserving serialization when the
+    document also contained abbreviation definitions (e.g., `[RabbitMQ]`
+    became `\[RabbitMQ]`).  Hongdown now preserves literal square brackets in
+    this path so valid reference-style links remain intact.  [[#21]]
+
+[#21]: https://github.com/dahlia/hongdown/issues/21
+
+
 Version 0.3.6
 -------------
 
@@ -17,8 +31,6 @@ Released on March 1, 2026.
     (e.g., `\[foo\]` became `[foo\]`).  Hongdown now applies context-aware
     escaping in that path, so escaped brackets remain symmetric and formatting
     stays idempotent.  [[#21]]
-
-[#21]: https://github.com/dahlia/hongdown/issues/21
 
 
 Version 0.3.5
