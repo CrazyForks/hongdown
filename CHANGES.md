@@ -4,7 +4,7 @@ Hongdown changelog
 Version 0.3.7
 -------------
 
-To be released.
+Released on March 1, 2026.
 
  -  Fixed a regression where square brackets in unresolved reference-style
     link text were escaped during source-preserving serialization when the
