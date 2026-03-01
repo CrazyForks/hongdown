@@ -4,7 +4,7 @@ Hongdown changelog
 Version 0.3.5
 -------------
 
-To be released.
+Released on March 1, 2026.
 
  -  Fixed a bug where backslash-escaped ASCII punctuation in plain text was
     double-escaped during formatting (e.g., `\[identifier\]` became
