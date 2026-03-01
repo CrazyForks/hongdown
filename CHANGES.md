@@ -4,7 +4,7 @@ Hongdown changelog
 Version 0.3.6
 -------------
 
-To be released.
+Released on March 1, 2026.
 
  -  Fixed a bug where escaped square brackets at the beginning of a text node
     could lose the opening backslash during source-preserving serialization
