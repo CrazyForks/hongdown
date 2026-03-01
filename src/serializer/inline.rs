@@ -317,7 +317,7 @@ impl<'a> Serializer<'a> {
                     } else {
                         // Source has \ followed by non-backslash, text has \
                         // It's a literal backslash that needs escaping
-                        result.push_str(&escape::escape_text(&text_char.to_string()));
+                        Self::push_escaped_text_char(&mut result, &text_chars, text_idx);
                         text_idx += 1;
                         source_idx += 1;
                     }
@@ -342,7 +342,7 @@ impl<'a> Serializer<'a> {
                         source_idx += 2;
                     } else {
                         // Escape doesn't match - use normal escaping
-                        result.push_str(&escape::escape_text(&text_char.to_string()));
+                        Self::push_escaped_text_char(&mut result, &text_chars, text_idx);
                         text_idx += 1;
                         // Don't advance source_idx - the escape might be for something else
                     }
@@ -359,12 +359,12 @@ impl<'a> Serializer<'a> {
                         source_idx += entity.len();
                     } else {
                         // Entity doesn't match the text character - use normal escaping
-                        result.push_str(&escape::escape_text(&text_char.to_string()));
+                        Self::push_escaped_text_char(&mut result, &text_chars, text_idx);
                         text_idx += 1;
                     }
                 } else if source_char == text_char {
                     // Not an entity, just a regular '&'
-                    result.push_str(&escape::escape_text(&text_char.to_string()));
+                    Self::push_escaped_text_char(&mut result, &text_chars, text_idx);
                     text_idx += 1;
                     source_idx += 1;
                 } else {
@@ -373,7 +373,7 @@ impl<'a> Serializer<'a> {
                 }
             } else if source_char == text_char {
                 // Characters match - apply normal escaping rules
-                result.push_str(&escape::escape_text(&text_char.to_string()));
+                Self::push_escaped_text_char(&mut result, &text_chars, text_idx);
                 text_idx += 1;
                 source_idx += 1;
             } else {
@@ -384,11 +384,21 @@ impl<'a> Serializer<'a> {
         }
 
         // Handle any remaining text characters that weren't matched
-        for ch in text_chars.iter().skip(text_idx) {
-            result.push_str(&escape::escape_text(&ch.to_string()));
+        for idx in text_idx..text_chars.len() {
+            Self::push_escaped_text_char(&mut result, &text_chars, idx);
         }
 
         result
+    }
+
+    fn push_escaped_text_char(result: &mut String, text_chars: &[char], idx: usize) {
+        let prev = if idx > 0 {
+            Some(text_chars[idx - 1])
+        } else {
+            None
+        };
+        let next = text_chars.get(idx + 1).copied();
+        escape::push_escaped_char(result, text_chars[idx], prev, next);
     }
 
     /// Try to parse an HTML entity starting at the given position.

@@ -1469,6 +1469,15 @@ fn test_preserve_escaped_brackets_in_plain_text() {
 }
 
 #[test]
+fn test_preserve_escaped_brackets_at_line_start() {
+    let input = r"\[foo\]
+
+[foo]: https://example.com";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(result, "\\[foo\\]\n");
+}
+
+#[test]
 fn test_preserve_escaped_ascii_punctuation_idempotent() {
     let escaped_chars = [
         '[', ']', '(', ')', '!', '#', '<', '>', '{', '}', '|', '~', '-', '+', '.', '/', ':', ';',
