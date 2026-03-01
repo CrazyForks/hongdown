@@ -12,62 +12,80 @@ pub fn escape_text(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
 
     for (i, &ch) in chars.iter().enumerate() {
-        match ch {
-            // Asterisk always needs escaping (can create emphasis anywhere)
-            '*' => {
-                result.push('\\');
-                result.push(ch);
-            }
-            // Underscore always needs escaping for safety
-            // While CommonMark doesn't create emphasis for intraword underscores,
-            // escaping ensures consistent behavior across all Markdown parsers
-            '_' => {
-                result.push('\\');
-                result.push(ch);
-            }
-            // Square brackets - only escape if they could form a link
-            // A '[' at the end can't start a link, ']' at the start can't close one
-            // Adjacent brackets like '[[' or ']]' also don't need escaping
-            '[' => {
-                let next_is_bracket = i + 1 < chars.len() && chars[i + 1] == '[';
-                let at_end = i + 1 >= chars.len();
-                if next_is_bracket || at_end {
-                    result.push(ch);
-                } else {
-                    result.push('\\');
-                    result.push(ch);
-                }
-            }
-            ']' => {
-                let prev_is_bracket = i > 0 && chars[i - 1] == ']';
-                let at_start = i == 0;
-                let at_end = i + 1 >= chars.len();
-                // A ']' can only close a link if followed by '(' or '['
-                // At end of text or followed by other chars, it's just text
-                let next_could_continue_link =
-                    i + 1 < chars.len() && (chars[i + 1] == '(' || chars[i + 1] == '[');
-                if prev_is_bracket || at_start || at_end || !next_could_continue_link {
-                    result.push(ch);
-                } else {
-                    result.push('\\');
-                    result.push(ch);
-                }
-            }
-            // Backslash itself needs escaping
-            '\\' => {
-                result.push('\\');
-                result.push(ch);
-            }
-            // Backtick could start code spans
-            '`' => {
-                result.push('\\');
-                result.push(ch);
-            }
-            // Other characters pass through unchanged
-            _ => result.push(ch),
-        }
+        let prev = if i > 0 { Some(chars[i - 1]) } else { None };
+        let next = if i + 1 < chars.len() {
+            Some(chars[i + 1])
+        } else {
+            None
+        };
+        push_escaped_char(&mut result, ch, prev, next);
     }
     result
+}
+
+/// Escape a single character using neighboring context.
+///
+/// This is used by both `escape_text()` and source-preserving escaping so
+/// contextual rules (e.g., `[`/`]`) stay consistent.
+pub(super) fn push_escaped_char(
+    result: &mut String,
+    ch: char,
+    prev: Option<char>,
+    next: Option<char>,
+) {
+    match ch {
+        // Asterisk always needs escaping (can create emphasis anywhere)
+        '*' => {
+            result.push('\\');
+            result.push(ch);
+        }
+        // Underscore always needs escaping for safety
+        // While CommonMark doesn't create emphasis for intraword underscores,
+        // escaping ensures consistent behavior across all Markdown parsers
+        '_' => {
+            result.push('\\');
+            result.push(ch);
+        }
+        // Square brackets - only escape if they could form a link
+        // A '[' at the end can't start a link, ']' at the start can't close one
+        // Adjacent brackets like '[[' or ']]' also don't need escaping
+        '[' => {
+            let next_is_bracket = next == Some('[');
+            let at_end = next.is_none();
+            if next_is_bracket || at_end {
+                result.push(ch);
+            } else {
+                result.push('\\');
+                result.push(ch);
+            }
+        }
+        ']' => {
+            let prev_is_bracket = prev == Some(']');
+            let at_start = prev.is_none();
+            let at_end = next.is_none();
+            // A ']' can only close a link if followed by '(' or '['
+            // At end of text or followed by other chars, it's just text
+            let next_could_continue_link = matches!(next, Some('(' | '['));
+            if prev_is_bracket || at_start || at_end || !next_could_continue_link {
+                result.push(ch);
+            } else {
+                result.push('\\');
+                result.push(ch);
+            }
+        }
+        // Backslash itself needs escaping
+        '\\' => {
+            result.push('\\');
+            result.push(ch);
+        }
+        // Backtick could start code spans
+        '`' => {
+            result.push('\\');
+            result.push(ch);
+        }
+        // Other characters pass through unchanged
+        _ => result.push(ch),
+    }
 }
 
 /// Format a code span with the appropriate number of backticks.

@@ -7,6 +7,20 @@ Version 0.4.0
 To be released.
 
 
+Version 0.3.6
+-------------
+
+Released on March 1, 2026.
+
+ -  Fixed a bug where escaped square brackets at the beginning of a text node
+    could lose the opening backslash during source-preserving serialization
+    (e.g., `\[foo\]` became `[foo\]`).  Hongdown now applies context-aware
+    escaping in that path, so escaped brackets remain symmetric and formatting
+    stays idempotent.  [[#21]]
+
+[#21]: https://github.com/dahlia/hongdown/issues/21
+
+
 Version 0.3.5
 -------------
 
