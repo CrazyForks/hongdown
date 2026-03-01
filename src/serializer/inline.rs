@@ -373,7 +373,14 @@ impl<'a> Serializer<'a> {
                 }
             } else if source_char == text_char {
                 // Characters match - apply normal escaping rules
-                Self::push_escaped_text_char(&mut result, &text_chars, text_idx);
+                if matches!(text_char, '[' | ']') && text_idx > 0 {
+                    // Preserve literal square brackets from source as-is.
+                    // Escaping these can break valid reference-style links when
+                    // comrak leaves them as text (e.g., after abbreviation defs).
+                    result.push(text_char);
+                } else {
+                    Self::push_escaped_text_char(&mut result, &text_chars, text_idx);
+                }
                 text_idx += 1;
                 source_idx += 1;
             } else {

@@ -2275,6 +2275,32 @@ fn test_reference_after_abbreviation_no_warning() {
 }
 
 #[test]
+fn test_reference_after_abbreviation_preserves_link_brackets() {
+    let input = "See [RabbitMQ] and [`AmqpMessageQueue`] for more.\n\n*[AMQP]: Advanced Message Queuing Protocol\n[`AmqpMessageQueue`]: https://jsr.io/@fedify/amqp/doc/mq/~/AmqpMessageQueue\n[RabbitMQ]: https://www.rabbitmq.com/";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("[RabbitMQ]"),
+        "Reference-style link text should preserve brackets, got:\n{}",
+        result
+    );
+    assert!(
+        result.contains("[`AmqpMessageQueue`]"),
+        "Code-style link text should preserve brackets, got:\n{}",
+        result
+    );
+    assert!(
+        !result.contains("\\[RabbitMQ]"),
+        "Reference-style link text should not escape opening bracket, got:\n{}",
+        result
+    );
+    assert!(
+        !result.contains("\\[`AmqpMessageQueue`]"),
+        "Code-style link text should not escape opening bracket, got:\n{}",
+        result
+    );
+}
+
+#[test]
 fn test_no_warning_in_disable_enable_region() {
     // Undefined references inside hongdown-disable/enable regions
     // should not produce warnings
