@@ -1,6 +1,12 @@
 Hongdown changelog
 ==================
 
+Version 0.3.7
+-------------
+
+To be released.
+
+
 Version 0.3.6
 -------------
 
