@@ -326,12 +326,9 @@ impl<'a> Serializer<'a> {
                     let escaped_char = source_chars[source_idx + 1];
                     if escaped_char == text_char {
                         // The escape in source corresponds to this character in text
-                        // Check if this character actually needs escaping in Markdown
-                        let escaped_form = escape::escape_text(&text_char.to_string());
-                        let needs_escaping =
-                            escaped_form.len() > 1 && escaped_form.starts_with('\\');
-
-                        if needs_escaping {
+                        // Preserve explicit escapes for ASCII punctuation. CommonMark
+                        // allows escaping any ASCII punctuation with backslash.
+                        if escaped_char.is_ascii_punctuation() {
                             // Preserve the escape from source (e.g., \_ → \_)
                             result.push('\\');
                             result.push(escaped_char);

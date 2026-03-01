@@ -36,6 +36,17 @@ fn parse_and_serialize_with_source(input: &str) -> String {
     serialize_with_source(root, &format_options, Some(input))
 }
 
+fn parse_and_serialize_with_source_and_width(input: &str, line_width: usize) -> String {
+    let arena = Arena::new();
+    let options = comrak_options();
+    let root = parse_document(&arena, input, &options);
+    let format_options = Options {
+        line_width: LineWidth::new(line_width).unwrap(),
+        ..Options::default()
+    };
+    serialize_with_source(root, &format_options, Some(input))
+}
+
 fn parse_and_serialize_with_warnings(input: &str) -> SerializeResult {
     let arena = Arena::new();
     let options = comrak_options();
@@ -1448,6 +1459,46 @@ fn test_escaped_characters_in_text() {
     let result = parse_and_serialize(input);
     // Escaped characters should be preserved
     assert!(result.contains(r"\*") || result.contains("*"));
+}
+
+#[test]
+fn test_preserve_escaped_brackets_in_plain_text() {
+    let input = r"Path: \[identifier\]";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(result, "Path: \\[identifier\\]\n");
+}
+
+#[test]
+fn test_preserve_escaped_ascii_punctuation_idempotent() {
+    let escaped_chars = [
+        '[', ']', '(', ')', '!', '#', '<', '>', '{', '}', '|', '~', '-', '+', '.', '/', ':', ';',
+        '=', '?', '@', '^', '$', '&',
+    ];
+    let escaped = escaped_chars
+        .iter()
+        .map(|ch| format!(r"\{}", ch))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let input = format!("Escaped punctuation: {}", escaped);
+
+    let first_pass = parse_and_serialize_with_source_and_width(&input, 200);
+    for ch in escaped_chars {
+        let single_escape = format!(r"\{}", ch);
+        let double_escape = format!(r"\\{}", ch);
+        assert!(
+            first_pass.contains(&single_escape),
+            "Output should preserve {}",
+            single_escape
+        );
+        assert!(
+            !first_pass.contains(&double_escape),
+            "Output should not double-escape {}",
+            single_escape
+        );
+    }
+
+    let second_pass = parse_and_serialize_with_source_and_width(first_pass.trim_end(), 200);
+    assert_eq!(first_pass, second_pass);
 }
 
 #[test]

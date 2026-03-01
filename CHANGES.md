@@ -7,6 +7,20 @@ Version 0.4.0
 To be released.
 
 
+Version 0.3.5
+-------------
+
+Released on March 1, 2026.
+
+ -  Fixed a bug where backslash-escaped ASCII punctuation in plain text was
+    double-escaped during formatting (e.g., `\[identifier\]` became
+    `\\[identifier\\]`).  This made formatting non-idempotent and changed
+    rendered output by showing literal backslashes.  Hongdown now preserves
+    explicit backslash escapes for ASCII punctuation as written.  [[#20]]
+
+[#20]: https://github.com/dahlia/hongdown/issues/20
+
+
 Version 0.3.4
 -------------
 

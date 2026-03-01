@@ -128,6 +128,24 @@ Use the CONFIG\_FILE\_NAME constant.
 delimiters, escaping ensures consistent rendering across all Markdown parsers.
 
 
+Backslash escapes
+-----------------
+
+### Preserve explicit escapes for ASCII punctuation
+
+When plain text includes backslash-escaped ASCII punctuation, preserve those
+escapes as written:
+
+~~~~ markdown
+Path: \[identifier\]
+Literal braces: \{json\}
+~~~~
+
+*Rationale*: CommonMark allows backslash escapes for ASCII punctuation.
+Preserving explicit escapes keeps formatting idempotent and avoids changing
+rendered output by introducing visible backslashes.
+
+
 Lists
 -----
 
