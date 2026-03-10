@@ -29,6 +29,40 @@ impl<'a> Serializer<'a> {
         }
     }
 
+    /// Calculate the indentation prefix for continuation lines inside the current list item.
+    pub(super) fn calculate_list_item_base_indent(&self) -> String {
+        let marker_width = self.calculate_marker_width();
+        let indent_width = match self.list_type {
+            Some(ListType::Ordered) => self.options.ordered_list_indent_width.get(),
+            _ => self.options.indent_width.get(),
+        };
+        let marker_width_for_indent = if self.in_description_details && self.list_depth == 1 {
+            match self.list_type {
+                Some(ListType::Bullet) => 1 + self.options.trailing_spaces.get(),
+                Some(ListType::Ordered) => self.options.ordered_list_indent_width.get(),
+                None => 0,
+            }
+        } else {
+            marker_width
+        };
+
+        if self.in_description_details {
+            format!(
+                "{}{}",
+                " ".repeat(5 + indent_width * (self.list_depth - 1)),
+                " ".repeat(marker_width_for_indent)
+            )
+        } else if self.list_depth > 1 {
+            format!(
+                "{}{}",
+                " ".repeat(indent_width * (self.list_depth - 1)),
+                " ".repeat(marker_width)
+            )
+        } else {
+            " ".repeat(marker_width)
+        }
+    }
+
     pub(super) fn serialize_list<'b>(
         &mut self,
         node: &'b AstNode<'b>,
@@ -168,44 +202,7 @@ impl<'a> Serializer<'a> {
 
         // Serialize children, handling nested lists and multiple paragraphs
         let children: Vec<_> = node.children().collect();
-        // Calculate base indentation for continuation lines (paragraphs, code blocks, etc.)
-        // This should match the marker width so content aligns properly
-        let marker_width = self.calculate_marker_width();
-        // Inside description details at top-level, the marker has no leading space,
-        // so we need to use marker_width without leading_spaces for base_indent calculation.
-        let marker_width_for_indent = if self.in_description_details && self.list_depth == 1 {
-            match self.list_type {
-                Some(ListType::Bullet) => {
-                    // "-  " = 1 (marker) + trailing_spaces (no leading space)
-                    1 + self.options.trailing_spaces.get()
-                }
-                Some(ListType::Ordered) => {
-                    // For ordered lists in description details, still use full width
-                    self.options.ordered_list_indent_width.get()
-                }
-                None => 0,
-            }
-        } else {
-            marker_width
-        };
-        let base_indent = if self.in_description_details {
-            // Inside description details, add extra 5-space indent
-            format!(
-                "{}{}",
-                " ".repeat(5 + indent_width * (self.list_depth - 1)),
-                " ".repeat(marker_width_for_indent)
-            )
-        } else if self.list_depth > 1 {
-            // Nested list: outer indent + marker width
-            format!(
-                "{}{}",
-                " ".repeat(indent_width * (self.list_depth - 1)),
-                " ".repeat(marker_width)
-            )
-        } else {
-            // Top-level list: just marker width
-            " ".repeat(marker_width)
-        };
+        let base_indent = self.calculate_list_item_base_indent();
 
         // Store the base indent for use by nested block elements (blockquotes, alerts, etc.)
         let old_list_item_indent =

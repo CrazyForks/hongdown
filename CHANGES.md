@@ -6,6 +6,11 @@ Version 0.3.8
 
 To be released.
 
+ -  Fixed a bug where continuation lines in nested ordered lists inside
+    definition-list details were indented one space too little.  This made
+    already formatted documents appear dirty in `--check` and `--diff` mode;
+    Hongdown now keeps those list items idempotent.
+
 
 Version 0.3.7
 -------------
