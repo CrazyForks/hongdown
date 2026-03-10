@@ -4,7 +4,7 @@ Hongdown changelog
 Version 0.3.8
 -------------
 
-To be released.
+Released on March 10, 2026.
 
  -  Fixed a bug where continuation lines in nested ordered lists inside
     definition-list details were indented one space too little.  This made
