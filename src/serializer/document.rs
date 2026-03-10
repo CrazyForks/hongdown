@@ -474,36 +474,12 @@ impl<'a> Serializer<'a> {
         self.collect_inline_content(node, &mut inline_content);
 
         if self.list_type.is_some() {
-            // Inside a list item, wrap with proper continuation indent
-            // First line has no prefix (marker already output)
-            // Continuation lines need appropriate indent
-            //
-            // There are two cases:
-            // 1. List inside blockquote: list_depth > blockquote_entry_list_depth
-            //    - Use base_indent for the inner list's continuation
-            // 2. Blockquote inside list: list_depth == blockquote_entry_list_depth
-            //    - Don't add base_indent, just use the outer prefix
-            let inner_list_depth = self
-                .list_depth
-                .saturating_sub(self.blockquote_entry_list_depth);
-            let base_indent = if self.in_description_details && inner_list_depth > 0 {
-                // Inside description details, add extra 5-space indent for `:    ` prefix.
-                // For unordered lists at top level, the marker is `-  ` (3 chars, no leading space).
-                // For nested lists, use the standard 4-char indent.
-                let first_level_marker_width = 1 + self.options.trailing_spaces.get(); // `-` + trailing
-                let nested_indent = "    ".repeat(inner_list_depth.saturating_sub(1));
-                format!(
-                    "     {}{}",
-                    " ".repeat(first_level_marker_width),
-                    nested_indent
-                )
-            } else {
-                "    ".repeat(inner_list_depth)
-            };
+            // Inside a list item, wrap with the same continuation indent used by other
+            // list-item block children so preformatted input remains idempotent.
+            let base_indent = self.calculate_list_item_base_indent();
             let continuation = if self.in_block_quote {
-                // Inside a blockquote, continuation lines need > prefix + indent
-                // Use blockquote_outer_indent (the outer list's indent, if any)
-                // rather than list_item_indent (which is for the list inside the blockquote)
+                // Inside a blockquote, continuation lines need the outer indent, the current
+                // blockquote prefix, and the current list item's own continuation indent.
                 format!(
                     "{}{}{}",
                     self.blockquote_outer_indent, self.blockquote_prefix, base_indent

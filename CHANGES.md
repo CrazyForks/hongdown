@@ -7,6 +7,17 @@ Version 0.4.0
 To be released.
 
 
+Version 0.3.8
+-------------
+
+Released on March 10, 2026.
+
+ -  Fixed a bug where continuation lines in nested ordered lists inside
+    definition-list details were indented one space too little.  This made
+    already formatted documents appear dirty in `--check` and `--diff` mode;
+    Hongdown now keeps those list items idempotent.
+
+
 Version 0.3.7
 -------------
 

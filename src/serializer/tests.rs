@@ -4426,6 +4426,24 @@ Cons
 }
 
 #[test]
+fn test_definition_list_with_nested_ordered_list_continuation_indentation() {
+    let input = "\
+Term
+:    -  Outer.
+
+         1)  First line
+             second line
+";
+    let result = parse_and_serialize(input);
+
+    assert_eq!(
+        result, input,
+        "Nested ordered list continuation should keep its indentation.\nExpected:\n{}\nGot:\n{}",
+        input, result
+    );
+}
+
+#[test]
 fn test_possessive_apostrophe_after_digit_stays_straight() {
     // Possessive apostrophe after a digit (like version number) should stay straight
     // when curly_apostrophes is disabled (default)
