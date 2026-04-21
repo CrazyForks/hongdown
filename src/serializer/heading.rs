@@ -416,7 +416,7 @@ fn collect_multiword_proper_nouns(
     }
 
     // Sort by length (longest first) to handle overlapping matches correctly
-    multiword_nouns.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+    multiword_nouns.sort_by_key(|noun| std::cmp::Reverse(noun.0.len()));
 
     multiword_nouns
 }
