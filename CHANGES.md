@@ -4,7 +4,7 @@ Hongdown changelog
 Version 0.3.9
 -------------
 
-To be released.
+Released on April 21, 2026.
 
  -  Fixed a bug where explicit anchor names at the end of headings (for
     example, `{#myAPI}`) were lowercased when `heading.sentence_case` was
