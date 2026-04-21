@@ -5,6 +5,7 @@ exclude = ["target/**", "**/node_modules/**", "demo/src/sample.md"]
 sentence_case = true
 proper_nouns = [
   "Hong Minhee",
+  "Hongdown",
   "mise",
 ]
 

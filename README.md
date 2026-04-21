@@ -397,7 +397,8 @@ timeout = 10
 
 Behavior:
 
- -  Language matching is exact only (`javascript` matches `javascript`, not `js`)
+ -  Language matching is exact only (`javascript` matches `javascript`, not
+    `js`)
  -  Code is passed to the formatter via stdin, formatted output read from stdout
  -  If the formatter fails (non-zero exit, timeout, etc.), the original code is
     preserved and a warning is emitted

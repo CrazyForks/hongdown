@@ -985,4 +985,25 @@ unordered_marker = "*"
             "List should use * marker"
         );
     }
+
+    /// Test that sentence case preserves trailing explicit anchor names.
+    #[test]
+    fn test_sentence_case_preserves_explicit_anchor_name() {
+        let temp_dir = TempDir::new().unwrap();
+
+        create_config(
+            temp_dir.path(),
+            r#"
+[heading]
+sentence_case = true
+"#,
+        );
+
+        create_markdown_file(temp_dir.path(), "test.md", "## Test Section {#myAPI}\n");
+
+        let markdown_path = temp_dir.path().join("test.md");
+        let result = run_hongdown(&markdown_path);
+
+        assert_eq!(result, "Test section {#myAPI}\n---------------------\n");
+    }
 }

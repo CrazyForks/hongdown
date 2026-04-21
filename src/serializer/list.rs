@@ -140,12 +140,35 @@ impl<'a> Serializer<'a> {
             Some(ListType::Ordered) => self.options.ordered_list_indent_width.get(),
             _ => self.options.indent_width.get(),
         };
+        let nested_indent_width = if self.list_depth > 1 {
+            indent_width * (self.list_depth - 1)
+        } else {
+            0
+        };
+        let marker_prefix_width = match self.list_type {
+            Some(ListType::Bullet) => {
+                if self.in_description_details && self.list_depth == 1 {
+                    1 + self.options.trailing_spaces.get()
+                } else {
+                    self.options.leading_spaces.get() + 1 + self.options.trailing_spaces.get()
+                }
+            }
+            Some(ListType::Ordered) => {
+                let current_num_width = self.list_item_index.to_string().len();
+                let marker_width = self.options.ordered_list_indent_width.get();
+                let trailing_count = marker_width.saturating_sub(current_num_width + 1).max(1);
+                current_num_width + 1 + trailing_count
+            }
+            None => 0,
+        };
+        let task_marker_width = if task_marker.is_some() { 4 } else { 0 };
+        let first_paragraph_prefix_width = if self.in_block_quote { 2 } else { 0 }
+            + desc_base_indent.len()
+            + nested_indent_width
+            + marker_prefix_width
+            + task_marker_width;
         if self.list_depth > 1 {
-            let indent = format!(
-                "{}{}",
-                desc_base_indent,
-                " ".repeat(indent_width * (self.list_depth - 1))
-            );
+            let indent = format!("{}{}", desc_base_indent, " ".repeat(nested_indent_width));
             self.output.push_str(&indent);
         } else {
             self.output.push_str(desc_base_indent);
@@ -203,6 +226,8 @@ impl<'a> Serializer<'a> {
         // Serialize children, handling nested lists and multiple paragraphs
         let children: Vec<_> = node.children().collect();
         let base_indent = self.calculate_list_item_base_indent();
+        let continuation_paragraph_prefix_width =
+            if self.in_block_quote { 2 } else { 0 } + base_indent.len();
 
         // Store the base indent for use by nested block elements (blockquotes, alerts, etc.)
         let old_list_item_indent =
@@ -252,7 +277,16 @@ impl<'a> Serializer<'a> {
                         }
                         self.output.push_str(&base_indent);
                     }
+                    let old_paragraph_prefix_width = std::mem::replace(
+                        &mut self.paragraph_first_line_prefix_width,
+                        if is_first {
+                            first_paragraph_prefix_width
+                        } else {
+                            continuation_paragraph_prefix_width
+                        },
+                    );
                     self.serialize_node(child);
+                    self.paragraph_first_line_prefix_width = old_paragraph_prefix_width;
                 }
                 NodeValue::CodeBlock(code_block) => {
                     // Code blocks in list items need blank line and indentation

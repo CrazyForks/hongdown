@@ -1,6 +1,7 @@
 use super::*;
 use crate::{LineWidth, ThematicBreakStyle};
 use comrak::{Arena, Options as ComrakOptions, parse_document};
+use unicode_width::UnicodeWidthStr;
 
 fn comrak_options() -> ComrakOptions<'static> {
     let mut options = ComrakOptions::default();
@@ -390,6 +391,19 @@ fn parse_and_serialize_with_width(input: &str, line_width: usize) -> String {
         ..Options::default()
     };
     serialize_with_source(root, &format_options, None)
+}
+
+fn assert_all_non_empty_lines_fit_display_width(output: &str, line_width: usize) {
+    for line in output.lines().filter(|line| !line.is_empty()) {
+        assert!(
+            line.width() <= line_width,
+            "Line exceeds width {} (actual {}): {:?}\nFull output:\n{}",
+            line_width,
+            line.width(),
+            line,
+            output
+        );
+    }
 }
 
 #[test]
@@ -3329,17 +3343,49 @@ fn test_wrap_chinese_text() {
 #[test]
 fn test_wrap_korean_in_list_item() {
     // List item with Korean text that needs wrapping
-    // " -  " = 4 cols prefix
+    // " -  " = 4 cols prefix, which counts toward the first line width.
     let input = " -  이것은 매우 긴 한국어 문장입니다 여러 줄로 나누어져야 합니다";
     let result = parse_and_serialize_with_width(input, 40);
     assert_eq!(
         result,
         r#"
- -  이것은 매우 긴 한국어 문장입니다 여러
-    줄로 나누어져야 합니다
+ -  이것은 매우 긴 한국어 문장입니다
+    여러 줄로 나누어져야 합니다
 "#
         .trim_start_matches('\n')
     );
+}
+
+#[test]
+fn test_unordered_list_first_line_respects_line_width() {
+    let input = " -  This list item is long enough to expose whether the first line still ignores the marker width during wrapping.";
+    let result = parse_and_serialize_with_width(input, 40);
+
+    assert_all_non_empty_lines_fit_display_width(&result, 40);
+}
+
+#[test]
+fn test_ordered_list_first_line_respects_line_width() {
+    let input = "1.  This ordered list item is long enough to expose whether the first line still ignores the marker width during wrapping.";
+    let result = parse_and_serialize_with_width(input, 40);
+
+    assert_all_non_empty_lines_fit_display_width(&result, 40);
+}
+
+#[test]
+fn test_list_item_in_alert_first_line_respects_line_width() {
+    let input = "> [!NOTE]\n>  -  This list item inside an alert is long enough to expose whether the first line ignores the visible prefix width during wrapping.";
+    let result = parse_and_serialize_with_source_and_width(input, 50);
+
+    assert_all_non_empty_lines_fit_display_width(&result, 50);
+}
+
+#[test]
+fn test_definition_list_paragraph_first_line_respects_line_width() {
+    let input = "Term\n:   This is a very long definition paragraph that should reveal whether a prefixed first line can exceed the configured line width when wrapping happens.";
+    let result = parse_and_serialize_with_source_and_width(input, 80);
+
+    assert_all_non_empty_lines_fit_display_width(&result, 80);
 }
 
 #[test]
@@ -3865,6 +3911,17 @@ fn test_heading_sentence_case_proper_noun_in_parentheses() {
     options.heading_sentence_case = true;
     let result = parse_and_serialize_with_options(input, &options);
     assert_eq!(result, "Test (Deno only)\n================\n");
+}
+
+#[test]
+fn test_heading_sentence_case_preserves_explicit_anchor_name() {
+    // Regression test: trailing explicit anchor names should not be modified
+    // by sentence-case conversion. Only the visible heading text should change.
+    let input = "## Test Section {#myAPI}";
+    let mut options = Options::default();
+    options.heading_sentence_case = true;
+    let result = parse_and_serialize_with_options(input, &options);
+    assert_eq!(result, "Test section {#myAPI}\n---------------------\n");
 }
 
 // ============================================================================

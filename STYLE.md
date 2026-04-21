@@ -78,6 +78,14 @@ Development commands    ← Correct
 Development Commands    ← Incorrect
 ~~~~
 
+When a heading ends with an explicit anchor (`{#name}`), preserve the anchor
+name exactly as written.  Apply sentence case only to the visible heading text:
+
+~~~~ markdown
+Test section {#myAPI}    ← Correct
+Test section {#myapi}    ← Incorrect
+~~~~
+
 *Rationale*: Sentence case is easier to read and more natural in technical
 documentation.
 
@@ -437,6 +445,17 @@ readability across different editors and viewers.
 
 East Asian wide characters (CJK characters) are counted as two columns when
 calculating line width.
+
+### Visible prefixes count toward width
+
+Visible structural prefixes also count toward the line width on the first line.
+This includes list markers, task-list checkboxes, block quote markers, and
+definition-list markers:
+
+~~~~ markdown
+ -  This list item also wraps at the configured line width,
+    including the ` -  ` prefix on the first line.
+~~~~
 
 ### Preserve intentional short lines
 

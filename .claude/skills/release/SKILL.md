@@ -430,13 +430,15 @@ Checklist summary
  -  [ ] Push tag and branch
  -  [ ] Cascade merge to newer maintenance branches (if any):
      -  [ ] Merge tag into newer branch
-     -  [ ] Copy changelog entries to unreleased version (above existing entries)
+     -  [ ] Copy changelog entries to unreleased version (above existing
+        entries)
      -  [ ] Run tests and complete merge commit
      -  [ ] Create patch release for that branch
  -  [ ] Merge to `main` (if no newer maintenance branches):
      -  [ ] Resolve *CHANGES.md* conflict: keep `main`'s unreleased section
         unchanged; retain all released version sections from the merged tag
-     -  [ ] Resolve *Cargo.toml* and *Cargo.lock* conflicts: keep `main`'s version
+     -  [ ] Resolve *Cargo.toml* and *Cargo.lock* conflicts: keep `main`'s
+        version
      -  [ ] Run tests and push
 
 ### Major/minor release checklist

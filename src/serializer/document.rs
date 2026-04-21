@@ -321,6 +321,7 @@ impl<'a> Serializer<'a> {
                         let wrapped = wrap::wrap_text_first_line(
                             content.trim(),
                             "",
+                            blockquote_prefix.width() + 4,
                             &continuation,
                             self.options.line_width.get(),
                         );
@@ -379,6 +380,7 @@ impl<'a> Serializer<'a> {
                         let wrapped = wrap::wrap_text_first_line(
                             content.trim(),
                             "",
+                            blockquote_prefix.width() + 4,
                             &continuation,
                             self.options.line_width.get(),
                         );
@@ -420,7 +422,10 @@ impl<'a> Serializer<'a> {
 
     pub(super) fn serialize_heading<'b>(&mut self, node: &'b AstNode<'b>, level: u8) {
         // Collect heading text first
-        let mut heading_text = self.collect_text(node);
+        let heading_text = self.collect_text(node);
+        let (heading_body, trailing_anchor) =
+            super::heading::split_trailing_explicit_anchor(&heading_text);
+        let mut formatted_heading = heading_body.to_string();
 
         // Apply sentence case if enabled
         if self.options.heading_sentence_case {
@@ -432,27 +437,28 @@ impl<'a> Serializer<'a> {
             let mut common_nouns = self.options.heading_common_nouns.clone();
             common_nouns.extend(self.directive_common_nouns.clone());
 
-            heading_text =
-                super::heading::to_sentence_case(&heading_text, &proper_nouns, &common_nouns);
+            formatted_heading =
+                super::heading::to_sentence_case(heading_body, &proper_nouns, &common_nouns);
         }
+        formatted_heading.push_str(trailing_anchor);
 
         if level == 1 && self.options.setext_h1 {
             // Setext-style with '='
-            self.output.push_str(&heading_text);
+            self.output.push_str(&formatted_heading);
             self.output.push('\n');
-            self.output.push_str(&"=".repeat(heading_text.width()));
+            self.output.push_str(&"=".repeat(formatted_heading.width()));
             self.output.push('\n');
         } else if level == 2 && self.options.setext_h2 {
             // Setext-style with '-'
-            self.output.push_str(&heading_text);
+            self.output.push_str(&formatted_heading);
             self.output.push('\n');
-            self.output.push_str(&"-".repeat(heading_text.width()));
+            self.output.push_str(&"-".repeat(formatted_heading.width()));
             self.output.push('\n');
         } else {
             // ATX-style for level 3+ or when setext is disabled
             self.output.push_str(&"#".repeat(level as usize));
             self.output.push(' ');
-            self.output.push_str(&heading_text);
+            self.output.push_str(&formatted_heading);
             self.output.push('\n');
         }
     }
@@ -490,6 +496,7 @@ impl<'a> Serializer<'a> {
             let wrapped = wrap::wrap_text_first_line(
                 inline_content.trim(),
                 "",
+                self.paragraph_first_line_prefix_width,
                 &continuation,
                 self.options.line_width.get(),
             );
