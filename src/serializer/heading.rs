@@ -5,6 +5,39 @@
 // Include generated proper nouns constants
 include!(concat!(env!("OUT_DIR"), "/proper_nouns_generated.rs"));
 
+/// Split a heading into visible text and a trailing explicit anchor suffix.
+///
+/// Explicit anchors use the `{#name}` syntax and are preserved verbatim.
+/// Any whitespace immediately before the anchor is included in the suffix.
+pub fn split_trailing_explicit_anchor(text: &str) -> (&str, &str) {
+    if !text.ends_with('}') {
+        return (text, "");
+    }
+
+    let Some(anchor_start) = text.rfind("{#") else {
+        return (text, "");
+    };
+
+    let anchor = &text[anchor_start..];
+    if anchor.len() <= 3 || !anchor.ends_with('}') {
+        return (text, "");
+    }
+
+    let anchor_name = &anchor[2..anchor.len() - 1];
+    if anchor_name.is_empty()
+        || anchor_name
+            .chars()
+            .any(|ch| ch.is_whitespace() || ch == '{' || ch == '}')
+    {
+        return (text, "");
+    }
+
+    let body_end = text[..anchor_start]
+        .trim_end_matches(char::is_whitespace)
+        .len();
+    (&text[..body_end], &text[body_end..])
+}
+
 /// Convert heading text to sentence case.
 ///
 /// This function applies intelligent heuristics to convert heading text:
@@ -884,6 +917,30 @@ fn capitalize_first(word: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_split_trailing_explicit_anchor() {
+        assert_eq!(
+            split_trailing_explicit_anchor("Test Section {#myAPI}"),
+            ("Test Section", " {#myAPI}")
+        );
+        assert_eq!(
+            split_trailing_explicit_anchor("Test Section{#myAPI}"),
+            ("Test Section", "{#myAPI}")
+        );
+    }
+
+    #[test]
+    fn test_split_trailing_explicit_anchor_ignores_invalid_suffix() {
+        assert_eq!(
+            split_trailing_explicit_anchor("Test Section {#my API}"),
+            ("Test Section {#my API}", "")
+        );
+        assert_eq!(
+            split_trailing_explicit_anchor("Test Section {not-an-anchor}"),
+            ("Test Section {not-an-anchor}", "")
+        );
+    }
 
     #[test]
     fn test_basic_sentence_case() {

@@ -3867,6 +3867,17 @@ fn test_heading_sentence_case_proper_noun_in_parentheses() {
     assert_eq!(result, "Test (Deno only)\n================\n");
 }
 
+#[test]
+fn test_heading_sentence_case_preserves_explicit_anchor_name() {
+    // Regression test: trailing explicit anchor names should not be modified
+    // by sentence-case conversion. Only the visible heading text should change.
+    let input = "## Test Section {#myAPI}";
+    let mut options = Options::default();
+    options.heading_sentence_case = true;
+    let result = parse_and_serialize_with_options(input, &options);
+    assert_eq!(result, "Test section {#myAPI}\n---------------------\n");
+}
+
 // ============================================================================
 // Code block formatter tests
 // ============================================================================

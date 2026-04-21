@@ -78,6 +78,14 @@ Development commands    ← Correct
 Development Commands    ← Incorrect
 ~~~~
 
+When a heading ends with an explicit anchor (`{#name}`), preserve the anchor
+name exactly as written.  Apply sentence case only to the visible heading text:
+
+~~~~ markdown
+Test section {#myAPI}    ← Correct
+Test section {#myapi}    ← Incorrect
+~~~~
+
 *Rationale*: Sentence case is easier to read and more natural in technical
 documentation.
 
