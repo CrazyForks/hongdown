@@ -11,6 +11,12 @@ To be released.
     enabled.  Sentence-case conversion now applies only to the visible heading
     text and preserves the anchor name exactly as written.
 
+ -  Fixed a bug where the first line of wrapped list items could exceed the
+    configured `line_width` because Hongdown did not count already emitted
+    prefixes such as list markers, blockquote markers, and definition-list
+    markers.  Hongdown now includes those visible prefixes when measuring the
+    first line, so wrapped list content stays within the configured width.
+
 
 Version 0.3.8
 -------------

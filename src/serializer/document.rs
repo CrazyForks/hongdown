@@ -321,6 +321,7 @@ impl<'a> Serializer<'a> {
                         let wrapped = wrap::wrap_text_first_line(
                             content.trim(),
                             "",
+                            blockquote_prefix.width() + 4,
                             &continuation,
                             self.options.line_width.get(),
                         );
@@ -379,6 +380,7 @@ impl<'a> Serializer<'a> {
                         let wrapped = wrap::wrap_text_first_line(
                             content.trim(),
                             "",
+                            blockquote_prefix.width() + 4,
                             &continuation,
                             self.options.line_width.get(),
                         );
@@ -494,6 +496,7 @@ impl<'a> Serializer<'a> {
             let wrapped = wrap::wrap_text_first_line(
                 inline_content.trim(),
                 "",
+                self.paragraph_first_line_prefix_width,
                 &continuation,
                 self.options.line_width.get(),
             );

@@ -446,6 +446,17 @@ readability across different editors and viewers.
 East Asian wide characters (CJK characters) are counted as two columns when
 calculating line width.
 
+### Visible prefixes count toward width
+
+Visible structural prefixes also count toward the line width on the first line.
+This includes list markers, task-list checkboxes, block quote markers, and
+definition-list markers:
+
+~~~~ markdown
+ -  This list item also wraps at the configured line width,
+    including the ` -  ` prefix on the first line.
+~~~~
+
 ### Preserve intentional short lines
 
 Lines that are intentionally short in the source (well under the limit) are

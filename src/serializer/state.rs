@@ -278,6 +278,9 @@ pub struct Serializer<'a> {
     /// The list depth when entering the current blockquote.
     /// Used to determine if a list exists inside vs outside the blockquote.
     pub blockquote_entry_list_depth: usize,
+    /// Display width already emitted on the current paragraph's first line.
+    /// Used when wrapping paragraph text after prefixes were written separately.
+    pub paragraph_first_line_prefix_width: usize,
     /// Proper nouns defined via directives for sentence case (merged with config)
     pub directive_proper_nouns: Vec<String>,
     /// Common nouns defined via directives for sentence case (merged with config)
@@ -315,6 +318,7 @@ impl<'a> Serializer<'a> {
             list_item_indent: String::new(),
             blockquote_outer_indent: String::new(),
             blockquote_entry_list_depth: 0,
+            paragraph_first_line_prefix_width: 0,
             directive_proper_nouns: Vec::new(),
             directive_common_nouns: Vec::new(),
             #[cfg(feature = "wasm")]
@@ -352,6 +356,7 @@ impl<'a> Serializer<'a> {
             list_item_indent: String::new(),
             blockquote_outer_indent: String::new(),
             blockquote_entry_list_depth: 0,
+            paragraph_first_line_prefix_width: 0,
             directive_proper_nouns: Vec::new(),
             directive_common_nouns: Vec::new(),
             code_formatter_callback: callback,

@@ -44,7 +44,7 @@ fn wrap_text_segment(text: &str, prefix: &str, line_width: usize) -> String {
 
     if original_lines.len() == 1 {
         // No original line breaks, just wrap normally
-        return wrap_single_segment(text, prefix, prefix, line_width);
+        return wrap_single_segment(text, prefix, prefix.width(), prefix, line_width);
     }
 
     // Process lines: keep short lines as-is until we hit a long line,
@@ -76,7 +76,7 @@ fn wrap_text_segment(text: &str, prefix: &str, line_width: usize) -> String {
             }
 
             // Wrap the merged content
-            let wrapped = wrap_single_segment(&merged, prefix, prefix, line_width);
+            let wrapped = wrap_single_segment(&merged, prefix, prefix.width(), prefix, line_width);
 
             if !result.is_empty() {
                 result.push('\n');
@@ -98,6 +98,7 @@ fn wrap_text_segment(text: &str, prefix: &str, line_width: usize) -> String {
 pub fn wrap_text_first_line(
     text: &str,
     first_prefix: &str,
+    first_prefix_width: usize,
     continuation_prefix: &str,
     line_width: usize,
 ) -> String {
@@ -107,7 +108,13 @@ pub fn wrap_text_first_line(
 
     if hard_break_segments.len() == 1 {
         // No hard line breaks, process normally with soft breaks
-        return wrap_text_first_line_segment(text, first_prefix, continuation_prefix, line_width);
+        return wrap_text_first_line_segment(
+            text,
+            first_prefix,
+            first_prefix_width,
+            continuation_prefix,
+            line_width,
+        );
     }
 
     // Process each segment separated by hard line breaks
@@ -119,13 +126,18 @@ pub fn wrap_text_first_line(
             result.push_str("  \n");
             result.push_str(continuation_prefix);
         }
-        let (current_first, current_cont) = if is_first_segment {
-            (first_prefix, continuation_prefix)
+        let (current_first, current_first_width, current_cont) = if is_first_segment {
+            (first_prefix, first_prefix_width, continuation_prefix)
         } else {
-            ("", continuation_prefix)
+            ("", continuation_prefix.width(), continuation_prefix)
         };
-        let wrapped =
-            wrap_text_first_line_segment(segment, current_first, current_cont, line_width);
+        let wrapped = wrap_text_first_line_segment(
+            segment,
+            current_first,
+            current_first_width,
+            current_cont,
+            line_width,
+        );
         result.push_str(&wrapped);
         is_first_segment = false;
     }
@@ -137,6 +149,7 @@ pub fn wrap_text_first_line(
 fn wrap_text_first_line_segment(
     text: &str,
     first_prefix: &str,
+    first_prefix_width: usize,
     continuation_prefix: &str,
     line_width: usize,
 ) -> String {
@@ -145,7 +158,13 @@ fn wrap_text_first_line_segment(
 
     if original_lines.len() == 1 {
         // No original line breaks, just wrap normally
-        return wrap_single_segment(text, first_prefix, continuation_prefix, line_width);
+        return wrap_single_segment(
+            text,
+            first_prefix,
+            first_prefix_width,
+            continuation_prefix,
+            line_width,
+        );
     }
 
     // Process lines: keep short lines as-is until we hit a long line,
@@ -161,7 +180,12 @@ fn wrap_text_first_line_segment(
         } else {
             continuation_prefix
         };
-        let line_with_prefix_len = current_prefix.width() + line.width();
+        let current_prefix_width = if is_first_line {
+            first_prefix_width
+        } else {
+            continuation_prefix.width()
+        };
+        let line_with_prefix_len = current_prefix_width + line.width();
 
         if line_with_prefix_len <= line_width {
             // Line fits within limit, keep it as-is
@@ -184,8 +208,13 @@ fn wrap_text_first_line_segment(
             }
 
             // Wrap the merged content
-            let wrapped =
-                wrap_single_segment(&merged, current_prefix, continuation_prefix, line_width);
+            let wrapped = wrap_single_segment(
+                &merged,
+                current_prefix,
+                current_prefix_width,
+                continuation_prefix,
+                line_width,
+            );
 
             if !result.is_empty() {
                 result.push('\n');
@@ -205,13 +234,14 @@ fn wrap_text_first_line_segment(
 pub fn wrap_single_segment(
     text: &str,
     first_prefix: &str,
+    first_prefix_width: usize,
     prefix: &str,
     line_width: usize,
 ) -> String {
     let mut result = String::new();
     let mut current_line = String::new();
     let mut is_first_line = true;
-    let first_prefix_width = first_prefix.width();
+    let first_prefix_hidden_width = first_prefix_width.saturating_sub(first_prefix.width());
 
     // Add prefix to first line
     current_line.push_str(first_prefix);
@@ -242,6 +272,7 @@ pub fn wrap_single_segment(
                         &mut current_line,
                         &current_token,
                         &trailing_spaces,
+                        first_prefix_hidden_width,
                         first_prefix_width,
                         prefix,
                         line_width,
@@ -265,6 +296,7 @@ pub fn wrap_single_segment(
                     &mut current_line,
                     &current_token,
                     &trailing_spaces,
+                    first_prefix_hidden_width,
                     first_prefix_width,
                     prefix,
                     line_width,
@@ -293,6 +325,7 @@ pub fn wrap_single_segment(
                     &mut current_line,
                     &current_token,
                     &trailing_spaces,
+                    first_prefix_hidden_width,
                     first_prefix_width,
                     prefix,
                     line_width,
@@ -312,6 +345,7 @@ pub fn wrap_single_segment(
             &mut current_line,
             &current_token,
             "",
+            first_prefix_hidden_width,
             first_prefix_width,
             prefix,
             line_width,
@@ -334,6 +368,7 @@ fn add_token_to_line_with_prefix(
     current_line: &mut String,
     token: &str,
     trailing_spaces: &str,
+    first_prefix_hidden_width: usize,
     first_prefix_width: usize,
     prefix: &str,
     line_width: usize,
@@ -346,12 +381,18 @@ fn add_token_to_line_with_prefix(
     } else {
         prefix.width()
     };
+    let current_line_width = current_line.width()
+        + if *is_first_line {
+            first_prefix_hidden_width
+        } else {
+            0
+        };
 
-    if current_line.width() == current_prefix_width {
+    if current_line_width == current_prefix_width {
         // First word on this line (prefix already added)
         current_line.push_str(token);
         current_line.push_str(trailing_spaces);
-    } else if current_line.width() + token_width + spaces_len <= line_width {
+    } else if current_line_width + token_width + spaces_len <= line_width {
         // Token fits on current line
         current_line.push_str(token);
         current_line.push_str(trailing_spaces);
