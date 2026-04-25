@@ -1,6 +1,6 @@
 //! Code block serialization logic.
 
-use comrak::nodes::NodeCodeBlock;
+use comrak::nodes::{AstNode, NodeCodeBlock};
 
 use super::Serializer;
 
@@ -34,7 +34,38 @@ fn parse_code_info(info: &str) -> (&str, &str, bool) {
     (language, trimmed, has_no_format)
 }
 
+/// Extract the info string from the original opening code fence line.
+///
+/// comrak decodes HTML entities in code block info strings while parsing.
+/// The formatter should preserve the source spelling for output, so we use
+/// sourcepos to recover the original info string when source text is available.
+fn extract_source_code_info(source: &str) -> Option<&str> {
+    let opening_line = source.lines().next()?.trim_start();
+    let fence_char = opening_line.chars().next()?;
+
+    if fence_char != '`' && fence_char != '~' {
+        return None;
+    }
+
+    let fence_len = opening_line
+        .chars()
+        .take_while(|&ch| ch == fence_char)
+        .count();
+    if fence_len < 3 {
+        return None;
+    }
+
+    Some(opening_line[fence_len..].trim())
+}
+
 impl<'a> Serializer<'a> {
+    /// Get the info string to emit for a code block, preserving source entities.
+    fn code_info_for_output<'b>(&self, node: &'b AstNode<'b>, info: &str) -> String {
+        self.extract_source(node)
+            .and_then(|source| extract_source_code_info(&source).map(str::to_string))
+            .unwrap_or_else(|| info.trim().to_string())
+    }
+
     /// Try to format code using an external formatter.
     ///
     /// Returns `Some(formatted_code)` if a formatter is configured for the language
@@ -76,14 +107,21 @@ impl<'a> Serializer<'a> {
     }
 
     /// Serialize a code block with indent for description list details.
-    pub(super) fn serialize_code_block_with_indent(&mut self, code: &NodeCodeBlock, indent: &str) {
+    pub(super) fn serialize_code_block_with_indent<'b>(
+        &mut self,
+        node: &'b AstNode<'b>,
+        code: &NodeCodeBlock,
+        indent: &str,
+    ) {
         let fence_char = self.options.fence_char.as_char();
         let min_len = self.options.min_fence_length.get();
         let base_fence: String = std::iter::repeat_n(fence_char, min_len).collect();
         let long_fence: String = std::iter::repeat_n(fence_char, min_len + 1).collect();
+        let info = self.code_info_for_output(node, &code.info);
 
-        // Parse info to get language and check for no-format flag
-        let (parsed_lang, info_output, skip_format) = parse_code_info(&code.info);
+        // Parse the AST info for formatter behavior, and the source info for output.
+        let (parsed_lang, _, skip_format) = parse_code_info(&code.info);
+        let (_, info_output, _) = parse_code_info(&info);
 
         // Determine language for formatter lookup (use default if empty)
         let language = if parsed_lang.is_empty() {
@@ -137,13 +175,28 @@ impl<'a> Serializer<'a> {
         self.output.push('\n');
     }
 
-    pub(super) fn serialize_code_block(&mut self, info: &str, literal: &str) {
+    pub(super) fn serialize_code_block_node<'b>(
+        &mut self,
+        node: &'b AstNode<'b>,
+        code: &NodeCodeBlock,
+    ) {
+        let info = self.code_info_for_output(node, &code.info);
+        self.serialize_code_block_with_parse_info(&info, &code.info, &code.literal);
+    }
+
+    fn serialize_code_block_with_parse_info(
+        &mut self,
+        info: &str,
+        parse_info_source: &str,
+        literal: &str,
+    ) {
         // Determine the minimum fence length from options
         let min_fence_length = self.options.min_fence_length.get();
         let fence_char = self.options.fence_char.as_char();
 
-        // Parse info to get language and check for no-format flag
-        let (parsed_lang, info_output, skip_format) = parse_code_info(info);
+        // Parse the AST info for formatter behavior, and the source info for output.
+        let (parsed_lang, _, skip_format) = parse_code_info(parse_info_source);
+        let (_, info_output, _) = parse_code_info(info);
 
         // Use default_language if no language specified (empty string means no language)
         let language = if parsed_lang.is_empty() {
@@ -224,18 +277,21 @@ impl<'a> Serializer<'a> {
 
     /// Serialize a code block with indentation prefix on each line.
     /// Used for code blocks inside list items.
-    pub(super) fn serialize_code_block_indented(
+    pub(super) fn serialize_code_block_indented<'b>(
         &mut self,
-        info: &str,
+        node: &'b AstNode<'b>,
+        code: &NodeCodeBlock,
         literal: &str,
         indent: &str,
     ) {
         // Determine the minimum fence length from options
         let min_fence_length = self.options.min_fence_length.get();
         let fence_char = self.options.fence_char.as_char();
+        let info = self.code_info_for_output(node, &code.info);
 
-        // Parse info to get language and check for no-format flag
-        let (parsed_lang, info_output, skip_format) = parse_code_info(info);
+        // Parse the AST info for formatter behavior, and the source info for output.
+        let (parsed_lang, _, skip_format) = parse_code_info(&code.info);
+        let (_, info_output, _) = parse_code_info(&info);
 
         // Use default_language if no language specified
         let language = if parsed_lang.is_empty() {

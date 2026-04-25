@@ -296,7 +296,8 @@ impl<'a> Serializer<'a> {
                     }
                     self.output.push_str(&base_indent);
                     self.serialize_code_block_indented(
-                        &code_block.info,
+                        child,
+                        code_block,
                         &code_block.literal,
                         &base_indent,
                     );

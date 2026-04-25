@@ -161,6 +161,16 @@ fn test_serialize_fenced_code_block() {
 }
 
 #[test]
+fn test_serialize_fenced_code_block_preserves_html_entities_in_info_string() {
+    let input = "```c++ title=&quot;main.cpp&quot;\nint main() {}\n```";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(
+        result,
+        "~~~~ c++ title=&quot;main.cpp&quot;\nint main() {}\n~~~~\n"
+    );
+}
+
+#[test]
 fn test_serialize_fenced_code_block_no_language() {
     // Code block without language should remain without language identifier
     let result = parse_and_serialize("```\nsome code\n```");

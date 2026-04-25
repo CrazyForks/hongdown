@@ -336,6 +336,7 @@ impl<'a> Serializer<'a> {
                         self.output.push_str(&blockquote_prefix);
                         self.output.push_str("    ");
                         self.serialize_code_block_with_indent(
+                            child,
                             code,
                             &format!("{}    ", blockquote_prefix),
                         );
@@ -391,6 +392,7 @@ impl<'a> Serializer<'a> {
                         self.output.push_str(&blockquote_prefix);
                         self.output.push_str("    ");
                         self.serialize_code_block_with_indent(
+                            child,
                             code,
                             &format!("{}    ", blockquote_prefix),
                         );
