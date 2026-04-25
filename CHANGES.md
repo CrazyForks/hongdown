@@ -4,7 +4,7 @@ Hongdown changelog
 Version 0.3.10
 --------------
 
-To be released.
+Released on April 26, 2026.
 
  -  Fixed a bug where HTML entities in fenced code block info strings were
     decoded during formatting (for example, `&quot;` became `"`).  Hongdown now
