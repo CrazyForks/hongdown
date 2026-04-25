@@ -264,6 +264,15 @@ console.log("Hello");
 ~~~~
 ~~~~~
 
+Additional metadata in the info string is preserved as written, including
+HTML entities:
+
+~~~~~ markdown
+~~~~ c++ title=&quot;main.cpp&quot;
+int main() {}
+~~~~
+~~~~~
+
 ### Inline code spans
 
 Use backticks for inline code.  When the content contains backticks, use

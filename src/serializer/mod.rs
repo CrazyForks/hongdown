@@ -521,7 +521,7 @@ impl<'a> Serializer<'a> {
                 self.serialize_list(node, list.list_type, list.tight);
             }
             NodeValue::CodeBlock(code_block) => {
-                self.serialize_code_block(&code_block.info, &code_block.literal);
+                self.serialize_code_block_node(node, code_block);
             }
             NodeValue::BlockQuote => {
                 self.serialize_block_quote(node);

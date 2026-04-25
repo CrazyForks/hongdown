@@ -6,6 +6,10 @@ Version 0.3.10
 
 To be released.
 
+ -  Fixed a bug where HTML entities in fenced code block info strings were
+    decoded during formatting (for example, `&quot;` became `"`).  Hongdown now
+    preserves the original entity spelling in the emitted info string.
+
 
 Version 0.3.9
 -------------
