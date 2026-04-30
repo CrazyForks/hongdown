@@ -4,7 +4,7 @@ Hongdown changelog
 Version 0.3.11
 --------------
 
-To be released.
+Released on April 30, 2026.
 
  -  Fixed a bug where loose list items inside a blockquote were separated by a
     blank line without a `>` marker, causing one blockquote to be formatted as
