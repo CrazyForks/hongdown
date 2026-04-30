@@ -6,6 +6,11 @@ Version 0.3.11
 
 To be released.
 
+ -  Fixed a bug where loose list items inside a blockquote were separated by a
+    blank line without a `>` marker, causing one blockquote to be formatted as
+    two separate blockquotes.  Hongdown now keeps the blank separator inside the
+    blockquote.
+
 
 Version 0.3.10
 --------------

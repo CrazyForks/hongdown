@@ -109,7 +109,12 @@ impl<'a> Serializer<'a> {
 
         // For loose lists, add a blank line before items (except the first)
         if !self.list_tight && self.list_item_index > 1 {
-            self.output.push('\n');
+            if self.in_block_quote {
+                self.output.push_str(self.blockquote_prefix.trim_end());
+                self.output.push('\n');
+            } else {
+                self.output.push('\n');
+            }
         }
 
         // Add block quote prefix if we're inside a block quote

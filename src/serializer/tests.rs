@@ -204,6 +204,20 @@ fn test_serialize_block_quote_multiple_paragraphs() {
 }
 
 #[test]
+fn test_loose_list_in_block_quote_stays_in_one_quote() {
+    let input = r#"> This is a block quote.
+>
+> - And this is a list item in the block quote.
+>
+> - And this is another list item in the block quote."#;
+    let result = parse_and_serialize(input);
+    assert_eq!(
+        result,
+        "> This is a block quote.\n>\n>  -  And this is a list item in the block quote.\n>\n>  -  And this is another list item in the block quote.\n"
+    );
+}
+
+#[test]
 fn test_serialize_emphasis() {
     let result = parse_and_serialize("This is *emphasized* text.");
     assert_eq!(result, "This is *emphasized* text.\n");
