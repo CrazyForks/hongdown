@@ -7,6 +7,17 @@ Version 0.4.0
 To be released.
 
 
+Version 0.3.11
+--------------
+
+Released on April 30, 2026.
+
+ -  Fixed a bug where loose list items inside a blockquote were separated by a
+    blank line without a `>` marker, causing one blockquote to be formatted as
+    two separate blockquotes.  Hongdown now keeps the blank separator inside the
+    blockquote.
+
+
 Version 0.3.10
 --------------
 

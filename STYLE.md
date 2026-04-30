@@ -369,6 +369,15 @@ Continue block quotes with `>` on each line:
 > multiple lines of text.
 ~~~~
 
+Use `>` on blank lines inside block quotes, including blank lines between
+loose list items:
+
+~~~~ markdown
+>  -  First item.
+>
+>  -  Second item.
+~~~~
+
 ### GitHub-style alerts
 
 Use GitHub-flavored alert syntax for callouts:
