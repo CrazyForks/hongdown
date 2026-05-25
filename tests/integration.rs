@@ -1012,4 +1012,131 @@ sentence_case = true
              --------------------------------------------------------------------------------\n"
         );
     }
+
+    /// anchor_align = 3: exactly 3 spaces between heading body and anchor.
+    #[test]
+    fn test_anchor_align_positive() {
+        let temp_dir = TempDir::new().unwrap();
+
+        create_config(
+            temp_dir.path(),
+            r#"
+[heading]
+anchor_align = 3
+"#,
+        );
+
+        create_markdown_file(temp_dir.path(), "test.md", "## Section {#section-1}\n");
+
+        let markdown_path = temp_dir.path().join("test.md");
+        let result = run_hongdown(&markdown_path);
+
+        // "Section" (7) + 3 spaces + "{#section-1}" (12) = 22 chars; underline = 22 '-'
+        assert_eq!(result, "Section   {#section-1}\n----------------------\n");
+    }
+
+    /// anchor_align = 0 with line_width = 80: heading line is exactly 80 chars.
+    #[test]
+    fn test_anchor_align_zero_right_aligns() {
+        let temp_dir = TempDir::new().unwrap();
+
+        create_config(
+            temp_dir.path(),
+            r#"
+line_width = 80
+
+[heading]
+anchor_align = 0
+"#,
+        );
+
+        create_markdown_file(temp_dir.path(), "test.md", "# Title {#title}\n");
+
+        let markdown_path = temp_dir.path().join("test.md");
+        let result = run_hongdown(&markdown_path);
+
+        // "Title" (5) + spaces + "{#title}" (8) = 80 chars; underline = 80 '='
+        let first_line = result.lines().next().unwrap();
+        assert_eq!(
+            first_line.len(),
+            80,
+            "heading line should be exactly 80 chars"
+        );
+        assert!(first_line.ends_with("{#title}"));
+    }
+
+    /// anchor_align = -5 with line_width = 80: heading line is 75 chars.
+    #[test]
+    fn test_anchor_align_negative_shorter() {
+        let temp_dir = TempDir::new().unwrap();
+
+        create_config(
+            temp_dir.path(),
+            r#"
+line_width = 80
+
+[heading]
+anchor_align = -5
+"#,
+        );
+
+        create_markdown_file(temp_dir.path(), "test.md", "## Section {#s}\n");
+
+        let markdown_path = temp_dir.path().join("test.md");
+        let result = run_hongdown(&markdown_path);
+
+        // "Section" (7) + spaces + "{#s}" (4) = 75 chars; underline = 75 '-'
+        let first_line = result.lines().next().unwrap();
+        assert_eq!(
+            first_line.len(),
+            75,
+            "heading line should be exactly 75 chars"
+        );
+        assert!(first_line.ends_with("{#s}"));
+    }
+
+    /// anchor_align has no effect on headings without an explicit anchor.
+    #[test]
+    fn test_anchor_align_no_effect_without_anchor() {
+        let temp_dir = TempDir::new().unwrap();
+
+        create_config(
+            temp_dir.path(),
+            r#"
+[heading]
+anchor_align = 10
+"#,
+        );
+
+        create_markdown_file(temp_dir.path(), "test.md", "# Plain Heading\n");
+
+        let markdown_path = temp_dir.path().join("test.md");
+        let result = run_hongdown(&markdown_path);
+
+        assert_eq!(result, "Plain Heading\n=============\n");
+    }
+
+    /// anchor_align = 0 with line_width = false: falls back to 1 space.
+    #[test]
+    fn test_anchor_align_fallback_no_line_width() {
+        let temp_dir = TempDir::new().unwrap();
+
+        create_config(
+            temp_dir.path(),
+            r#"
+line_width = false
+
+[heading]
+anchor_align = 0
+"#,
+        );
+
+        create_markdown_file(temp_dir.path(), "test.md", "# Title {#t}\n");
+
+        let markdown_path = temp_dir.path().join("test.md");
+        let result = run_hongdown(&markdown_path);
+
+        // line_width = false → fall back to 1 space
+        assert_eq!(result, "Title {#t}\n==========\n");
+    }
 }

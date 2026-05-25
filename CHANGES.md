@@ -6,6 +6,21 @@ Version 0.4.0
 
 To be released.
 
+ -  Added `heading.anchor_align` configuration option (Rust API:
+    `Options.heading_anchor_align`, type `i32`) to control the placement of
+    explicit anchor identifiers (`{#name}`) in headings.
+
+    A positive value sets the number of spaces between the heading body and
+    the anchor (capped at 10,000).  Zero or a negative value right-aligns
+    the anchor so that the full heading line spans `line_width + anchor_align`
+    columns; ATX-style headings include the `# ` prefix in that calculation.
+    Falls back to a single space when `line_width` is `false` or the heading
+    body is already too wide to fit the anchor at the target column.
+
+    The default is `0`, which right-aligns anchors to the configured line
+    width (80 columns by default).  To restore the previous single-space
+    behaviour, set `anchor_align = 1`.
+
  -  Word wrapping can now be disabled entirely.  Set `line_width = false` in
     the configuration file, pass `--no-line-width` on the command line, or set
     `Options.line_width = None` in the Rust API.  The `--no-line-width` flag and

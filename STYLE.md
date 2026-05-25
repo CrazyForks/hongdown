@@ -89,6 +89,32 @@ Test section {#myapi}    ← Incorrect
 *Rationale*: Sentence case is easier to read and more natural in technical
 documentation.
 
+### Explicit anchor alignment
+
+When a heading ends with an explicit anchor (`{#name}`), right-align the
+anchor to the configured line width (80 columns by default):
+
+~~~~ markdown
+Introduction                                                            {#intro}
+================================================================================
+~~~~
+
+The Setext-style underline extends to cover the full heading line, including
+the anchor.
+
+If the heading body is already too wide to right-align the anchor within the
+line width, or if word wrapping is disabled (`line_width = false`), a single
+space is used instead:
+
+~~~~ markdown
+A very long heading that cannot be right-aligned {#long}
+========================================================
+~~~~
+
+*Rationale*: Right-aligned anchors create a clean, visually consistent right
+margin and make anchor identifiers easy to find when scanning a document in
+plain text.
+
 ### Underline length
 
 The underline of a Setext-style heading should match the display width of

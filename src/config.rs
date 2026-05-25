@@ -274,6 +274,14 @@ pub struct HeadingConfig {
     /// Useful for words like "Go" which can be either a programming language
     /// or a common verb depending on context.
     pub common_nouns: Vec<String>,
+
+    /// Spacing between heading body and explicit anchor ID (`{#name}`).
+    ///
+    /// Positive: exact number of spaces (capped at 10,000).  Zero or
+    /// negative: right-align the anchor to `line_width + anchor_align`
+    /// columns, falling back to one space when `line_width` is disabled
+    /// or the heading body is too wide.  Default: `0`.
+    pub anchor_align: i32,
 }
 
 impl Default for HeadingConfig {
@@ -284,6 +292,7 @@ impl Default for HeadingConfig {
             sentence_case: false,
             proper_nouns: Vec::new(),
             common_nouns: Vec::new(),
+            anchor_align: 0,
         }
     }
 }
@@ -2680,6 +2689,7 @@ line_width = 100
                 sentence_case: false,
                 proper_nouns: vec!["Rust".to_string()],
                 common_nouns: Vec::new(),
+                anchor_align: 0,
             },
             ..Config::default()
         };
@@ -2691,6 +2701,7 @@ line_width = 100
                 sentence_case: true,
                 proper_nouns: vec!["Python".to_string()],
                 common_nouns: Vec::new(),
+                anchor_align: 0,
             }),
             ..ConfigLayer::default()
         };

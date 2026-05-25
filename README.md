@@ -220,6 +220,8 @@ setext_h2 = true          # Use --- underline for h2 (default: true)
 sentence_case = false     # Convert headings to sentence case (default: false)
 proper_nouns = []         # Additional proper nouns to preserve (default: [])
 common_nouns = []         # Exclude built-in proper nouns (default: [])
+anchor_align = 0          # Spaces before anchor {#id}: positive = exact count,
+                          # 0/negative = right-align to line_width+anchor_align (default: 0)
 
 [unordered_list]
 unordered_marker = "-"    # "-", "*", or "+" (default: "-")
