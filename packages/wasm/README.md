@@ -37,6 +37,9 @@ const result = await format(markdown, {
   fenceChar: "`",
 });
 
+// Disable word wrapping
+const unwrapped = await format(markdown, { lineWidth: false });
+
 // Get warnings along with formatted output
 const { output, warnings } = await formatWithWarnings(markdown);
 if (warnings.length > 0) {

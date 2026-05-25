@@ -18,6 +18,73 @@ fn default_git_aware() -> bool {
     true
 }
 
+/// Default value for `line_width`: `Some(LineWidth::default())`.
+fn default_some_line_width() -> Option<LineWidth> {
+    Some(LineWidth::default())
+}
+
+/// Deserializer for `Option<LineWidth>` that accepts a positive integer or
+/// `false` (which means "no wrapping").
+fn deserialize_line_width_option<'de, D>(deserializer: D) -> Result<Option<LineWidth>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{Error, Visitor};
+
+    struct Vis;
+
+    impl<'de> Visitor<'de> for Vis {
+        type Value = Option<LineWidth>;
+
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            write!(f, "a positive integer (at least 8) or false")
+        }
+
+        fn visit_bool<E: Error>(self, v: bool) -> Result<Self::Value, E> {
+            if v {
+                Err(E::custom(
+                    "line_width must be false (to disable) or a positive integer.",
+                ))
+            } else {
+                Ok(None)
+            }
+        }
+
+        fn visit_u64<E: Error>(self, v: u64) -> Result<Self::Value, E> {
+            let n = usize::try_from(v).map_err(|_| E::custom("line_width value is too large."))?;
+            LineWidth::new(n).map(Some).map_err(E::custom)
+        }
+
+        fn visit_i64<E: Error>(self, v: i64) -> Result<Self::Value, E> {
+            if v < 0 {
+                Err(E::custom(
+                    "line_width must be false (to disable) or a positive integer.",
+                ))
+            } else {
+                let n =
+                    usize::try_from(v).map_err(|_| E::custom("line_width value is too large."))?;
+                LineWidth::new(n).map(Some).map_err(E::custom)
+            }
+        }
+    }
+
+    deserializer.deserialize_any(Vis)
+}
+
+/// Deserializer for `Option<Option<LineWidth>>` used in `ConfigLayer`.
+///
+/// Returns `Some(val)` where `val` is the parsed `Option<LineWidth>`, so that
+/// an absent field (which stays as the `default` value `None`) is distinct from
+/// an explicit `false` (`Some(None)`) or a number (`Some(Some(LineWidth(n)))`).
+fn deserialize_line_width_override<'de, D>(
+    deserializer: D,
+) -> Result<Option<Option<LineWidth>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_line_width_option(deserializer).map(Some)
+}
+
 /// Configuration for the Hongdown formatter.
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(default)]
@@ -27,8 +94,12 @@ pub struct Config {
     #[serde(default)]
     pub no_inherit: bool,
 
-    /// Maximum line width for wrapping (default: 80).
-    pub line_width: LineWidth,
+    /// Maximum line width for wrapping (default: 80). `None` disables wrapping.
+    #[serde(
+        deserialize_with = "deserialize_line_width_option",
+        default = "default_some_line_width"
+    )]
+    pub line_width: Option<LineWidth>,
 
     /// Glob patterns for files to include (default: empty, meaning all files
     /// must be specified on command line).
@@ -64,7 +135,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             no_inherit: false,
-            line_width: LineWidth::default(),
+            line_width: Some(LineWidth::default()),
             include: Vec::new(),
             exclude: Vec::new(),
             git_aware: true,
@@ -90,8 +161,10 @@ pub struct ConfigLayer {
     #[serde(default)]
     pub no_inherit: bool,
 
-    /// Maximum line width for wrapping.
-    pub line_width: Option<LineWidth>,
+    /// Maximum line width for wrapping. `None` = not set in this layer;
+    /// `Some(None)` = explicitly disabled; `Some(Some(lw))` = set to `lw`.
+    #[serde(deserialize_with = "deserialize_line_width_override", default)]
+    pub line_width: Option<Option<LineWidth>>,
 
     /// Glob patterns for files to include.
     pub include: Option<Vec<String>>,
@@ -122,6 +195,11 @@ pub struct ConfigLayer {
 }
 
 impl ConfigLayer {
+    /// Load a ConfigLayer from a TOML string.
+    pub fn from_toml_str(toml: &str) -> Result<Self, toml::de::Error> {
+        toml::from_str(toml)
+    }
+
     /// Load a ConfigLayer from a TOML file.
     ///
     /// Returns an error if the file cannot be read or the TOML is invalid.
@@ -1181,7 +1259,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
-        assert_eq!(config.line_width.get(), 80);
+        assert_eq!(config.line_width.unwrap().get(), 80);
         assert!(config.git_aware);
         assert!(config.heading.setext_h1);
         assert!(config.heading.setext_h2);
@@ -1219,7 +1297,7 @@ mod tests {
     #[test]
     fn test_parse_line_width() {
         let config = Config::from_toml("line_width = 100").unwrap();
-        assert_eq!(config.line_width.get(), 100);
+        assert_eq!(config.line_width.unwrap().get(), 100);
     }
 
     #[test]
@@ -1462,7 +1540,7 @@ style = "---"
         assert!(result.is_some());
         let (path, config) = result.unwrap();
         assert_eq!(path, config_path);
-        assert_eq!(config.line_width.get(), 90);
+        assert_eq!(config.line_width.unwrap().get(), 90);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
@@ -1648,7 +1726,7 @@ em_dash = "--"
 "#,
         )
         .unwrap();
-        assert_eq!(config.line_width.get(), 100);
+        assert_eq!(config.line_width.unwrap().get(), 100);
         assert!(config.punctuation.curly_double_quotes);
         assert_eq!(
             config.punctuation.em_dash,
@@ -2117,7 +2195,7 @@ mod line_width_tests {
     #[test]
     fn test_line_width_parse_valid() {
         let config = Config::from_toml("line_width = 100").unwrap();
-        assert_eq!(config.line_width.get(), 100);
+        assert_eq!(config.line_width.unwrap().get(), 100);
     }
 
     #[test]
@@ -2126,6 +2204,52 @@ mod line_width_tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("line_width must be at least 8"));
+    }
+
+    #[test]
+    fn test_line_width_false_disables_wrap() {
+        let config = Config::from_toml("line_width = false").unwrap();
+        assert!(config.line_width.is_none());
+    }
+
+    #[test]
+    fn test_line_width_true_is_invalid() {
+        let result = Config::from_toml("line_width = true");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_line_width_absent_defaults_to_80() {
+        let config = Config::from_toml("").unwrap();
+        assert_eq!(config.line_width.unwrap().get(), 80);
+    }
+
+    #[test]
+    fn test_config_layer_line_width_false() {
+        let toml = "line_width = false\n";
+        let layer = ConfigLayer::from_toml_str(toml).unwrap();
+        assert_eq!(layer.line_width, Some(None));
+    }
+
+    #[test]
+    fn test_config_layer_line_width_number() {
+        let toml = "line_width = 100\n";
+        let layer = ConfigLayer::from_toml_str(toml).unwrap();
+        assert_eq!(layer.line_width, Some(Some(LineWidth::new(100).unwrap())));
+    }
+
+    #[test]
+    fn test_config_layer_line_width_absent() {
+        let toml = "";
+        let layer = ConfigLayer::from_toml_str(toml).unwrap();
+        assert!(layer.line_width.is_none());
+    }
+
+    #[test]
+    fn test_merge_over_false_disables_wrap() {
+        let layer = ConfigLayer::from_toml_str("line_width = false\n").unwrap();
+        let config = layer.merge_over(Config::default());
+        assert!(config.line_width.is_none());
     }
 }
 
@@ -2477,7 +2601,7 @@ git_aware = false
         .unwrap();
 
         let layer = ConfigLayer::from_file(&config_path).unwrap();
-        assert_eq!(layer.line_width, Some(LineWidth::new(100).unwrap()));
+        assert_eq!(layer.line_width, Some(Some(LineWidth::new(100).unwrap())));
         assert_eq!(layer.git_aware, Some(false));
         assert_eq!(layer.include, None);
         assert_eq!(layer.heading, None);
@@ -2498,7 +2622,7 @@ line_width = 100
 
         let layer = ConfigLayer::from_file(&config_path).unwrap();
         assert_eq!(layer.no_inherit, true);
-        assert_eq!(layer.line_width, Some(LineWidth::new(100).unwrap()));
+        assert_eq!(layer.line_width, Some(Some(LineWidth::new(100).unwrap())));
     }
 
     #[test]
@@ -2510,39 +2634,39 @@ line_width = 100
     #[test]
     fn test_config_layer_merge_simple_fields() {
         let base = Config {
-            line_width: LineWidth::new(80).unwrap(),
+            line_width: Some(LineWidth::new(80).unwrap()),
             git_aware: true,
             ..Config::default()
         };
 
         let layer = ConfigLayer {
-            line_width: Some(LineWidth::new(100).unwrap()),
+            line_width: Some(Some(LineWidth::new(100).unwrap())),
             git_aware: Some(false),
             ..ConfigLayer::default()
         };
 
         let merged = layer.merge_over(base);
-        assert_eq!(merged.line_width.get(), 100);
+        assert_eq!(merged.line_width.unwrap().get(), 100);
         assert_eq!(merged.git_aware, false);
     }
 
     #[test]
     fn test_config_layer_merge_preserves_unset() {
         let base = Config {
-            line_width: LineWidth::new(120).unwrap(),
+            line_width: Some(LineWidth::new(120).unwrap()),
             git_aware: false,
             include: vec!["*.md".to_string()],
             ..Config::default()
         };
 
         let layer = ConfigLayer {
-            line_width: Some(LineWidth::new(100).unwrap()),
+            line_width: Some(Some(LineWidth::new(100).unwrap())),
             // git_aware and include are None, should preserve base
             ..ConfigLayer::default()
         };
 
         let merged = layer.merge_over(base);
-        assert_eq!(merged.line_width.get(), 100);
+        assert_eq!(merged.line_width.unwrap().get(), 100);
         assert_eq!(merged.git_aware, false); // Preserved
         assert_eq!(merged.include, vec!["*.md".to_string()]); // Preserved
     }
@@ -2619,7 +2743,7 @@ line_width = 100
         assert!(layer.is_some());
         assert_eq!(
             layer.unwrap().line_width,
-            Some(LineWidth::new(100).unwrap())
+            Some(Some(LineWidth::new(100).unwrap()))
         );
     }
 
@@ -2643,7 +2767,7 @@ line_width = 100
         assert!(result.is_some());
         let (path, layer) = result.unwrap();
         assert_eq!(path, config_path);
-        assert_eq!(layer.line_width, Some(LineWidth::new(100).unwrap()));
+        assert_eq!(layer.line_width, Some(Some(LineWidth::new(100).unwrap())));
     }
 
     #[test]
@@ -2661,7 +2785,7 @@ line_width = 100
 
         let (config, path) = Config::load_cascading(temp_dir.path()).unwrap();
         assert_eq!(path, Some(config_path));
-        assert_eq!(config.line_width.get(), 100);
+        assert_eq!(config.line_width.unwrap().get(), 100);
     }
 
     #[test]
@@ -2690,7 +2814,7 @@ line_width = 100
         let (config, _) = Config::load_cascading(temp_dir.path()).unwrap();
 
         // Should use config's values, ignoring any system/user configs
-        assert_eq!(config.line_width.get(), 100);
+        assert_eq!(config.line_width.unwrap().get(), 100);
         assert_eq!(config.no_inherit, true);
     }
 
@@ -2710,7 +2834,7 @@ line_width = 100
         let (config, path) = Config::load_cascading(&child).unwrap();
 
         // Should use nearest (child) config, parent config is ignored
-        assert_eq!(config.line_width.get(), 100);
+        assert_eq!(config.line_width.unwrap().get(), 100);
         assert_eq!(path, Some(child.join(".hongdown.toml")));
     }
 
@@ -2734,7 +2858,7 @@ git_aware = false
         let (config, path) = Config::load_cascading(&child).unwrap();
 
         // Should find parent's config when searching from child
-        assert_eq!(config.line_width.get(), 120);
+        assert_eq!(config.line_width.unwrap().get(), 120);
         assert_eq!(config.git_aware, false);
         assert_eq!(path, Some(parent.join(".hongdown.toml")));
     }

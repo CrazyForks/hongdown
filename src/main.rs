@@ -39,8 +39,12 @@ struct Args {
     stdin: bool,
 
     /// Line width for wrapping (overrides config file).
-    #[arg(long)]
+    #[arg(long, conflicts_with = "no_line_width")]
     line_width: Option<usize>,
+
+    /// Disable word wrapping (overrides config file).
+    #[arg(long, conflicts_with = "line_width")]
+    no_line_width: bool,
 
     /// Path to configuration file.
     #[arg(long, value_name = "FILE")]
@@ -54,12 +58,21 @@ fn main() -> ExitCode {
     let (config, config_dir) = load_config(&args);
 
     // Build options, with CLI args overriding config file
+    let line_width = if args.no_line_width {
+        None
+    } else if let Some(w) = args.line_width {
+        match LineWidth::new(w) {
+            Ok(lw) => Some(lw),
+            Err(msg) => {
+                eprintln!("Error: --line-width: {}", msg);
+                return ExitCode::FAILURE;
+            }
+        }
+    } else {
+        config.line_width
+    };
     let options = Options {
-        line_width: Some(
-            args.line_width
-                .map(|w| LineWidth::new(w).expect("Invalid line width"))
-                .unwrap_or(config.line_width),
-        ),
+        line_width,
         setext_h1: config.heading.setext_h1,
         setext_h2: config.heading.setext_h2,
         heading_sentence_case: config.heading.sentence_case,

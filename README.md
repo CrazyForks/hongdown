@@ -97,6 +97,9 @@ hongdown - < input.md
 
 # Custom line width
 hongdown --line-width 100 input.md
+
+# Disable word wrapping entirely
+hongdown --no-line-width input.md
 ~~~~
 
 ### HTML comment directives
@@ -209,7 +212,7 @@ exclude = []              # Files to skip (default: none)
 git_aware = true          # Respect .gitignore and skip .git directory (default: true)
 
 # Formatting options
-line_width = 80           # Maximum line width (min: 8, default: 80)
+line_width = 80           # Maximum line width (min: 8, default: 80); set to false to disable wrapping
 
 [heading]
 setext_h1 = true          # Use === underline for h1 (default: true)
@@ -278,6 +281,9 @@ CLI options override configuration file settings:
 ~~~~ bash
 # Use config file but override line width
 hongdown --line-width 100 input.md
+
+# Disable word wrapping (overrides config file)
+hongdown --no-line-width input.md
 
 # Use specific config file
 hongdown --config /path/to/.hongdown.toml input.md

@@ -6,6 +6,20 @@ Version 0.4.0
 
 To be released.
 
+ -  Word wrapping can now be disabled entirely.  Set `line_width = false` in
+    the configuration file, pass `--no-line-width` on the command line, or set
+    `Options.line_width = None` in the Rust API.  The `--no-line-width` flag and
+    `--line-width` are mutually exclusive.
+
+    The `Options.line_width` field type has changed from `LineWidth` to
+    `Option<LineWidth>` (`None` means “no wrapping”).  This is a breaking
+    change for Rust API users; update call sites by wrapping existing values
+    with `Some(…)` and using `None` to disable wrapping.
+
+    The WASM/JavaScript API similarly accepts `{ lineWidth: false }` to
+    disable wrapping.  The TypeScript type for `lineWidth` is now
+    `number | false`.
+
 
 Version 0.3.11
 --------------
