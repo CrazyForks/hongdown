@@ -442,7 +442,42 @@ impl<'a> Serializer<'a> {
             formatted_heading =
                 super::heading::to_sentence_case(heading_body, &proper_nouns, &common_nouns);
         }
-        formatted_heading.push_str(trailing_anchor);
+        let anchor_only = trailing_anchor.trim_start();
+        if anchor_only.is_empty() {
+            // No anchor: output heading body as-is (no spacing computation needed)
+        } else {
+            let is_atx =
+                !(level == 1 && self.options.setext_h1 || level == 2 && self.options.setext_h2);
+            let prefix_width = if is_atx { level as usize + 1 } else { 0 };
+            let body_width = formatted_heading.width();
+            let anchor_width = anchor_only.width();
+            let gap = self.options.heading_anchor_align;
+
+            // Hard cap to prevent pathological memory allocation from extreme
+            // line_width or heading_anchor_align values.
+            const MAX_ANCHOR_PADDING: usize = 10_000;
+
+            let actual_spaces: usize = if gap >= 1 {
+                (gap as usize).min(MAX_ANCHOR_PADDING)
+            } else if let Some(lw) = self.options.line_width {
+                // Saturating arithmetic avoids overflow for any line_width value.
+                let target = lw.get().saturating_add_signed(gap as isize);
+                let content_width = prefix_width
+                    .saturating_add(body_width)
+                    .saturating_add(anchor_width);
+                let spaces = if target > content_width {
+                    target - content_width
+                } else {
+                    1
+                };
+                spaces.min(MAX_ANCHOR_PADDING)
+            } else {
+                1
+            };
+
+            formatted_heading.push_str(&" ".repeat(actual_spaces));
+            formatted_heading.push_str(anchor_only);
+        }
 
         if level == 1 && self.options.setext_h1 {
             // Setext-style with '='

@@ -3952,11 +3952,131 @@ fn test_heading_sentence_case_proper_noun_in_parentheses() {
 fn test_heading_sentence_case_preserves_explicit_anchor_name() {
     // Regression test: trailing explicit anchor names should not be modified
     // by sentence-case conversion. Only the visible heading text should change.
+    // With default heading_anchor_align = 0, anchor is right-aligned to line_width (80).
     let input = "## Test Section {#myAPI}";
     let mut options = Options::default();
     options.heading_sentence_case = true;
     let result = parse_and_serialize_with_options(input, &options);
-    assert_eq!(result, "Test section {#myAPI}\n---------------------\n");
+    // "Test section" (12) + 60 spaces + "{#myAPI}" (8) = 80 chars; underline = 80 '-'
+    assert_eq!(
+        result,
+        "Test section                                                            {#myAPI}\n\
+         --------------------------------------------------------------------------------\n"
+    );
+}
+
+// ============================================================================
+// Heading anchor alignment tests
+// ============================================================================
+
+#[test]
+fn test_heading_anchor_align_positive_gap_1() {
+    let input = "# H1 {#h1}";
+    let mut options = Options::default();
+    options.heading_anchor_align = 1;
+    let result = parse_and_serialize_with_options(input, &options);
+    // "H1" (2) + 1 space + "{#h1}" (5) = 8 chars; underline = 8 '='
+    assert_eq!(result, "H1 {#h1}\n========\n");
+}
+
+#[test]
+fn test_heading_anchor_align_positive_gap_5() {
+    let input = "## H2 {#h2}";
+    let mut options = Options::default();
+    options.heading_anchor_align = 5;
+    let result = parse_and_serialize_with_options(input, &options);
+    // "H2" (2) + 5 spaces + "{#h2}" (5) = 12 chars; underline = 12 '-'
+    assert_eq!(result, "H2     {#h2}\n------------\n");
+}
+
+#[test]
+fn test_heading_anchor_align_zero_right_aligns_setext_h1() {
+    let input = "# Title {#t}";
+    let mut options = Options::default();
+    options.heading_anchor_align = 0;
+    // line_width default = 80
+    let result = parse_and_serialize_with_options(input, &options);
+    // "Title" (5) + 71 spaces + "{#t}" (4) = 80 chars; underline = 80 '='
+    assert_eq!(
+        result,
+        "Title                                                                       {#t}\n\
+         ================================================================================\n"
+    );
+}
+
+#[test]
+fn test_heading_anchor_align_negative_right_aligns_shorter() {
+    let input = "## Section {#s}";
+    let mut options = Options::default();
+    options.heading_anchor_align = -5;
+    // line_width default = 80; target = 80 - 5 = 75
+    let result = parse_and_serialize_with_options(input, &options);
+    // "Section" (7) + 64 spaces + "{#s}" (4) = 75 chars; underline = 75 '-'
+    assert_eq!(
+        result,
+        "Section                                                                {#s}\n\
+         ---------------------------------------------------------------------------\n"
+    );
+}
+
+#[test]
+fn test_heading_anchor_align_zero_right_aligns_atx() {
+    let input = "### Sub {#sub}";
+    let mut options = Options::default();
+    options.heading_anchor_align = 0;
+    // line_width default = 80; ATX prefix "### " = 4 chars
+    // "Sub" (3) + 67 spaces + "{#sub}" (6) = 76 chars; total line 4 + 76 = 80
+    let result = parse_and_serialize_with_options(input, &options);
+    assert_eq!(
+        result,
+        "### Sub                                                                   {#sub}\n"
+    );
+}
+
+#[test]
+fn test_heading_anchor_align_zero_no_line_width_fallback() {
+    let input = "# Title {#t}";
+    let mut options = Options::default();
+    options.heading_anchor_align = 0;
+    options.line_width = None;
+    let result = parse_and_serialize_with_options(input, &options);
+    // line_width = None → fall back to 1 space
+    assert_eq!(result, "Title {#t}\n==========\n");
+}
+
+#[test]
+fn test_heading_anchor_align_too_wide_fallback() {
+    // Body so wide that it cannot fit at the target column: fall back to 1 space.
+    // "A" * 77 + anchor "{#x}" (4) → min width = 77 + 1 + 4 = 82 > 80
+    let body = "A".repeat(77);
+    let input = format!("# {} {{#x}}", body);
+    let mut options = Options::default();
+    options.heading_anchor_align = 0; // line_width = 80
+    let result = parse_and_serialize_with_options(&input, &options);
+    // available = 80 - 77 - 4 = -1 → max(-1, 1) = 1 space
+    let expected_heading = format!("{} {{#x}}", body); // 77 + 1 + 4 = 82 chars
+    let underline = "=".repeat(expected_heading.len());
+    assert_eq!(result, format!("{}\n{}\n", expected_heading, underline));
+}
+
+#[test]
+fn test_heading_anchor_align_no_effect_without_anchor() {
+    // Gap option must have no effect on headings that carry no explicit anchor.
+    let input = "# Plain Heading";
+    let mut options = Options::default();
+    options.heading_anchor_align = 5;
+    let result = parse_and_serialize_with_options(input, &options);
+    assert_eq!(result, "Plain Heading\n=============\n");
+}
+
+#[test]
+fn test_heading_anchor_align_idempotent() {
+    // Format with gap=0 and line_width=80, then re-format: output must be identical.
+    let input = "# Hello {#hello}";
+    let options = Options::default(); // heading_anchor_align = 0, line_width = Some(80)
+    let first = parse_and_serialize_with_options(input, &options);
+    let second = parse_and_serialize_with_options(&first, &options);
+    assert_eq!(first, second);
 }
 
 // ============================================================================

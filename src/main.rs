@@ -78,6 +78,7 @@ fn main() -> ExitCode {
         heading_sentence_case: config.heading.sentence_case,
         heading_proper_nouns: config.heading.proper_nouns.clone(),
         heading_common_nouns: config.heading.common_nouns.clone(),
+        heading_anchor_align: 0,
         unordered_marker: config.unordered_list.unordered_marker,
         leading_spaces: config.unordered_list.leading_spaces,
         trailing_spaces: config.unordered_list.trailing_spaces,

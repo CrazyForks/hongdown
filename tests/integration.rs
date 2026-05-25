@@ -1004,6 +1004,12 @@ sentence_case = true
         let markdown_path = temp_dir.path().join("test.md");
         let result = run_hongdown(&markdown_path);
 
-        assert_eq!(result, "Test section {#myAPI}\n---------------------\n");
+        // With default anchor_align = 0, anchor is right-aligned to line_width (80).
+        // "Test section" (12) + 60 spaces + "{#myAPI}" (8) = 80 chars; underline = 80 '-'
+        assert_eq!(
+            result,
+            "Test section                                                            {#myAPI}\n\
+             --------------------------------------------------------------------------------\n"
+        );
     }
 }

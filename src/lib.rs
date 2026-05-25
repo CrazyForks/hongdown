@@ -60,6 +60,22 @@ pub struct Options {
     /// These are excluded from built-in proper nouns.
     pub heading_common_nouns: Vec<String>,
 
+    /// Spacing between heading body and explicit anchor ID (`{#name}`).
+    ///
+    /// - **Positive (≥ 1)**: number of spaces between the heading body and the
+    ///   anchor.  Capped at 10,000 to prevent runaway allocation.
+    /// - **Zero or negative**: right-align the anchor so that the full heading
+    ///   line width equals `line_width + heading_anchor_align`.  ATX headings
+    ///   (`###`) include the `# ` prefix in the line-width calculation.  Falls
+    ///   back to 1 space when `line_width` is `None` or the heading body is
+    ///   already too wide to fit the anchor at the target column.  The
+    ///   resulting padding is also capped at 10,000.
+    /// - Has no effect on headings that carry no explicit anchor.
+    ///
+    /// Default: `0` (right-align to `line_width`, i.e. 80 columns when using
+    /// the default line width).
+    pub heading_anchor_align: i32,
+
     /// Marker character for unordered lists: `-`, `*`, or `+`. Default: `-`.
     pub unordered_marker: UnorderedMarker,
 
@@ -156,6 +172,7 @@ impl Default for Options {
             heading_sentence_case: false,
             heading_proper_nouns: Vec::new(),
             heading_common_nouns: Vec::new(),
+            heading_anchor_align: 0,
             unordered_marker: UnorderedMarker::default(),
             leading_spaces: LeadingSpaces::default(),
             trailing_spaces: TrailingSpaces::default(),
