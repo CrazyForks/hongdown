@@ -42,10 +42,21 @@ fn parse_and_serialize_with_source_and_width(input: &str, line_width: usize) -> 
     let options = comrak_options();
     let root = parse_document(&arena, input, &options);
     let format_options = Options {
-        line_width: LineWidth::new(line_width).unwrap(),
+        line_width: Some(LineWidth::new(line_width).unwrap()),
         ..Options::default()
     };
     serialize_with_source(root, &format_options, Some(input))
+}
+
+fn parse_and_serialize_no_wrap(input: &str) -> String {
+    let arena = Arena::new();
+    let options = comrak_options();
+    let root = parse_document(&arena, input, &options);
+    let format_options = Options {
+        line_width: None,
+        ..Options::default()
+    };
+    serialize_with_source(root, &format_options, None)
 }
 
 fn parse_and_serialize_with_warnings(input: &str) -> SerializeResult {
@@ -411,7 +422,7 @@ fn parse_and_serialize_with_width(input: &str, line_width: usize) -> String {
     let options = ComrakOptions::default();
     let root = parse_document(&arena, input, &options);
     let format_options = Options {
-        line_width: LineWidth::new(line_width).unwrap(),
+        line_width: Some(LineWidth::new(line_width).unwrap()),
         ..Options::default()
     };
     serialize_with_source(root, &format_options, None)
@@ -870,7 +881,7 @@ fn parse_and_serialize_with_alerts_and_width(input: &str, line_width: usize) -> 
     options.extension.alerts = true;
     let root = parse_document(&arena, input, &options);
     let format_options = Options {
-        line_width: LineWidth::new(line_width).unwrap(),
+        line_width: Some(LineWidth::new(line_width).unwrap()),
         ..Options::default()
     };
     serialize_with_source(root, &format_options, None)
@@ -4801,7 +4812,7 @@ fn test_footnote_with_mixed_blocks() {
 #[test]
 fn test_footnote_respects_custom_line_width_simple() {
     let options = Options {
-        line_width: crate::LineWidth::new(60).unwrap(),
+        line_width: Some(crate::LineWidth::new(60).unwrap()),
         ..Options::default()
     };
     let input = r#"Text[^1].
@@ -4831,7 +4842,7 @@ fn test_footnote_respects_custom_line_width_simple() {
 #[test]
 fn test_footnote_respects_custom_line_width_with_long_paragraph() {
     let options = Options {
-        line_width: crate::LineWidth::new(60).unwrap(),
+        line_width: Some(crate::LineWidth::new(60).unwrap()),
         ..Options::default()
     };
     let input = r#"Text[^1].
@@ -4878,7 +4889,7 @@ fn test_footnote_respects_custom_line_width_with_long_paragraph() {
 #[test]
 fn test_footnote_respects_custom_line_width_with_list() {
     let options = Options {
-        line_width: crate::LineWidth::new(60).unwrap(),
+        line_width: Some(crate::LineWidth::new(60).unwrap()),
         ..Options::default()
     };
     let input = r#"Text[^1].
@@ -4921,7 +4932,7 @@ fn test_footnote_respects_custom_line_width_with_list() {
 #[test]
 fn test_footnote_respects_custom_line_width_with_ordered_list() {
     let options = Options {
-        line_width: crate::LineWidth::new(60).unwrap(),
+        line_width: Some(crate::LineWidth::new(60).unwrap()),
         ..Options::default()
     };
     let input = r#"Text[^1].
@@ -4975,4 +4986,28 @@ fn test_blockquote_with_code_fence_in_list_item_idempotent() {
         "Formatting should be idempotent.\nFirst pass:\n{}\nSecond pass:\n{}",
         first, second
     );
+}
+
+#[test]
+fn test_no_line_width_paragraph_not_wrapped() {
+    let long_text = "This is a very long paragraph that would normally be wrapped at 80 columns but with no line width limit it should remain as a single continuous line without any automatic line breaks being inserted.";
+    let result = parse_and_serialize_no_wrap(long_text);
+    assert_eq!(result, format!("{}\n", long_text));
+}
+
+#[test]
+fn test_no_line_width_multiline_input_merged() {
+    // With no wrapping, soft breaks (original newlines within a paragraph)
+    // should be merged into a single line
+    let input = "word1\nword2\nword3";
+    let result = parse_and_serialize_no_wrap(input);
+    assert_eq!(result, "word1 word2 word3\n");
+}
+
+#[test]
+fn test_no_line_width_hard_break_preserved() {
+    // Hard breaks (two trailing spaces + newline) should still be preserved
+    let input = "line one  \nline two";
+    let result = parse_and_serialize_no_wrap(input);
+    assert_eq!(result, "line one  \nline two\n");
 }

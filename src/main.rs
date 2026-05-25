@@ -55,10 +55,11 @@ fn main() -> ExitCode {
 
     // Build options, with CLI args overriding config file
     let options = Options {
-        line_width: args
-            .line_width
-            .map(|w| LineWidth::new(w).expect("Invalid line width"))
-            .unwrap_or(config.line_width),
+        line_width: Some(
+            args.line_width
+                .map(|w| LineWidth::new(w).expect("Invalid line width"))
+                .unwrap_or(config.line_width),
+        ),
         setext_h1: config.heading.setext_h1,
         setext_h2: config.heading.setext_h2,
         heading_sentence_case: config.heading.sentence_case,

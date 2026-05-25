@@ -11,14 +11,26 @@ use crate::config::{
     OrderedListPad, OrderedMarker, ThematicBreakStyle, TrailingSpaces, UnorderedMarker,
 };
 
+/// JavaScript-friendly line width setting.
+///
+/// Can be either `false` (no wrapping) or a positive integer.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum JsLineWidthSetting {
+    /// Disabled when `false`; `true` is ignored (keeps default).
+    NoWrap(bool),
+    /// Wrap at this many columns.
+    Width(usize),
+}
+
 /// JavaScript-friendly options struct.
 ///
 /// All fields are optional and use camelCase naming for JavaScript conventions.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct JsOptions {
-    /// Line width for wrapping (default: 80).
-    pub line_width: Option<usize>,
+    /// Line width for wrapping (`false` disables wrapping; default: 80).
+    pub line_width: Option<JsLineWidthSetting>,
 
     /// Use setext-style for h1 headings (default: true).
     pub setext_h1: Option<bool>,
@@ -127,10 +139,15 @@ impl JsOptions {
     fn to_options(&self) -> Options {
         let mut opts = Options::default();
 
-        if let Some(v) = self.line_width {
-            if let Ok(lw) = LineWidth::new(v) {
-                opts.line_width = lw;
+        match &self.line_width {
+            Some(JsLineWidthSetting::NoWrap(false)) => opts.line_width = None,
+            Some(JsLineWidthSetting::NoWrap(true)) => {}
+            Some(JsLineWidthSetting::Width(v)) => {
+                if let Ok(lw) = LineWidth::new(*v) {
+                    opts.line_width = Some(lw);
+                }
             }
+            None => {}
         }
         if let Some(v) = self.setext_h1 {
             opts.setext_h1 = v;
@@ -413,7 +430,7 @@ mod tests {
     fn test_js_options_default() {
         let js_opts = JsOptions::default();
         let opts = js_opts.to_options();
-        assert_eq!(opts.line_width.get(), 80);
+        assert_eq!(opts.line_width.unwrap().get(), 80);
         assert!(opts.setext_h1);
         assert!(opts.setext_h2);
     }
@@ -421,14 +438,24 @@ mod tests {
     #[test]
     fn test_js_options_partial() {
         let js_opts = JsOptions {
-            line_width: Some(100),
+            line_width: Some(JsLineWidthSetting::Width(100)),
             setext_h1: Some(false),
             ..Default::default()
         };
         let opts = js_opts.to_options();
-        assert_eq!(opts.line_width.get(), 100);
+        assert_eq!(opts.line_width.unwrap().get(), 100);
         assert!(!opts.setext_h1);
         assert!(opts.setext_h2); // default
+    }
+
+    #[test]
+    fn test_js_options_no_wrap() {
+        let js_opts = JsOptions {
+            line_width: Some(JsLineWidthSetting::NoWrap(false)),
+            ..Default::default()
+        };
+        let opts = js_opts.to_options();
+        assert!(opts.line_width.is_none());
     }
 
     #[test]

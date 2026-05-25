@@ -40,8 +40,8 @@ pub struct CodeFormatter {
 /// Formatting options for the Markdown formatter.
 #[derive(Debug, Clone)]
 pub struct Options {
-    /// Line width for wrapping. Default: 80.
-    pub line_width: LineWidth,
+    /// Line width for wrapping. `None` disables word wrapping. Default: `Some(80)`.
+    pub line_width: Option<LineWidth>,
 
     /// Use setext-style (underlined) for h1 headings. Default: true.
     pub setext_h1: bool,
@@ -150,7 +150,7 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            line_width: LineWidth::default(),
+            line_width: Some(LineWidth::default()),
             setext_h1: true,
             setext_h2: true,
             heading_sentence_case: false,

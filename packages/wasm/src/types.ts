@@ -21,10 +21,10 @@ export type DashSetting = false | string;
  */
 export interface FormatOptions {
   /**
-   * Line width for wrapping.
+   * Line width for wrapping. Set to `false` to disable word wrapping.
    * @default 80
    */
-  lineWidth?: number;
+  lineWidth?: number | false;
 
   /**
    * Use setext-style (underlined) for h1 headings.

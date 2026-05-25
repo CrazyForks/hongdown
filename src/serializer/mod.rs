@@ -425,10 +425,20 @@ impl<'a> Serializer<'a> {
             return;
         }
 
-        // Wrap content at line_width, accounting for prefix on first line
-        let line_width = self.options.line_width.get();
-        let first_line_width = line_width - prefix.width();
-        let continuation_width = line_width - continuation_indent.len();
+        // When line wrapping is disabled, delegate to wrap module so hard
+        // breaks and soft breaks are handled consistently.
+        let Some(line_width) = self.options.line_width else {
+            let wrapped = wrap::wrap_text_first_line(
+                &footnote.content,
+                &prefix,
+                prefix.width(),
+                &continuation_indent,
+                None,
+            );
+            self.output.push_str(&wrapped);
+            self.output.push('\n');
+            return;
+        };
 
         // Replace SoftBreak marker (\x00) with space before processing
         let content = footnote.content.replace('\x00', " ");
@@ -437,7 +447,12 @@ impl<'a> Serializer<'a> {
             self.output.push_str(&prefix);
             self.output.push('\n');
             return;
-        }
+        };
+
+        // Wrap content at line_width, accounting for prefix on first line
+        let line_width = line_width.get();
+        let first_line_width = line_width - prefix.width();
+        let continuation_width = line_width - continuation_indent.len();
 
         let mut lines: Vec<String> = Vec::new();
         let mut current_line = String::new();

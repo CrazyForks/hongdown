@@ -323,7 +323,7 @@ impl<'a> Serializer<'a> {
                             "",
                             blockquote_prefix.width() + 4,
                             &continuation,
-                            self.options.line_width.get(),
+                            self.options.line_width.map(|lw| lw.get()),
                         );
                         self.output.push_str(&wrapped);
                         self.output.push('\n');
@@ -383,7 +383,7 @@ impl<'a> Serializer<'a> {
                             "",
                             blockquote_prefix.width() + 4,
                             &continuation,
-                            self.options.line_width.get(),
+                            self.options.line_width.map(|lw| lw.get()),
                         );
                         self.output.push_str(&wrapped);
                         self.output.push('\n');
@@ -500,7 +500,7 @@ impl<'a> Serializer<'a> {
                 "",
                 self.paragraph_first_line_prefix_width,
                 &continuation,
-                self.options.line_width.get(),
+                self.options.line_width.map(|lw| lw.get()),
             );
             self.output.push_str(&wrapped);
         } else {
@@ -510,7 +510,11 @@ impl<'a> Serializer<'a> {
             } else {
                 String::new()
             };
-            let wrapped = wrap::wrap_text(&inline_content, &prefix, self.options.line_width.get());
+            let wrapped = wrap::wrap_text(
+                &inline_content,
+                &prefix,
+                self.options.line_width.map(|lw| lw.get()),
+            );
             self.output.push_str(&wrapped);
             self.output.push('\n');
         }

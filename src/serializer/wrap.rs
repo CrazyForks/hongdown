@@ -10,14 +10,21 @@ use unicode_width::UnicodeWidthStr;
 ///
 /// Hard line breaks (`\n`) are preserved with two trailing spaces before the
 /// newline, and the prefix is added to the continuation line.
-pub fn wrap_text(text: &str, prefix: &str, line_width: usize) -> String {
+///
+/// Pass `None` for `line_width` to disable word wrapping (hard breaks are
+/// still preserved).
+pub fn wrap_text(text: &str, prefix: &str, line_width: Option<usize>) -> String {
+    let Some(lw) = line_width else {
+        return wrap_text_no_wrap(text, prefix);
+    };
+
     // First, split by hard line breaks (actual newlines)
     // These must be preserved with two trailing spaces
     let hard_break_segments: Vec<&str> = text.split('\n').collect();
 
     if hard_break_segments.len() == 1 {
         // No hard line breaks, process normally with soft breaks
-        return wrap_text_segment(text, prefix, line_width);
+        return wrap_text_segment(text, prefix, lw);
     }
 
     // Process each segment separated by hard line breaks
@@ -29,10 +36,30 @@ pub fn wrap_text(text: &str, prefix: &str, line_width: usize) -> String {
         }
         // First segment uses the normal prefix, subsequent segments also need prefix
         // (wrap_text_segment handles adding the prefix to the first line)
-        let wrapped = wrap_text_segment(segment, prefix, line_width);
+        let wrapped = wrap_text_segment(segment, prefix, lw);
         result.push_str(&wrapped);
     }
 
+    result
+}
+
+/// No-wrap variant: merge soft breaks into spaces, preserve hard breaks.
+fn wrap_text_no_wrap(text: &str, prefix: &str) -> String {
+    let hard_break_segments: Vec<&str> = text.split('\n').collect();
+    let mut result = String::new();
+    for (idx, segment) in hard_break_segments.iter().enumerate() {
+        if idx > 0 {
+            result.push_str("  \n");
+        }
+        let merged: String = segment
+            .split('\x00')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        result.push_str(prefix);
+        result.push_str(&merged);
+    }
     result
 }
 
@@ -95,13 +122,20 @@ fn wrap_text_segment(text: &str, prefix: &str, line_width: usize) -> String {
 ///
 /// Hard line breaks (`\n`) are preserved with two trailing spaces before the
 /// newline, and the continuation prefix is added to the continuation line.
+///
+/// Pass `None` for `line_width` to disable word wrapping (hard breaks are
+/// still preserved).
 pub fn wrap_text_first_line(
     text: &str,
     first_prefix: &str,
     first_prefix_width: usize,
     continuation_prefix: &str,
-    line_width: usize,
+    line_width: Option<usize>,
 ) -> String {
+    let Some(lw) = line_width else {
+        return wrap_text_first_line_no_wrap(text, first_prefix, continuation_prefix);
+    };
+
     // First, split by hard line breaks (actual newlines)
     // These must be preserved with two trailing spaces
     let hard_break_segments: Vec<&str> = text.split('\n').collect();
@@ -113,7 +147,7 @@ pub fn wrap_text_first_line(
             first_prefix,
             first_prefix_width,
             continuation_prefix,
-            line_width,
+            lw,
         );
     }
 
@@ -136,12 +170,41 @@ pub fn wrap_text_first_line(
             current_first,
             current_first_width,
             current_cont,
-            line_width,
+            lw,
         );
         result.push_str(&wrapped);
         is_first_segment = false;
     }
 
+    result
+}
+
+/// No-wrap variant for first-line-different-prefix: merge soft breaks, preserve hard breaks.
+fn wrap_text_first_line_no_wrap(
+    text: &str,
+    first_prefix: &str,
+    continuation_prefix: &str,
+) -> String {
+    let hard_break_segments: Vec<&str> = text.split('\n').collect();
+    let mut result = String::new();
+    for (idx, segment) in hard_break_segments.iter().enumerate() {
+        if idx > 0 {
+            result.push_str("  \n");
+        }
+        let prefix = if idx == 0 {
+            first_prefix
+        } else {
+            continuation_prefix
+        };
+        let merged: String = segment
+            .split('\x00')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        result.push_str(prefix);
+        result.push_str(&merged);
+    }
     result
 }
 
