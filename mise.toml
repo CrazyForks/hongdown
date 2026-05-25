@@ -1,9 +1,9 @@
 [tools]
 rust = { version = "latest", profile = "default", components = "rust-analyzer,rustfmt,clippy", targets = "wasm32-unknown-unknown" }
 node = "lts"
-pnpm = "latest"
 bun = "latest"
 deno = "latest"
+"github:pnpm/pnpm" = "latest"
 "cargo:wasm-pack" = "latest"
 
 [tasks.fmt]
