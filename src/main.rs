@@ -73,7 +73,7 @@ fn main() -> ExitCode {
     };
     let options = Options {
         line_width,
-        math: true,
+        math: config.math,
         setext_h1: config.heading.setext_h1,
         setext_h2: config.heading.setext_h2,
         heading_sentence_case: config.heading.sentence_case,

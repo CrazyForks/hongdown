@@ -32,6 +32,9 @@ pub struct JsOptions {
     /// Line width for wrapping (`false` disables wrapping; default: 80).
     pub line_width: Option<JsLineWidthSetting>,
 
+    /// Recognize and preserve TeX/LaTeX math expressions (default: true).
+    pub math: Option<bool>,
+
     /// Use setext-style for h1 headings (default: true).
     pub setext_h1: Option<bool>,
 
@@ -148,6 +151,9 @@ impl JsOptions {
                 }
             }
             None => {}
+        }
+        if let Some(v) = self.math {
+            opts.math = v;
         }
         if let Some(v) = self.setext_h1 {
             opts.setext_h1 = v;

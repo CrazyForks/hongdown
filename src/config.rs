@@ -18,6 +18,11 @@ fn default_git_aware() -> bool {
     true
 }
 
+/// Default value for `math` (true).
+fn default_math() -> bool {
+    true
+}
+
 /// Default value for `line_width`: `Some(LineWidth::default())`.
 fn default_some_line_width() -> Option<LineWidth> {
     Some(LineWidth::default())
@@ -112,6 +117,10 @@ pub struct Config {
     #[serde(default = "default_git_aware")]
     pub git_aware: bool,
 
+    /// Recognize and preserve TeX/LaTeX math expressions (default: true).
+    #[serde(default = "default_math")]
+    pub math: bool,
+
     /// Heading formatting options.
     pub heading: HeadingConfig,
 
@@ -139,6 +148,7 @@ impl Default for Config {
             include: Vec::new(),
             exclude: Vec::new(),
             git_aware: true,
+            math: true,
             heading: HeadingConfig::default(),
             unordered_list: UnorderedListConfig::default(),
             ordered_list: OrderedListConfig::default(),
@@ -174,6 +184,9 @@ pub struct ConfigLayer {
 
     /// Respect `.gitignore` files and skip `.git` directory.
     pub git_aware: Option<bool>,
+
+    /// Recognize and preserve TeX/LaTeX math expressions.
+    pub math: Option<bool>,
 
     /// Heading formatting options.
     pub heading: Option<HeadingConfig>,
@@ -229,6 +242,9 @@ impl ConfigLayer {
         }
         if let Some(git_aware) = self.git_aware {
             base.git_aware = git_aware;
+        }
+        if let Some(math) = self.math {
+            base.math = math;
         }
         if let Some(heading) = self.heading {
             base.heading = heading;
@@ -1270,6 +1286,7 @@ mod tests {
         let config = Config::default();
         assert_eq!(config.line_width.unwrap().get(), 80);
         assert!(config.git_aware);
+        assert!(config.math);
         assert!(config.heading.setext_h1);
         assert!(config.heading.setext_h2);
         assert_eq!(
@@ -1307,6 +1324,37 @@ mod tests {
     fn test_parse_line_width() {
         let config = Config::from_toml("line_width = 100").unwrap();
         assert_eq!(config.line_width.unwrap().get(), 100);
+    }
+
+    #[test]
+    fn test_parse_math_disabled() {
+        let config = Config::from_toml("math = false").unwrap();
+        assert!(!config.math);
+    }
+
+    #[test]
+    fn test_math_defaults_to_true_when_unset() {
+        let config = Config::from_toml("line_width = 100").unwrap();
+        assert!(config.math);
+    }
+
+    #[test]
+    fn test_merge_over_math_disabled() {
+        let layer = ConfigLayer::from_toml_str("math = false\n").unwrap();
+        let merged = layer.merge_over(Config::default());
+        assert!(!merged.math);
+    }
+
+    #[test]
+    fn test_merge_over_preserves_math_when_unset() {
+        // A layer that does not mention `math` must not reset it.
+        let layer = ConfigLayer::from_toml_str("line_width = 72\n").unwrap();
+        let base = Config {
+            math: false,
+            ..Config::default()
+        };
+        let merged = layer.merge_over(base);
+        assert!(!merged.math);
     }
 
     #[test]

@@ -213,6 +213,7 @@ git_aware = true          # Respect .gitignore and skip .git directory (default:
 
 # Formatting options
 line_width = 80           # Maximum line width (min: 8, default: 80); set to false to disable wrapping
+math = true               # Preserve TeX math ($…$ and $$…$$) verbatim (default: true)
 
 [heading]
 setext_h1 = true          # Use === underline for h1 (default: true)
@@ -445,6 +446,23 @@ const { output, warnings } = await formatWithCodeFormatter(markdown, {
  -  Lines wrap at approximately 80 display columns
  -  East Asian wide characters are counted as 2 columns
  -  Long words that cannot be broken are preserved
+
+### Math
+
+ -  Inline (`$…$`) and display (`$$…$$`) TeX/LaTeX math is preserved verbatim,
+    never escaped or punctuation-transformed (like code spans)
+ -  Inline math is kept on a single line when wrapping
+ -  Dollar-math parsing follows GitHub's rules, so a lone `$`, `$ command`, or
+    `$5` stays literal text
+ -  Disable with `math = false` in *.hongdown.toml* to treat every `$` as text
+
+~~~~ markdown
+The complexity is $O(n \log n)$.
+
+$$
+x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
+$$
+~~~~
 
 ### Links
 

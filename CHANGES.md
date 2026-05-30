@@ -6,6 +6,21 @@ Version 0.4.0
 
 To be released.
 
+ -  Added TeX/LaTeX math support.  Inline (`$…$`) and display (`$$…$$`) math is
+    now recognized and preserved verbatim — never escaped or
+    punctuation-transformed — fixing a bug where backslashes inside a formula
+    (for example, `$O(\text{x})$`) were doubled to `$O(\\text{x})$`.
+
+    This is controlled by a new `math` configuration option (Rust API:
+    `Options.math`, type `bool`; WASM/JavaScript: `math`, type `boolean`),
+    enabled by default.  Set `math = false` in *.hongdown.toml* (or pass
+    `math: false` to the library) to treat every `$` as literal text.
+
+    Dollar-math parsing follows GitHub's heuristics, so a lone `$`, a shell
+    prompt like `$ command`, or a price like `$5` is not treated as math.
+    Inline math is kept on a single line when wrapping, and multi-line display
+    math is preserved verbatim, including inside lists and block quotes.
+
  -  Added `heading.anchor_align` configuration option (Rust API:
     `Options.heading_anchor_align`, type `i32`) to control the placement of
     explicit anchor identifiers (`{#name}`) in headings.

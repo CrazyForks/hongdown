@@ -27,6 +27,14 @@ export interface FormatOptions {
   lineWidth?: number | false;
 
   /**
+   * Recognize and preserve TeX/LaTeX math expressions (`$…$` and `$$…$$`).
+   * When enabled, math is emitted verbatim and never escaped or transformed.
+   * Set to `false` to treat every `$` as literal text.
+   * @default true
+   */
+  math?: boolean;
+
+  /**
    * Use setext-style (underlined) for h1 headings.
    * @default true
    */
