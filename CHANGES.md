@@ -6,6 +6,11 @@ Version 0.4.1
 
 To be released.
 
+ -  Fixed a bug where a table cell containing inline TeX math (for example,
+    `$\frac{1}{2}$`) was padded two columns too narrow, throwing off the
+    table's pipe alignment.  Introduced in version 0.4.0 together with math
+    support.
+
 
 Version 0.4.0
 -------------
