@@ -24,6 +24,22 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::Options;
 
+/// Sentinels that bracket an inline math span in the intermediate wrap buffer so
+/// the line wrapper treats the whole formula as a single unbreakable token
+/// (keeping its real internal spaces, so width calculations stay correct).  They
+/// are C0 control characters — like the soft-break (`\u{0}`) and
+/// collapsed-reference (`\u{1}`) markers the serializer already relies on — which
+/// do not occur in valid Markdown text, and they are stripped from the final
+/// output by [`strip_math_sentinels`].
+pub(super) const MATH_TOKEN_OPEN: char = '\u{2}';
+pub(super) const MATH_TOKEN_CLOSE: char = '\u{3}';
+
+/// Remove the inline-math wrap sentinels from finished output.
+fn strip_math_sentinels(mut output: String) -> String {
+    output.retain(|c| c != MATH_TOKEN_OPEN && c != MATH_TOKEN_CLOSE);
+    output
+}
+
 /// Result of serialization including output and any warnings.
 pub struct SerializeResult {
     /// The formatted Markdown output.
@@ -54,7 +70,7 @@ pub fn serialize_with_source_and_warnings<'a>(
     let mut serializer = Serializer::new(options, source_lines, source_ends_with_newline);
     serializer.serialize_node(node);
     SerializeResult {
-        output: serializer.output,
+        output: strip_math_sentinels(serializer.output),
         warnings: serializer.warnings,
     }
 }
@@ -77,7 +93,7 @@ pub fn serialize_with_code_formatter<'a>(
     );
     serializer.serialize_node(node);
     SerializeResult {
-        output: serializer.output,
+        output: strip_math_sentinels(serializer.output),
         warnings: serializer.warnings,
     }
 }
@@ -634,6 +650,11 @@ impl<'a> Serializer<'a> {
                     self.output
                         .push_str(&escape::format_code_span(&code.literal));
                 }
+            }
+            NodeValue::Math(math) => {
+                // Preserve TeX/LaTeX math verbatim, like code spans.
+                let rendered = self.render_math(node, math);
+                self.output.push_str(&rendered);
             }
             NodeValue::Link(link) => {
                 self.serialize_link(node, &link.url, &link.title);

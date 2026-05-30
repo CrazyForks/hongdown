@@ -381,6 +381,7 @@ pub fn format_with_code_formatter(
     comrak_options.extension.alerts = true;
     comrak_options.extension.footnotes = true;
     comrak_options.extension.tasklist = true;
+    comrak_options.extension.math_dollars = opts.math;
 
     let root = parse_document(&arena, input, &comrak_options);
 

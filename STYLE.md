@@ -312,6 +312,35 @@ The syntax is `` `code` `` with backticks.
 Preserve original spacing in code spans.  If the original source has space
 padding (`` ` code ` ``), it is preserved in the output.
 
+### Mathematical expressions
+
+Recognize and preserve TeX/LaTeX math expressions verbatim.  Both inline math
+(`$…$`) and display math (`$$…$$`) are emitted exactly as written — they are
+never escaped or transformed, just like code spans:
+
+~~~~ markdown
+The complexity is $O(\text{some text})$ in the worst case.
+
+$$
+x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
+$$
+~~~~
+
+In particular, backslashes inside a formula are kept as-is (for example,
+`$O(\text{x})$` is not rewritten to `$O(\\text{x})$`), and inline math
+containing spaces is never broken across lines when wrapping.
+
+Dollar-math parsing follows the same heuristics GitHub uses, so a lone `$`, a
+shell prompt such as `$ command`, or a price like `$5` is treated as ordinary
+text rather than math.
+
+This behaviour is controlled by the `math` option (enabled by default); set
+`math = false` to treat every `$` as literal text.
+
+*Rationale*: Math expressions are not Markdown and must round-trip byte-for-byte
+to stay syntactically valid; escaping or reflowing them would corrupt the
+rendered output.
+
 
 Links
 -----

@@ -133,6 +133,18 @@ pub fn format_code_span(content: &str) -> String {
     }
 }
 
+/// Reconstruct a TeX/LaTeX math span from a comrak `NodeMath`.
+///
+/// Display math (`$$…$$`) uses double-dollar delimiters; inline math (`$…$`)
+/// uses single-dollar delimiters.  The literal is emitted verbatim — math
+/// content is never escaped, since it is not interpreted as Markdown.  This is
+/// used as a fallback when the original source is unavailable; otherwise the
+/// serializer prefers the exact source span.
+pub fn format_math(literal: &str, display_math: bool) -> String {
+    let delimiter = if display_math { "$$" } else { "$" };
+    format!("{delimiter}{literal}{delimiter}")
+}
+
 /// Check if a string is a valid code span (starts and ends with matching backticks).
 /// This is used to validate source extraction results, since comrak may provide
 /// incorrect sourcepos for code spans containing escaped pipe characters in tables.

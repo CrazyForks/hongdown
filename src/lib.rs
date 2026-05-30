@@ -43,6 +43,15 @@ pub struct Options {
     /// Line width for wrapping. `None` disables word wrapping. Default: `Some(80)`.
     pub line_width: Option<LineWidth>,
 
+    /// Recognize and preserve TeX/LaTeX math expressions. Default: true.
+    ///
+    /// When enabled, inline (`$…$`) and display (`$$…$$`) math is parsed and
+    /// emitted verbatim — never escaped or punctuation-transformed, just like
+    /// code spans.  Dollar-math parsing follows GitHub's heuristics, so a lone
+    /// `$`, a shell prompt like `$ cmd`, or a price like `$5` is not treated as
+    /// math.  Set to `false` to treat every `$` as literal text.
+    pub math: bool,
+
     /// Use setext-style (underlined) for h1 headings. Default: true.
     pub setext_h1: bool,
 
@@ -167,6 +176,7 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             line_width: Some(LineWidth::default()),
+            math: true,
             setext_h1: true,
             setext_h2: true,
             heading_sentence_case: false,
@@ -234,6 +244,7 @@ pub fn format(input: &str, options: &Options) -> Result<String, FormatError> {
     comrak_options.extension.alerts = true;
     comrak_options.extension.footnotes = true;
     comrak_options.extension.tasklist = true;
+    comrak_options.extension.math_dollars = options.math;
 
     let root = parse_document(&arena, input, &comrak_options);
     let output = serializer::serialize_with_source(root, options, Some(input));
@@ -279,6 +290,7 @@ pub fn format_with_warnings(input: &str, options: &Options) -> Result<FormatResu
     comrak_options.extension.alerts = true;
     comrak_options.extension.footnotes = true;
     comrak_options.extension.tasklist = true;
+    comrak_options.extension.math_dollars = options.math;
 
     let root = parse_document(&arena, input, &comrak_options);
     let result = serializer::serialize_with_source_and_warnings(root, options, Some(input));

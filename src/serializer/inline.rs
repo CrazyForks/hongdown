@@ -1,10 +1,11 @@
 //! Inline node collection and text extraction logic.
 
-use comrak::nodes::{AstNode, NodeValue};
+use comrak::nodes::{AstNode, NodeMath, NodeValue};
 
 use super::Serializer;
 use super::escape;
 use super::punctuation;
+use super::{MATH_TOKEN_CLOSE, MATH_TOKEN_OPEN};
 
 impl<'a> Serializer<'a> {
     pub(super) fn collect_text<'b>(&mut self, node: &'b AstNode<'b>) -> String {
@@ -36,6 +37,21 @@ impl<'a> Serializer<'a> {
         }
     }
 
+    /// Render a TeX/LaTeX math node to its Markdown form, preferring the exact
+    /// original source over reconstruction.
+    ///
+    /// Inline math must stay on a single line for the wrapper; if the original
+    /// source span happens to span multiple lines, fall back to the normalized
+    /// literal so the formula remains a single token.
+    pub(super) fn render_math<'b>(&self, node: &'b AstNode<'b>, math: &NodeMath) -> String {
+        if let Some(source) = self.extract_source(node)
+            && (math.display_math || !source.contains('\n'))
+        {
+            return source;
+        }
+        escape::format_math(&math.literal, math.display_math)
+    }
+
     fn collect_text_recursive<'b>(&mut self, node: &'b AstNode<'b>, text: &mut String) {
         match &node.data.borrow().value {
             NodeValue::Text(t) => {
@@ -64,6 +80,11 @@ impl<'a> Serializer<'a> {
                 } else {
                     text.push_str(&escape::format_code_span(&code.literal));
                 }
+            }
+            NodeValue::Math(math) => {
+                // Heading text is not wrapped, so no atomic-token placeholder is
+                // needed here; emit the math verbatim.
+                text.push_str(&self.render_math(node, math));
             }
             NodeValue::Emph => {
                 let delim = self.get_emphasis_delimiter(node);
@@ -180,6 +201,19 @@ impl<'a> Serializer<'a> {
                     }
                 } else {
                     content.push_str(&escape::format_code_span(&code.literal));
+                }
+            }
+            NodeValue::Math(math) => {
+                let rendered = self.render_math(node, math);
+                if math.display_math {
+                    content.push_str(&rendered);
+                } else {
+                    // Bracket inline math with sentinels so the wrapper keeps the
+                    // whole formula on one line (its real spaces are preserved);
+                    // the sentinels are stripped from the final output.
+                    content.push(MATH_TOKEN_OPEN);
+                    content.push_str(&rendered);
+                    content.push(MATH_TOKEN_CLOSE);
                 }
             }
             NodeValue::Link(link) => {

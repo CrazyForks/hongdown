@@ -5,6 +5,7 @@ use regex::Regex;
 use unicode_width::UnicodeWidthStr;
 
 use super::Serializer;
+use super::escape;
 use super::state::{Directive, FormatSkipMode};
 use super::wrap;
 
@@ -512,9 +513,38 @@ impl<'a> Serializer<'a> {
             }
         }
 
-        // Collect all inline content first
+        // A paragraph that is a single math span is emitted verbatim, never
+        // reflowed.  Display math (`$$…$$`) is parsed by comrak as an inline
+        // node that may span several source lines; sending it through the
+        // wrapper would turn its newlines into hard line breaks and corrupt the
+        // formula.
+        let single_math: Option<String> = {
+            let children: Vec<_> = node.children().collect();
+            if let [only] = children.as_slice() {
+                let borrowed = only.data.borrow();
+                if let NodeValue::Math(math) = &borrowed.value {
+                    if self.list_type.is_none() && !self.in_block_quote {
+                        // Top level: preserve the exact source span.
+                        Some(self.render_math(only, math))
+                    } else {
+                        // Nested: reconstruct from the literal so the list or
+                        // blockquote prefix added below is not stacked on top of
+                        // the container indentation comrak already stripped.
+                        Some(escape::format_math(&math.literal, math.display_math))
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+
+        // Collect all inline content first (not needed for single-math spans).
         let mut inline_content = String::new();
-        self.collect_inline_content(node, &mut inline_content);
+        if single_math.is_none() {
+            self.collect_inline_content(node, &mut inline_content);
+        }
 
         if self.list_type.is_some() {
             // Inside a list item, wrap with the same continuation indent used by other
@@ -530,14 +560,18 @@ impl<'a> Serializer<'a> {
             } else {
                 base_indent
             };
-            let wrapped = wrap::wrap_text_first_line(
-                inline_content.trim(),
-                "",
-                self.paragraph_first_line_prefix_width,
-                &continuation,
-                self.options.line_width.map(|lw| lw.get()),
-            );
-            self.output.push_str(&wrapped);
+            if let Some(rendered) = &single_math {
+                self.emit_verbatim_block(rendered, "", &continuation);
+            } else {
+                let wrapped = wrap::wrap_text_first_line(
+                    inline_content.trim(),
+                    "",
+                    self.paragraph_first_line_prefix_width,
+                    &continuation,
+                    self.options.line_width.map(|lw| lw.get()),
+                );
+                self.output.push_str(&wrapped);
+            }
         } else {
             // Not in a list - wrap the paragraph at line_width
             let prefix = if self.in_block_quote {
@@ -545,13 +579,33 @@ impl<'a> Serializer<'a> {
             } else {
                 String::new()
             };
-            let wrapped = wrap::wrap_text(
-                &inline_content,
-                &prefix,
-                self.options.line_width.map(|lw| lw.get()),
-            );
-            self.output.push_str(&wrapped);
+            if let Some(rendered) = &single_math {
+                self.emit_verbatim_block(rendered, &prefix, &prefix);
+            } else {
+                let wrapped = wrap::wrap_text(
+                    &inline_content,
+                    &prefix,
+                    self.options.line_width.map(|lw| lw.get()),
+                );
+                self.output.push_str(&wrapped);
+            }
             self.output.push('\n');
+        }
+    }
+
+    /// Emit pre-rendered, multi-line block content verbatim (no reflow),
+    /// applying `first_prefix` to the first line and `cont_prefix` to each
+    /// continuation line.  Used for display-math paragraphs so multi-line
+    /// formulas keep their exact line structure inside lists and blockquotes.
+    fn emit_verbatim_block(&mut self, rendered: &str, first_prefix: &str, cont_prefix: &str) {
+        for (i, line) in rendered.lines().enumerate() {
+            if i == 0 {
+                self.output.push_str(first_prefix);
+            } else {
+                self.output.push('\n');
+                self.output.push_str(cont_prefix);
+            }
+            self.output.push_str(line);
         }
     }
 

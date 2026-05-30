@@ -83,6 +83,45 @@ fn test_inline_code_not_broken() {
     );
 }
 
+/// With the default options (`math = true`), inline math is preserved verbatim
+/// and its backslashes are not escaped.
+#[test]
+fn test_math_enabled_preserves_inline_by_default() {
+    let input = r"An inline TeX formula: $O(\text{some text})$.";
+    let options = Options::default();
+    let result = format(input, &options).unwrap();
+    assert_eq!(result, "An inline TeX formula: $O(\\text{some text})$.\n");
+}
+
+/// With `math = false`, a `$` is treated as literal text again, so the
+/// backslash inside the (no-longer-math) span is escaped — the previous
+/// behaviour.
+#[test]
+fn test_math_disabled_treats_dollar_as_text() {
+    let input = r"An inline TeX formula: $O(\text{some text})$.";
+    let options = Options {
+        math: false,
+        ..Options::default()
+    };
+    let result = format(input, &options).unwrap();
+    assert!(
+        result.contains(r"\\text"),
+        "expected the backslash to be escaped when math is disabled: {result:?}"
+    );
+}
+
+/// Formatting a document with both inline and display math is idempotent.
+#[test]
+fn test_math_idempotent_inline_and_display() {
+    let input = "Inline $a + b = c$ and a block:\n\n$$\nE = mc^2\n$$\n\nDone.";
+    let options = Options::default();
+    let first = format(input, &options).unwrap();
+    let second = format(&first, &options).unwrap();
+    assert_eq!(first, second, "math formatting should be idempotent");
+    assert!(first.contains("$a + b = c$"));
+    assert!(first.contains("$$\nE = mc^2\n$$"));
+}
+
 /// Test heading underline length matches heading text.
 #[test]
 fn test_heading_underline_length() {

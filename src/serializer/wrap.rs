@@ -2,6 +2,8 @@
 
 use unicode_width::UnicodeWidthStr;
 
+use super::{MATH_TOKEN_CLOSE, MATH_TOKEN_OPEN};
+
 /// Wrap text at the specified line width.
 ///
 /// This function handles soft break markers (`\x00`) which represent where
@@ -319,9 +321,37 @@ pub fn wrap_single_segment(
     let mut trailing_spaces = String::new();
     let mut in_backticks = false;
     let mut bracket_depth = 0;
+    let mut in_math = false;
 
     for ch in chars {
-        if ch == '`' && bracket_depth == 0 {
+        if in_math {
+            // Inside a sentinel-bracketed inline math span: everything (spaces
+            // included) is part of one atomic token.  The sentinels themselves
+            // are dropped; they are zero-width markers, not output.
+            if ch == MATH_TOKEN_CLOSE {
+                in_math = false;
+            } else {
+                current_token.push(ch);
+            }
+        } else if ch == MATH_TOKEN_OPEN {
+            // Start of an atomic math span: flush any pending word first.
+            if !current_token.is_empty() && !trailing_spaces.is_empty() {
+                add_token_to_line_with_prefix(
+                    &mut result,
+                    &mut current_line,
+                    &current_token,
+                    &trailing_spaces,
+                    first_prefix_hidden_width,
+                    first_prefix_width,
+                    prefix,
+                    line_width,
+                    &mut is_first_line,
+                );
+                current_token.clear();
+                trailing_spaces.clear();
+            }
+            in_math = true;
+        } else if ch == '`' && bracket_depth == 0 {
             if in_backticks {
                 // End of backtick region
                 current_token.push(ch);

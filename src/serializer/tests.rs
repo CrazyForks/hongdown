@@ -11,6 +11,7 @@ fn comrak_options() -> ComrakOptions<'static> {
     options.extension.alerts = true;
     options.extension.footnotes = true;
     options.extension.tasklist = true;
+    options.extension.math_dollars = true;
     options
 }
 
@@ -5130,4 +5131,134 @@ fn test_no_line_width_hard_break_preserved() {
     let input = "line one  \nline two";
     let result = parse_and_serialize_no_wrap(input);
     assert_eq!(result, "line one  \nline two\n");
+}
+
+#[test]
+fn test_inline_math_preserved_with_source() {
+    // TeX math between `$` must be preserved verbatim: the backslash before
+    // `\text` must not be escaped to `\\text`.
+    let input = "An inline TeX formula: $O(\\text{some text})$.";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(result, "An inline TeX formula: $O(\\text{some text})$.\n");
+}
+
+#[test]
+fn test_inline_math_preserved_without_source() {
+    // Without source context, math is reconstructed from the node literal and
+    // still must not be escaped.
+    let input = "An inline TeX formula: $O(\\text{some text})$.";
+    let result = parse_and_serialize(input);
+    assert_eq!(result, "An inline TeX formula: $O(\\text{some text})$.\n");
+}
+
+#[test]
+fn test_inline_math_with_spaces_not_wrapped() {
+    // Math containing spaces must stay on a single line even when the
+    // surrounding paragraph is wrapped.
+    let input = "This is a fairly long paragraph that should wrap somewhere and \
+                 it contains math $x + y + z = w$ near the very end of the line.";
+    let result = parse_and_serialize_with_source(input);
+    // The formula stays intact (no newline inserted inside it)…
+    assert!(
+        result.contains("$x + y + z = w$"),
+        "formula was split across lines: {result:?}"
+    );
+    // …and the paragraph actually wrapped onto multiple lines within width.
+    assert!(
+        result.lines().count() > 1,
+        "paragraph did not wrap: {result:?}"
+    );
+    for line in result.lines() {
+        assert!(line.width() <= 80, "line exceeds 80 columns: {line:?}");
+    }
+}
+
+#[test]
+fn test_inline_math_not_punctuation_transformed() {
+    // Punctuation transformations (em dash, curly quotes) must not touch math
+    // content, even though they apply to the surrounding text.
+    let input = "A -- B and the set $\\{a -- b\\}$ with \"quotes\" too.";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("$\\{a -- b\\}$"),
+        "math content was transformed: {result:?}"
+    );
+    // Surrounding text is still transformed.
+    assert!(
+        result.contains(" — "),
+        "surrounding em dash missing: {result:?}"
+    );
+}
+
+#[test]
+fn test_display_math_preserved() {
+    // Display math (`$$…$$`) spanning multiple lines is preserved verbatim and
+    // is not mangled by paragraph wrapping.
+    let input = "Before.\n\n$$\nx = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}\n$$\n\nAfter.";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("$$\nx = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}\n$$"),
+        "display math not preserved: {result:?}"
+    );
+}
+
+#[test]
+fn test_inline_math_in_heading_preserved() {
+    // Math in heading text goes through a different collection path and must
+    // also be preserved verbatim.
+    let input = "## The $O(n \\log n)$ algorithm";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("$O(n \\log n)$"),
+        "math in heading not preserved: {result:?}"
+    );
+}
+
+#[test]
+fn test_inline_math_idempotent() {
+    // Formatting math twice must be stable.
+    let input = "An inline TeX formula: $O(\\text{some text})$.";
+    let once = parse_and_serialize_with_source(input);
+    let twice = parse_and_serialize_with_source(&once);
+    assert_eq!(once, twice);
+}
+
+#[test]
+fn test_display_math_in_list_item_preserved() {
+    // Display math nested in a list item must keep its line structure and the
+    // list continuation indentation, and must be idempotent.
+    let input = "1.  Solve the equation:\n\n    $$\n    x = y + z\n    $$\n";
+    let once = parse_and_serialize_with_source(input);
+    assert!(
+        once.contains("$$\n    x = y + z\n    $$"),
+        "display math in list not indented correctly: {once:?}"
+    );
+    let twice = parse_and_serialize_with_source(&once);
+    assert_eq!(once, twice, "nested display math is not idempotent");
+}
+
+#[test]
+fn test_display_math_in_blockquote_preserved() {
+    let input = "> Given:\n>\n> $$\n> a^2 + b^2 = c^2\n> $$\n";
+    let once = parse_and_serialize_with_source(input);
+    assert!(
+        once.contains("> $$\n> a^2 + b^2 = c^2\n> $$"),
+        "display math in blockquote not prefixed correctly: {once:?}"
+    );
+    let twice = parse_and_serialize_with_source(&once);
+    assert_eq!(once, twice, "blockquote display math is not idempotent");
+}
+
+#[test]
+fn test_private_use_char_not_corrupted_by_math_sentinels() {
+    // U+E000 (a Private Use Area codepoint, e.g. a Nerd Font glyph) is valid
+    // document content and must survive formatting untouched, even alongside
+    // inline math.  This guards against using PUA as an internal sentinel.
+    let input = "Icon \u{E000} and math $a + b$ together.";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains('\u{E000}'),
+        "private-use character was dropped: {result:?}"
+    );
+    assert!(result.contains("$a + b$"));
 }
