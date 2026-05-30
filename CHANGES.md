@@ -7,6 +7,17 @@ Version 0.5.0
 To be released.
 
 
+Version 0.4.1
+-------------
+
+Released on May 30, 2026.
+
+ -  Fixed a bug where a table cell containing inline TeX math (for example,
+    `$\frac{1}{2}$`) was padded two columns too narrow, throwing off the
+    table's pipe alignment.  Introduced in version 0.4.0 together with math
+    support.
+
+
 Version 0.4.0
 -------------
 

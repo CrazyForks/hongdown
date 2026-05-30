@@ -748,6 +748,26 @@ fn test_table_inside_list_item_has_blank_line_and_indentation() {
     );
 }
 
+#[test]
+fn test_table_with_inline_math_aligns_columns() {
+    // Inline math is bracketed with wrap sentinels during cell collection; those
+    // sentinels must not inflate the table column widths or the pipes misalign.
+    let input = "\
+| Col | Math |
+| --- | --- |
+| a | $x^2$ |
+| bb | cc |
+";
+    let result = parse_and_serialize(input);
+    let expected = "\
+| Col | Math  |
+| --- | ----- |
+| a   | $x^2$ |
+| bb  | cc    |
+";
+    assert_eq!(result, expected);
+}
+
 fn parse_and_serialize_with_description_list(input: &str) -> String {
     let arena = Arena::new();
     let mut options = ComrakOptions::default();

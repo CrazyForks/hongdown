@@ -41,6 +41,12 @@ impl<'a> Serializer<'a> {
                 // Use collect_inline_content to preserve links and formatting
                 let mut content = String::new();
                 self.collect_inline_content(cell, &mut content);
+                // Table cells are never line-wrapped, so the inline-math wrap
+                // sentinels added by collect_inline_content serve no purpose here.
+                // Strip them before measuring/emitting so the column width matches
+                // the visible output (unicode-width counts each sentinel as one
+                // column, otherwise inflating the width and misaligning the pipes).
+                let content = super::strip_math_sentinels(content);
                 // Escape pipe characters in table cells to prevent cell boundary confusion
                 let content = escape::escape_table_cell(&content);
                 if i < col_widths.len() {
