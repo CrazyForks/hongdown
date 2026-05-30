@@ -4,7 +4,7 @@ Hongdown changelog
 Version 0.4.0
 -------------
 
-To be released.
+Released on May 30, 2026.
 
  -  Added TeX/LaTeX math support.  Inline (`$…$`) and display (`$$…$$`) math is
     now recognized and preserved verbatim — never escaped or
