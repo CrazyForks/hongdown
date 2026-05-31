@@ -108,6 +108,10 @@ jobs:
       uses: taiki-e/setup-cross-toolchain-action@v1
       with:
         target: ${{ matrix.target }}
+    - name: Enable static MSVC CRT
+      if: endsWith(matrix.target, 'pc-windows-msvc')
+      shell: bash
+      run: echo "RUSTFLAGS=-Ctarget-feature=+crt-static" >> "$GITHUB_ENV"
     - name: Install dasel
       if: github.ref_type != 'tag'
       shell: bash
@@ -135,6 +139,31 @@ jobs:
           < Cargo.toml > Cargo.toml.new
         mv Cargo.toml.new Cargo.toml
     - run: cargo build --release --target ${{ matrix.target }}
+    - name: Verify static MSVC CRT
+      if: endsWith(matrix.target, 'pc-windows-msvc')
+      shell: pwsh
+      run: |
+        $binary = "target/${{ matrix.target }}/release/hongdown.exe"
+        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        $dumpbin = & $vswhere -latest -products '*' `
+          -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+          -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe' |
+          Select-Object -First 1
+        if (-not $dumpbin) {
+          throw "dumpbin.exe was not found."
+        }
+
+        $dependencies = & $dumpbin /dependents $binary 2>&1
+        if ($LASTEXITCODE -ne 0) {
+          throw "dumpbin.exe failed with exit code $LASTEXITCODE."
+        }
+        $dependencies | ForEach-Object { Write-Host $_ }
+
+        $dynamicRuntime = $dependencies |
+          Select-String -Pattern '(?i)\b(vcruntime\d*(?:_\d+)?|msvcp\d*(?:_[a-z0-9]+)*|ucrtbase|api-ms-win-crt-[a-z0-9_-]+)\.dll\b'
+        if ($dynamicRuntime) {
+          throw "hongdown.exe still depends on the dynamic MSVC runtime: $dynamicRuntime"
+        }
     - name: Create archive
       id: archive
       shell: bash

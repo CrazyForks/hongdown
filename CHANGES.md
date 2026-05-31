@@ -6,6 +6,10 @@ Version 0.4.2
 
 To be released.
 
+ -  Windows release executables now statically link the MSVC runtime, so
+    *hongdown.exe* no longer requires separate Visual C++ runtime DLLs such as
+    *vcruntime140.dll* to be installed on the target system.
+
 
 Version 0.4.1
 -------------
