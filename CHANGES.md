@@ -7,6 +7,16 @@ Version 0.5.0
 To be released.
 
 
+Version 0.4.2
+-------------
+
+Released on June 1, 2026.
+
+ -  Windows release executables now statically link the MSVC runtime, so
+    *hongdown.exe* no longer requires separate Visual C++ runtime DLLs such as
+    *vcruntime140.dll* to be installed on the target system.
+
+
 Version 0.4.1
 -------------
 
