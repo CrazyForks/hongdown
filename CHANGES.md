@@ -7,6 +7,17 @@ Version 0.5.0
 To be released.
 
 
+Version 0.4.3
+-------------
+
+Released on June 1, 2026.
+
+ -  Release archives now use a flat layout.  Extracting a *.zip* or
+    *.tar.bz2* archive places *hongdown* (or *hongdown.exe*) and the bundled
+    documentation files directly in the extraction directory instead of under
+    an extra target-named top-level directory.
+
+
 Version 0.4.2
 -------------
 
