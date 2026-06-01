@@ -177,11 +177,16 @@ jobs:
         cp CHANGES.md LICENSE README.md STYLE.md "$STAGING/"
         if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
           cp "target/${{ matrix.target }}/release/hongdown.exe" "$STAGING/"
-          7z a "$ARCHIVE_NAME.zip" "$STAGING"
+          (
+            cd "$STAGING"
+            7z a "../$ARCHIVE_NAME.zip" \
+              CHANGES.md LICENSE README.md STYLE.md hongdown.exe
+          )
           echo "name=$ARCHIVE_NAME.zip" >> "$GITHUB_OUTPUT"
         else
           cp "target/${{ matrix.target }}/release/hongdown" "$STAGING/"
-          tar -cjf "$ARCHIVE_NAME.tar.bz2" "$STAGING"
+          tar -cjf "$ARCHIVE_NAME.tar.bz2" -C "$STAGING" \
+            CHANGES.md LICENSE README.md STYLE.md hongdown
           echo "name=$ARCHIVE_NAME.tar.bz2" >> "$GITHUB_OUTPUT"
         fi
     - uses: actions/upload-artifact@v6
@@ -467,13 +472,14 @@ jobs:
           archive="../../artifacts/hongdown-$VERSION-$rust_target"
           if [[ "$os" == "win32" ]]; then
             unzip -q "${archive}.zip" -d "$npm_pkg/"
-            mv "$npm_pkg/hongdown-$rust_target/hongdown.exe" "$npm_pkg/bin/"
+            mv "$npm_pkg/hongdown.exe" "$npm_pkg/bin/"
           else
             tar -xjf "${archive}.tar.bz2" -C "$npm_pkg/"
-            mv "$npm_pkg/hongdown-$rust_target/hongdown" "$npm_pkg/bin/"
+            mv "$npm_pkg/hongdown" "$npm_pkg/bin/"
             chmod +x "$npm_pkg/bin/hongdown"
           fi
-          rm -rf "$npm_pkg/hongdown-$rust_target"
+          rm -f "$npm_pkg/CHANGES.md" "$npm_pkg/LICENSE" \
+            "$npm_pkg/README.md" "$npm_pkg/STYLE.md"
         done
 
     - name: Publish to npm
