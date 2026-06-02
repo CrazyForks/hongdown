@@ -315,12 +315,33 @@ mod mdx_jsx {
         );
     }
 
-    /// A container element with an expression attribute is preserved as a whole.
+    /// A container whose opening tag comrak cannot parse (here a `{{…}}` object
+    /// attribute, which breaks CommonMark's tag grammar) is preserved as a whole,
+    /// keeping its children verbatim.
     #[test]
-    fn braced_container_preserved() {
-        let input = "<Tabs value={selected}>It's \"nested\" content</Tabs>\n";
+    fn corrupt_braced_container_preserved() {
+        let input = "<Tabs value={{ id: selected }}>It's \"nested\" content</Tabs>\n";
+        let off = format(input, &Options::default()).unwrap();
+        assert!(
+            off.contains('\u{201c}'),
+            "expected corruption when off: {off:?}"
+        );
         let on = format(input, &mdx_options()).unwrap();
         assert_eq!(on, input);
+    }
+
+    /// A container whose opening tag *is* valid inline HTML (a simple `{…}`
+    /// attribute) is handled by comrak: the JS attribute is preserved while the
+    /// Markdown children are still formatted.
+    #[test]
+    fn simple_braced_container_keeps_attribute_formats_children() {
+        let input = "<Tabs value={selected}>It's \"nested\" content</Tabs>\n";
+        let on = format(input, &mdx_options()).unwrap();
+        assert!(
+            on.contains("value={selected}"),
+            "JS attribute preserved: {on:?}"
+        );
+        assert!(on.contains('\u{201c}'), "children formatted: {on:?}");
     }
 
     /// A plain (brace-free, single-line) tag is handled by comrak already, so MDX
@@ -378,6 +399,176 @@ mod mdx_jsx {
         let on = format(input, &mdx_options()).unwrap();
         let off = format(input, &Options::default()).unwrap();
         assert_eq!(on, off);
+    }
+}
+
+/// MDX mode: bare `{…}` expressions are preserved verbatim, including their
+/// comments and string literals, while surrounding prose is still formatted.
+mod mdx_expressions {
+    use hongdown::{Options, format};
+
+    fn mdx_options() -> Options {
+        Options {
+            mdx: true,
+            ..Options::default()
+        }
+    }
+
+    /// A bare flow expression `{/* … */}` is corrupted without MDX mode (escaped
+    /// `*`, curled quotes) and preserved with it.
+    #[test]
+    fn flow_comment_expression() {
+        let input = "{/* a JSX comment with \"quotes\" */}\n";
+        let off = format(input, &Options::default()).unwrap();
+        assert_ne!(off, input, "expected corruption when off");
+        let on = format(input, &mdx_options()).unwrap();
+        assert_eq!(on, input);
+    }
+
+    /// An inline expression in prose is preserved while the prose is formatted.
+    #[test]
+    fn inline_expression_in_prose() {
+        let input = "Total: {count} items in the \"cart\".\n";
+        let on = format(input, &mdx_options()).unwrap();
+        assert!(on.contains("{count}"));
+        assert!(on.contains('\u{201c}'), "prose quotes should curl: {on:?}");
+    }
+
+    /// An expression's own string literal keeps straight quotes.
+    #[test]
+    fn expression_string_preserved() {
+        let input = "Price is {formatCurrency(\"USD\", 5)} today.\n";
+        let off = format(input, &Options::default()).unwrap();
+        assert!(off.contains('\u{201c}'), "expected corruption when off");
+        let on = format(input, &mdx_options()).unwrap();
+        assert_eq!(on, input);
+    }
+
+    /// A `{#id}` heading anchor is not treated as an expression; the heading is
+    /// formatted normally.
+    #[test]
+    fn heading_anchor_not_protected() {
+        let input = "## Heading title {#my-id}\n";
+        let on = format(input, &mdx_options()).unwrap();
+        let off = format(input, &Options::default()).unwrap();
+        assert_eq!(on, off);
+    }
+
+    /// Braces inside inline code and math are not mistaken for expressions.
+    #[test]
+    fn braces_in_code_and_math_untouched() {
+        let code = "Use `{x}` inline.\n";
+        let math = "The value $\\frac{1}{2}$ is a half.\n";
+        for input in [code, math] {
+            let on = format(input, &mdx_options()).unwrap();
+            let off = format(input, &Options::default()).unwrap();
+            assert_eq!(
+                on, off,
+                "code/math braces should be left to comrak: {input:?}"
+            );
+        }
+    }
+
+    /// Braces inside Markdown link/image syntax (text or destination) are owned
+    /// by comrak, so MDX mode leaves them alone and stays idempotent — a `{…}`
+    /// in link text must not desync from its reference definition.
+    #[test]
+    fn braces_in_links_untouched() {
+        let cases = [
+            "See [user](https://example.com/{id}) here.\n",
+            "Link [{label}](https://example.com/) text.\n",
+            "Image ![alt](https://example.com/{file}.png) here.\n",
+        ];
+        for input in cases {
+            let on = format(input, &mdx_options()).unwrap();
+            let off = format(input, &Options::default()).unwrap();
+            assert_eq!(
+                on, off,
+                "link/image braces should be left to comrak: {input:?}"
+            );
+            assert_eq!(
+                on,
+                format(&on, &mdx_options()).unwrap(),
+                "should be idempotent: {input:?}"
+            );
+        }
+    }
+
+    /// A real expression alongside a link is still protected.
+    #[test]
+    fn expression_next_to_link_still_protected() {
+        let input = "Mixed [{label}](u) and a real {expr} here.\n";
+        let on = format(input, &mdx_options()).unwrap();
+        assert!(on.contains("{expr}"));
+        assert!(on.contains("[{label}](u)"));
+        assert_eq!(on, format(&on, &mdx_options()).unwrap());
+    }
+
+    /// An expression containing a regex literal whose character class holds a
+    /// `}` is preserved as a whole (the regex brace must not end the expression).
+    #[test]
+    fn expression_with_regex_brace() {
+        let input = "Result: {value.replace(/[}]/g, \"x\")} done.\n";
+        let off = format(input, &Options::default()).unwrap();
+        assert!(
+            off.contains('\u{201c}'),
+            "expected corruption when off: {off:?}"
+        );
+        let on = format(input, &mdx_options()).unwrap();
+        assert_eq!(on, input);
+    }
+
+    /// Division inside an expression is not mistaken for a regex literal.
+    #[test]
+    fn expression_with_division_is_idempotent() {
+        let input = "Ratio: {a / b} and {c / d}.\n";
+        let on = format(input, &mdx_options()).unwrap();
+        assert!(on.contains("{a / b}"));
+        assert_eq!(on, format(&on, &mdx_options()).unwrap());
+    }
+}
+
+/// MDX mode end to end: the full reproduction from the issue round-trips
+/// byte-for-byte and is idempotent.
+mod mdx_document {
+    use hongdown::{Options, format};
+
+    #[test]
+    fn issue_reproduction_preserved_and_idempotent() {
+        let input = "import { Chart } from \"./chart.js\";\n\n\
+            export const meta = { author: 'Hong Minhee' };\n\n\
+            <PackageManagerTabs\n  command={{\n    npm: \"npm add @scope/pkg\",\n    \
+            deno: \"deno add jsr:@scope/pkg\",\n  }}\n/>\n\n\
+            {/* a JSX comment with \"quotes\" */}\n";
+        let options = Options {
+            mdx: true,
+            ..Options::default()
+        };
+        let result = format(input, &options).unwrap();
+        assert_eq!(result, input, "MDX constructs should be preserved verbatim");
+        let again = format(&result, &options).unwrap();
+        assert_eq!(result, again, "MDX formatting should be idempotent");
+    }
+
+    /// Prose interleaved with MDX constructs is still formatted while the
+    /// constructs are preserved.
+    #[test]
+    fn prose_between_constructs_is_formatted() {
+        let input = "import { x } from \"y\";\n\n\
+            This paragraph has \"smart quotes\" and needs no wrapping.\n\n\
+            <Chart data={x} />\n";
+        let options = Options {
+            mdx: true,
+            ..Options::default()
+        };
+        let result = format(input, &options).unwrap();
+        assert!(result.contains("import { x } from \"y\";"));
+        assert!(result.contains("<Chart data={x} />"));
+        assert!(
+            result.contains('\u{201c}'),
+            "prose quotes should curl: {result:?}"
+        );
+        assert_eq!(result, format(&result, &options).unwrap());
     }
 }
 
