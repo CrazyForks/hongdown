@@ -408,7 +408,12 @@ fn scan_esm(span: &str, start: usize) -> Option<usize> {
     if !is_import && !rest.starts_with("export") {
         return None;
     }
-    let after = start + "import".len();
+    let after = start
+        + if is_import {
+            "import".len()
+        } else {
+            "export".len()
+        };
     // The character after the keyword must be plausible ESM, not the tail of an
     // identifier ("important", "exports") or sentence punctuation ("import.").
     match bytes.get(after) {
