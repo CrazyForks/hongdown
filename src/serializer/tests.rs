@@ -2645,6 +2645,20 @@ fn test_leading_html_comment_block_then_content() {
 }
 
 #[test]
+fn test_blank_line_preserved_between_trailing_html_comments() {
+    // Two HTML comments separated by a blank line must keep that separation
+    // rather than being concatenated onto adjacent lines.
+    let result = parse_and_serialize_with_source("<!-- a -->\n\n<!-- b -->\n");
+    assert_eq!(result, "<!-- a -->\n\n<!-- b -->\n");
+}
+
+#[test]
+fn test_adjacent_trailing_html_comments_stay_adjacent() {
+    let result = parse_and_serialize_with_source("<!-- a -->\n<!-- b -->\n");
+    assert_eq!(result, "<!-- a -->\n<!-- b -->\n");
+}
+
+#[test]
 fn test_trailing_html_comment_after_references() {
     // Trailing HTML comments (like cSpell ignore directives) should remain
     // at the end of the document after reference definitions.
