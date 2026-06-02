@@ -439,7 +439,11 @@ fn scan_esm(span: &str, start: usize) -> Option<usize> {
             b'(' => return None,    // dynamic `import(...)` is an expression, not flow ESM
             _ => needs_from = true, // named / default / namespace import
         }
-    } else if first != b'{' && first != b'*' {
+    } else if first == b'*' {
+        // `export * …` is always a re-export and requires a `from` clause, so
+        // prose such as "export *all* the things" is not mistaken for ESM.
+        needs_from = true;
+    } else if first != b'{' {
         // `export <declaration>`: the word must be a real declaration keyword.
         if !EXPORT_DECLARATIONS.contains(&read_word(span, token)) {
             return None;
@@ -1183,6 +1187,17 @@ mod tests {
     fn scan_esm_rejects_prose_starting_with_export_word() {
         // "export these results from the team" is prose, not an export.
         assert_eq!(scan_esm("export these results from the team.", 0), None);
+    }
+
+    #[test]
+    fn scan_esm_export_star_requires_from() {
+        // `export *` is a re-export and always needs a `from` clause, so prose
+        // using `*` for emphasis is not mistaken for ESM.
+        assert_eq!(scan_esm("export *all* the things.", 0), None);
+        let reexport = "export * from \"./mod.js\";";
+        assert_eq!(scan_esm(reexport, 0), Some(reexport.len()));
+        let reexport_ns = "export * as ns from \"./mod.js\";";
+        assert_eq!(scan_esm(reexport_ns, 0), Some(reexport_ns.len()));
     }
 
     #[test]
