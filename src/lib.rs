@@ -263,12 +263,12 @@ pub fn format(input: &str, options: &Options) -> Result<String, FormatError> {
     comrak_options.extension.math_dollars = options.math;
 
     if options.mdx
-        && let Some((protected, map)) = mdx::protect(input, &comrak_options)
+        && let Some(protection) = mdx::protect(input, &comrak_options)
     {
         let arena = Arena::new();
-        let root = parse_document(&arena, &protected, &comrak_options);
-        let output = serializer::serialize_with_source(root, options, Some(&protected));
-        return Ok(mdx::restore(&output, &map));
+        let root = parse_document(&arena, &protection.source, &comrak_options);
+        let output = serializer::serialize_with_source(root, options, Some(&protection.source));
+        return Ok(protection.restore(&output));
     }
 
     let arena = Arena::new();
@@ -318,14 +318,19 @@ pub fn format_with_warnings(input: &str, options: &Options) -> Result<FormatResu
     comrak_options.extension.math_dollars = options.math;
 
     if options.mdx
-        && let Some((protected, map)) = mdx::protect(input, &comrak_options)
+        && let Some(protection) = mdx::protect(input, &comrak_options)
     {
         let arena = Arena::new();
-        let root = parse_document(&arena, &protected, &comrak_options);
-        let result =
-            serializer::serialize_with_source_and_warnings(root, options, Some(&protected));
+        let root = parse_document(&arena, &protection.source, &comrak_options);
+        let mut result =
+            serializer::serialize_with_source_and_warnings(root, options, Some(&protection.source));
+        // Warning line numbers refer to the protected source; map them back to
+        // the original so multi-line constructs do not shift them.
+        for warning in &mut result.warnings {
+            warning.line = protection.original_line(warning.line);
+        }
         return Ok(FormatResult {
-            output: mdx::restore(&result.output, &map),
+            output: protection.restore(&result.output),
             warnings: result.warnings,
         });
     }

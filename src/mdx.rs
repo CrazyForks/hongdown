@@ -31,17 +31,51 @@ pub(crate) struct Protected {
     original: String,
 }
 
+/// The result of [`protect`]: the source to format (with MDX constructs replaced
+/// by placeholders), the replacement map, and a line map from the protected
+/// source back to the original.
+pub(crate) struct Protection {
+    /// The protected source to hand to comrak.
+    pub source: String,
+    /// The placeholder → original replacements.
+    replacements: Vec<Protected>,
+    /// For each protected line `n` (1-indexed), the original line number it came
+    /// from.  Multi-line constructs collapse to a single-line placeholder, so
+    /// without this a warning after one would be reported several lines early.
+    original_lines: Vec<usize>,
+}
+
+impl Protection {
+    /// Replace every placeholder token in `output` with its original text.
+    pub(crate) fn restore(&self, output: &str) -> String {
+        let mut result = output.to_string();
+        for protected in &self.replacements {
+            result = result.replace(&protected.token, &protected.original);
+        }
+        result
+    }
+
+    /// Map a 1-indexed line number in the protected source back to the original
+    /// source.
+    pub(crate) fn original_line(&self, protected_line: usize) -> usize {
+        if protected_line == 0 {
+            return protected_line;
+        }
+        self.original_lines
+            .get(protected_line - 1)
+            .copied()
+            .unwrap_or(protected_line)
+    }
+}
+
 /// Detect MDX constructs in `source` and replace each with a unique HTML-comment
-/// placeholder, returning the protected source and the replacement map.
+/// placeholder, returning a [`Protection`].
 ///
 /// Returns `None` when there is nothing to protect (the caller then formats the
 /// original source normally).  This is also the do-no-harm fallback: any
 /// construct that cannot be delimited confidently is simply left unprotected
 /// rather than guessed at.
-pub(crate) fn protect(
-    source: &str,
-    comrak_options: &ComrakOptions,
-) -> Option<(String, Vec<Protected>)> {
+pub(crate) fn protect(source: &str, comrak_options: &ComrakOptions) -> Option<Protection> {
     let arena = Arena::new();
     let root = parse_document(&arena, source, comrak_options);
     let line_starts = build_line_starts(source);
@@ -112,34 +146,52 @@ pub(crate) fn protect(
 
     let nonce = choose_nonce(source);
     let mut protected = String::with_capacity(source.len());
-    let mut map = Vec::with_capacity(ranges.len());
+    let mut replacements = Vec::with_capacity(ranges.len());
+    // Line map: `original_lines[n - 1]` is the original line for protected line n.
+    let mut original_lines = vec![1usize];
+    let mut original_line = 1usize;
     let mut cursor = 0;
     for (index, &(start, end)) in ranges.iter().enumerate() {
         // Defensively skip any range that overlaps an already-protected one.
         if start < cursor {
             continue;
         }
-        protected.push_str(&source[cursor..start]);
+        // Copy the prefix verbatim, advancing the line map one entry per newline.
+        let prefix = &source[cursor..start];
+        protected.push_str(prefix);
+        for _ in 0..count_newlines(prefix) {
+            original_line += 1;
+            original_lines.push(original_line);
+        }
+        // The placeholder (no newlines) stays on the current protected line, but
+        // the construct it replaces may span several original lines; account for
+        // those so later lines map back correctly.
         let token = format!("<!--hongdown-mdx:{nonce}:{index}-->");
         protected.push_str(&token);
-        map.push(Protected {
+        original_line += count_newlines(&source[start..end]);
+        replacements.push(Protected {
             token,
             original: source[start..end].to_string(),
         });
         cursor = end;
     }
-    protected.push_str(&source[cursor..]);
+    let tail = &source[cursor..];
+    protected.push_str(tail);
+    for _ in 0..count_newlines(tail) {
+        original_line += 1;
+        original_lines.push(original_line);
+    }
 
-    Some((protected, map))
+    Some(Protection {
+        source: protected,
+        replacements,
+        original_lines,
+    })
 }
 
-/// Replace every placeholder token in `output` with its original text.
-pub(crate) fn restore(output: &str, map: &[Protected]) -> String {
-    let mut result = output.to_string();
-    for protected in map {
-        result = result.replace(&protected.token, &protected.original);
-    }
-    result
+/// Count the `\n` bytes in `text`.
+fn count_newlines(text: &str) -> usize {
+    text.bytes().filter(|&b| b == b'\n').count()
 }
 
 /// Byte offsets of the start of each line in `source` (1-indexed line `n` lives
@@ -1003,7 +1055,7 @@ mod tests {
 
     /// Protect, then assert the round trip restores the original verbatim text
     /// somewhere in the protected source's replacement map.
-    fn protect_source(source: &str) -> Option<(String, Vec<Protected>)> {
+    fn protect_source(source: &str) -> Option<Protection> {
         protect(source, &comrak_options())
     }
 
@@ -1365,10 +1417,10 @@ mod tests {
         assert!(protect_source("Obj {{a:1} / b / /[}]/.source} weird.\n").is_none());
         // A real expression before the ambiguous one is still protected; the
         // inner braces of the ambiguous one are not.
-        let (_, map) =
+        let protection =
             protect_source("Pre {realA} then {{a:1} / b / /[}]/.x} end.\n").expect("realA");
-        assert_eq!(map.len(), 1);
-        assert_eq!(map[0].original, "{realA}");
+        assert_eq!(protection.replacements.len(), 1);
+        assert_eq!(protection.replacements[0].original, "{realA}");
     }
 
     #[test]
@@ -1387,9 +1439,9 @@ mod tests {
     #[test]
     fn protect_records_expression_verbatim() {
         let source = "Hello {user.name}, welcome!\n";
-        let (_, map) = protect_source(source).expect("should protect");
-        assert_eq!(map.len(), 1);
-        assert_eq!(map[0].original, "{user.name}");
+        let protection = protect_source(source).expect("should protect");
+        assert_eq!(protection.replacements.len(), 1);
+        assert_eq!(protection.replacements[0].original, "{user.name}");
     }
 
     #[test]
@@ -1406,20 +1458,36 @@ mod tests {
     #[test]
     fn protect_records_import_verbatim() {
         let source = "import { Chart } from \"./chart.js\";\n\nProse.\n";
-        let (protected, map) = protect_source(source).expect("should protect");
-        assert_eq!(map.len(), 1);
-        assert_eq!(map[0].original, "import { Chart } from \"./chart.js\";");
-        assert!(protected.contains("<!--hongdown-mdx:"));
-        assert!(protected.contains("Prose."));
-        assert!(!protected.contains("import {"));
+        let protection = protect_source(source).expect("should protect");
+        assert_eq!(protection.replacements.len(), 1);
+        assert_eq!(
+            protection.replacements[0].original,
+            "import { Chart } from \"./chart.js\";"
+        );
+        assert!(protection.source.contains("<!--hongdown-mdx:"));
+        assert!(protection.source.contains("Prose."));
+        assert!(!protection.source.contains("import {"));
     }
 
     #[test]
     fn restore_round_trips() {
         let source = "export const meta = { author: 'Hong Minhee' };\n";
-        let (protected, map) = protect_source(source).expect("should protect");
-        let restored = restore(&protected, &map);
+        let protection = protect_source(source).expect("should protect");
+        let restored = protection.restore(&protection.source);
         assert!(restored.contains("export const meta = { author: 'Hong Minhee' };"));
+    }
+
+    #[test]
+    fn original_line_maps_back_across_multiline_construct() {
+        // A 3-line import collapses to a single-line placeholder; lines after it
+        // must map back to their original line numbers.
+        let source = "import {\n  a,\n} from \"x\";\n\nProse line.\n";
+        let protection = protect_source(source).expect("should protect");
+        // "Prose line." is original line 6; in the protected source the import is
+        // one line, so it is on protected line 4.
+        assert_eq!(protection.original_line(4), 6);
+        // Lines within/before the placeholder are unchanged.
+        assert_eq!(protection.original_line(1), 1);
     }
 
     #[test]

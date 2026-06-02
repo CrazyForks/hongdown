@@ -398,16 +398,14 @@ pub fn format_with_code_formatter(
 
     // In MDX mode, protect embedded JavaScript/JSX before parsing and restore it
     // afterwards (see [`crate::mdx`]).
-    let (source, restore_map) = if opts.mdx {
-        match crate::mdx::protect(input, &comrak_options) {
-            Some((protected, map)) => (std::borrow::Cow::Owned(protected), Some(map)),
-            None => (std::borrow::Cow::Borrowed(input), None),
-        }
+    let protection = if opts.mdx {
+        crate::mdx::protect(input, &comrak_options)
     } else {
-        (std::borrow::Cow::Borrowed(input), None)
+        None
     };
+    let source: &str = protection.as_ref().map_or(input, |p| p.source.as_str());
 
-    let root = parse_document(&arena, &source, &comrak_options);
+    let root = parse_document(&arena, source, &comrak_options);
 
     // Create callback closure if provided
     let callback: crate::serializer::CodeFormatterCallback = code_formatter.map(|func| {
@@ -430,10 +428,10 @@ pub fn format_with_code_formatter(
     });
 
     let result =
-        crate::serializer::serialize_with_code_formatter(root, &opts, Some(&source), callback);
+        crate::serializer::serialize_with_code_formatter(root, &opts, Some(source), callback);
 
-    let output = match &restore_map {
-        Some(map) => crate::mdx::restore(&result.output, map),
+    let output = match &protection {
+        Some(p) => p.restore(&result.output),
         None => result.output,
     };
 
@@ -443,7 +441,10 @@ pub fn format_with_code_formatter(
             .warnings
             .into_iter()
             .map(|w| JsWarning {
-                line: w.line,
+                // Map protected-source line numbers back to the original.
+                line: protection
+                    .as_ref()
+                    .map_or(w.line, |p| p.original_line(w.line)),
                 message: w.message,
             })
             .collect(),

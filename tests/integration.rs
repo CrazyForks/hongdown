@@ -531,7 +531,22 @@ mod mdx_expressions {
 /// MDX mode end to end: the full reproduction from the issue round-trips
 /// byte-for-byte and is idempotent.
 mod mdx_document {
-    use hongdown::{Options, format};
+    use hongdown::{Options, format, format_with_warnings};
+
+    /// A warning after a multi-line construct (collapsed to a one-line
+    /// placeholder while formatting) is still reported at its original line.
+    #[test]
+    fn warning_line_maps_back_across_multiline_construct() {
+        let input = "import {\n  a,\n  b,\n} from \"x\";\n\nText with [an undefined ref] here.\n";
+        let options = Options {
+            mdx: true,
+            ..Options::default()
+        };
+        let result = format_with_warnings(input, &options).unwrap();
+        assert_eq!(result.warnings.len(), 1, "{:?}", result.warnings);
+        // The undefined reference is on line 6 of the original source.
+        assert_eq!(result.warnings[0].line, 6);
+    }
 
     #[test]
     fn issue_reproduction_preserved_and_idempotent() {
