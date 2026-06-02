@@ -23,6 +23,11 @@ fn default_math() -> bool {
     true
 }
 
+/// Default value for `mdx` (false).
+fn default_mdx() -> bool {
+    false
+}
+
 /// Default value for `line_width`: `Some(LineWidth::default())`.
 fn default_some_line_width() -> Option<LineWidth> {
     Some(LineWidth::default())
@@ -121,6 +126,11 @@ pub struct Config {
     #[serde(default = "default_math")]
     pub math: bool,
 
+    /// Enable MDX mode: preserve embedded JavaScript/JSX verbatim (default:
+    /// false).  The CLI also enables this automatically for *.mdx* files.
+    #[serde(default = "default_mdx")]
+    pub mdx: bool,
+
     /// Heading formatting options.
     pub heading: HeadingConfig,
 
@@ -149,6 +159,7 @@ impl Default for Config {
             exclude: Vec::new(),
             git_aware: true,
             math: true,
+            mdx: false,
             heading: HeadingConfig::default(),
             unordered_list: UnorderedListConfig::default(),
             ordered_list: OrderedListConfig::default(),
@@ -187,6 +198,9 @@ pub struct ConfigLayer {
 
     /// Recognize and preserve TeX/LaTeX math expressions.
     pub math: Option<bool>,
+
+    /// Enable MDX mode: preserve embedded JavaScript/JSX verbatim.
+    pub mdx: Option<bool>,
 
     /// Heading formatting options.
     pub heading: Option<HeadingConfig>,
@@ -245,6 +259,9 @@ impl ConfigLayer {
         }
         if let Some(math) = self.math {
             base.math = math;
+        }
+        if let Some(mdx) = self.mdx {
+            base.mdx = mdx;
         }
         if let Some(heading) = self.heading {
             base.heading = heading;
@@ -1287,6 +1304,7 @@ mod tests {
         assert_eq!(config.line_width.unwrap().get(), 80);
         assert!(config.git_aware);
         assert!(config.math);
+        assert!(!config.mdx);
         assert!(config.heading.setext_h1);
         assert!(config.heading.setext_h2);
         assert_eq!(
@@ -1355,6 +1373,37 @@ mod tests {
         };
         let merged = layer.merge_over(base);
         assert!(!merged.math);
+    }
+
+    #[test]
+    fn test_parse_mdx_enabled() {
+        let config = Config::from_toml("mdx = true").unwrap();
+        assert!(config.mdx);
+    }
+
+    #[test]
+    fn test_mdx_defaults_to_false_when_unset() {
+        let config = Config::from_toml("line_width = 100").unwrap();
+        assert!(!config.mdx);
+    }
+
+    #[test]
+    fn test_merge_over_mdx_enabled() {
+        let layer = ConfigLayer::from_toml_str("mdx = true\n").unwrap();
+        let merged = layer.merge_over(Config::default());
+        assert!(merged.mdx);
+    }
+
+    #[test]
+    fn test_merge_over_preserves_mdx_when_unset() {
+        // A layer that does not mention `mdx` must not reset it.
+        let layer = ConfigLayer::from_toml_str("line_width = 72\n").unwrap();
+        let base = Config {
+            mdx: true,
+            ..Config::default()
+        };
+        let merged = layer.merge_over(base);
+        assert!(merged.mdx);
     }
 
     #[test]

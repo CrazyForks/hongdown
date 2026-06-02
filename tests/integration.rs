@@ -981,6 +981,77 @@ mod cli_tests {
         assert_eq!(exit_code, 0, "All files should pass check");
         assert!(stdout.is_empty());
     }
+
+    /// A `.mdx` file passed on the command line enables MDX mode automatically,
+    /// preserving embedded JavaScript verbatim.
+    #[test]
+    fn test_mdx_file_enables_mdx_mode() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let mdx_file = temp_dir.path().join("example.mdx");
+        fs::write(&mdx_file, "import { Chart } from \"./chart.js\";\n")
+            .expect("Failed to write example.mdx");
+
+        let (stdout, _stderr, exit_code) = run_hongdown(&[mdx_file.to_str().unwrap()], None);
+        assert_eq!(exit_code, 0);
+        assert!(
+            stdout.contains("import { Chart } from \"./chart.js\";"),
+            "expected the import to be preserved for a .mdx file: {stdout:?}"
+        );
+    }
+
+    /// A `.md` file with the same content is NOT MDX-protected by default (its
+    /// quotes are curled), confirming auto-detection is extension-specific.
+    #[test]
+    fn test_md_file_does_not_enable_mdx_mode() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let md_file = temp_dir.path().join("example.md");
+        fs::write(&md_file, "import { Chart } from \"./chart.js\";\n")
+            .expect("Failed to write example.md");
+
+        let (stdout, _stderr, exit_code) = run_hongdown(&[md_file.to_str().unwrap()], None);
+        assert_eq!(exit_code, 0);
+        assert!(
+            stdout.contains('\u{201c}'),
+            "expected curly quotes for a .md file without --mdx: {stdout:?}"
+        );
+    }
+
+    /// The `--mdx` flag enables MDX mode for a `.md` file (and for stdin).
+    #[test]
+    fn test_mdx_flag_enables_mdx_mode_for_md() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let md_file = temp_dir.path().join("example.md");
+        fs::write(&md_file, "import { Chart } from \"./chart.js\";\n")
+            .expect("Failed to write example.md");
+
+        let (stdout, _stderr, exit_code) =
+            run_hongdown(&["--mdx", md_file.to_str().unwrap()], None);
+        assert_eq!(exit_code, 0);
+        assert!(
+            stdout.contains("import { Chart } from \"./chart.js\";"),
+            "expected --mdx to preserve the import: {stdout:?}"
+        );
+    }
+
+    /// `--mdx` also applies to stdin input.
+    #[test]
+    fn test_mdx_flag_applies_to_stdin() {
+        let (stdout, _stderr, exit_code) = run_hongdown(
+            &["--mdx", "--stdin"],
+            Some("export const meta = { author: 'Hong Minhee' };\n"),
+        );
+        assert_eq!(exit_code, 0);
+        assert!(stdout.contains("export const meta = { author: 'Hong Minhee' };"));
+    }
 }
 
 /// Test proper nouns directive in sentence case.

@@ -35,6 +35,10 @@ pub struct JsOptions {
     /// Recognize and preserve TeX/LaTeX math expressions (default: true).
     pub math: Option<bool>,
 
+    /// Enable MDX mode: preserve embedded JavaScript/JSX verbatim (default:
+    /// false).
+    pub mdx: Option<bool>,
+
     /// Use setext-style for h1 headings (default: true).
     pub setext_h1: Option<bool>,
 
@@ -154,6 +158,9 @@ impl JsOptions {
         }
         if let Some(v) = self.math {
             opts.math = v;
+        }
+        if let Some(v) = self.mdx {
+            opts.mdx = v;
         }
         if let Some(v) = self.setext_h1 {
             opts.setext_h1 = v;
@@ -389,7 +396,18 @@ pub fn format_with_code_formatter(
     comrak_options.extension.tasklist = true;
     comrak_options.extension.math_dollars = opts.math;
 
-    let root = parse_document(&arena, input, &comrak_options);
+    // In MDX mode, protect embedded JavaScript/JSX before parsing and restore it
+    // afterwards (see [`crate::mdx`]).
+    let (source, restore_map) = if opts.mdx {
+        match crate::mdx::protect(input, &comrak_options) {
+            Some((protected, map)) => (std::borrow::Cow::Owned(protected), Some(map)),
+            None => (std::borrow::Cow::Borrowed(input), None),
+        }
+    } else {
+        (std::borrow::Cow::Borrowed(input), None)
+    };
+
+    let root = parse_document(&arena, &source, &comrak_options);
 
     // Create callback closure if provided
     let callback: crate::serializer::CodeFormatterCallback = code_formatter.map(|func| {
@@ -412,10 +430,15 @@ pub fn format_with_code_formatter(
     });
 
     let result =
-        crate::serializer::serialize_with_code_formatter(root, &opts, Some(input), callback);
+        crate::serializer::serialize_with_code_formatter(root, &opts, Some(&source), callback);
+
+    let output = match &restore_map {
+        Some(map) => crate::mdx::restore(&result.output, map),
+        None => result.output,
+    };
 
     let js_result = JsFormatResult {
-        output: result.output,
+        output,
         warnings: result
             .warnings
             .into_iter()

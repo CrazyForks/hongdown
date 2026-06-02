@@ -35,6 +35,15 @@ export interface FormatOptions {
   math?: boolean;
 
   /**
+   * Enable MDX mode. When enabled, embedded JavaScript/JSX — ESM
+   * `import`/`export` statements, JSX elements and fragments, and `{…}`
+   * expressions — is preserved verbatim instead of being mangled, while the
+   * surrounding Markdown prose is still formatted.
+   * @default false
+   */
+  mdx?: boolean;
+
+  /**
    * Use setext-style (underlined) for h1 headings.
    * @default true
    */
