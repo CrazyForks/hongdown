@@ -371,17 +371,6 @@ fn read_word(source: &str, pos: usize) -> &str {
     &source[pos..end]
 }
 
-/// Whether `word` occurs at byte offset `at` as a standalone token (bounded by
-/// non-identifier bytes on both sides).
-fn is_word_at(bytes: &[u8], at: usize, word: &[u8]) -> bool {
-    if at + word.len() > bytes.len() || &bytes[at..at + word.len()] != word {
-        return false;
-    }
-    let before_ok = at == 0 || !is_ident_byte(bytes[at - 1]);
-    let after_ok = at + word.len() >= bytes.len() || !is_ident_byte(bytes[at + word.len()]);
-    before_ok && after_ok
-}
-
 /// If an ESM `import`/`export` statement starts at `start` within `span`, return
 /// the byte offset just past its end (before the terminating newline).
 ///
@@ -450,41 +439,28 @@ fn scan_esm(span: &str, start: usize) -> Option<usize> {
         }
     }
 
+    const VALUE: u8 = b'a';
     let mut index = after;
     let mut depth: i32 = 0;
     let mut saw_from = false;
+    // The most recent significant token, used (as in `skip_braces`) to tell a
+    // regex literal from a division operator.
+    let mut prev: Option<u8> = None;
+    let mut prev_word: Option<&str> = None;
     while index < span.len() {
-        match bytes[index] {
-            b'"' | b'\'' | b'`' => {
-                index = skip_string(span, index)?;
-            }
-            b'/' => {
-                if let Some(after) = skip_comment(span, index) {
-                    index = after;
-                } else {
-                    index += 1;
-                }
-            }
-            b'{' | b'(' | b'[' => {
-                depth += 1;
+        let byte = bytes[index];
+        if is_ident_byte(byte) {
+            let after_member_access = prev == Some(b'.');
+            let word_start = index;
+            while index < span.len() && is_ident_byte(bytes[index]) {
                 index += 1;
             }
-            b'}' | b')' | b']' => {
-                depth -= 1;
-                index += 1;
-            }
-            b'\n' => {
-                if depth <= 0 {
-                    return finish_esm(index, needs_from, saw_from);
-                }
-                index += 1;
-            }
-            b'f' if needs_from && !saw_from && is_word_at(bytes, index, b"from") => {
-                // A genuine `from` clause is followed by the module string
-                // specifier, e.g. `from "./x"`.  Requiring the string rejects
-                // ordinary prose such as "import these ideas from elsewhere."
-                // The specifier may sit on the next line, so skip newlines too.
-                let mut probe = index + 4;
+            let word = &span[word_start..index];
+            // A genuine `from` clause is followed by the module string specifier,
+            // e.g. `from "./x"` (which may sit on the next line).  Requiring the
+            // string rejects prose such as "import these ideas from elsewhere."
+            if needs_from && !saw_from && !after_member_access && word == "from" {
+                let mut probe = index;
                 while probe < span.len() && matches!(bytes[probe], b' ' | b'\t' | b'\n' | b'\r') {
                     probe += 1;
                 }
@@ -493,11 +469,65 @@ fn scan_esm(span: &str, start: usize) -> Option<usize> {
                     // Jump to the specifier so an intervening newline is not
                     // mistaken for the end of the statement.
                     index = probe;
-                } else {
-                    index += 4;
+                    prev = Some(VALUE);
+                    prev_word = None;
+                    continue;
                 }
             }
-            _ => index += char_len(bytes[index]),
+            prev = Some(VALUE);
+            prev_word = if after_member_access {
+                None
+            } else {
+                Some(word)
+            };
+            continue;
+        }
+        match byte {
+            b'"' | b'\'' | b'`' => {
+                index = skip_string(span, index)?;
+                prev = Some(VALUE);
+                prev_word = None;
+            }
+            b'/' => {
+                if let Some(after) = skip_comment(span, index) {
+                    index = after; // comments do not change the preceding token
+                } else if prev == Some(b'}') {
+                    // Ambiguous regex-or-division after `}`; do not guess.
+                    return None;
+                } else if allows_regex(prev, prev_word) {
+                    index = skip_regex(span, index).unwrap_or(index + 1);
+                    prev = Some(VALUE);
+                    prev_word = None;
+                } else {
+                    index += 1;
+                    prev = Some(b'/');
+                    prev_word = None;
+                }
+            }
+            b'{' | b'(' | b'[' => {
+                depth += 1;
+                index += 1;
+                prev = Some(byte);
+                prev_word = None;
+            }
+            b'}' | b')' | b']' => {
+                depth -= 1;
+                index += 1;
+                prev = Some(byte);
+                prev_word = None;
+            }
+            b'\n' => {
+                if depth <= 0 {
+                    return finish_esm(index, needs_from, saw_from);
+                }
+                index += 1; // inside brackets: leave the preceding token unchanged
+            }
+            b' ' | b'\t' | b'\r' => index += 1, // whitespace: leave prev unchanged
+            other => {
+                index += char_len(other);
+                prev = Some(other);
+                prev_word = None;
+            }
         }
     }
     // Reached the end of the span: complete only if brackets balanced out.
@@ -1031,6 +1061,10 @@ fn scan_expression(span: &str, start: usize) -> ExprScan {
 /// Skip a string literal that starts at `start` (a `"`, `'`, or `` ` `` quote).
 /// Returns the byte offset just past the closing quote, or `None` if the string
 /// is unterminated.
+///
+/// In a template literal (`` ` ``), a `${…}` interpolation is skipped as a
+/// balanced expression so that backticks or braces inside it (including nested
+/// template literals) do not terminate the string early.
 fn skip_string(span: &str, start: usize) -> Option<usize> {
     let bytes = span.as_bytes();
     let quote = bytes[start];
@@ -1042,6 +1076,13 @@ fn skip_string(span: &str, start: usize) -> Option<usize> {
                 index += 1;
                 if index < span.len() {
                     index += char_len(bytes[index]);
+                }
+            }
+            b'$' if quote == b'`' && bytes.get(index + 1) == Some(&b'{') => {
+                // Template literal interpolation `${ … }`.
+                match skip_braces(span, index + 1) {
+                    BraceScan::Closed(after) => index = after,
+                    _ => return None,
                 }
             }
             byte if byte == quote => return Some(index + 1),
@@ -1145,6 +1186,22 @@ mod tests {
     fn scan_esm_string_with_angle_and_brace() {
         // `>` and `{` inside the string must not derail the scan.
         let span = "import x from \"a > b { c\";";
+        assert_eq!(scan_esm(span, 0), Some(span.len()));
+    }
+
+    #[test]
+    fn scan_esm_skips_regex_with_brace() {
+        // A `}` inside a regex character class must not be counted as a brace,
+        // which would otherwise end a multi-line object early.
+        let span = "export const config = {\n  re: /[}]/,\n  x: 1,\n};";
+        assert_eq!(scan_esm(span, 0), Some(span.len()));
+    }
+
+    #[test]
+    fn scan_esm_division_not_regex() {
+        // `/` after a value is division, not a regex; the statement still ends
+        // at its newline.
+        let span = "export const ratio = a / b;";
         assert_eq!(scan_esm(span, 0), Some(span.len()));
     }
 
@@ -1533,6 +1590,24 @@ mod tests {
     fn skip_string_handles_escapes() {
         let span = r#""a\"b""#; // "a\"b"
         assert_eq!(skip_string(span, 0), Some(span.len()));
+    }
+
+    #[test]
+    fn skip_string_template_literal_with_nested_interpolation() {
+        // A `${…}` interpolation, including a nested template literal inside it,
+        // must not end the outer template early.
+        let span = "`a ${`b`} c`";
+        assert_eq!(skip_string(span, 0), Some(span.len()));
+        let nested = "`x ${`y ${z} w`} v`";
+        assert_eq!(skip_string(nested, 0), Some(nested.len()));
+    }
+
+    #[test]
+    fn scan_expression_template_literal_with_nested_braces() {
+        // The expression brace count stays balanced across a template literal
+        // whose interpolation contains its own braces.
+        let span = "{`${`a`} ${ {k: 1} }`}";
+        assert_eq!(expr_end(span), Some(span.len()));
     }
 
     #[test]
