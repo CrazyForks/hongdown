@@ -847,6 +847,7 @@ fn is_regex_keyword(word: &str) -> bool {
             | "do"
             | "case"
             | "else"
+            | "default"
     )
 }
 
@@ -1202,6 +1203,14 @@ mod tests {
         // `/` after a value is division, not a regex; the statement still ends
         // at its newline.
         let span = "export const ratio = a / b;";
+        assert_eq!(scan_esm(span, 0), Some(span.len()));
+    }
+
+    #[test]
+    fn scan_esm_export_default_regex() {
+        // `export default /…/` puts a regex right after the `default` keyword;
+        // a `}` in its character class must not be counted as a brace.
+        let span = "export default /[}]/;";
         assert_eq!(scan_esm(span, 0), Some(span.len()));
     }
 
