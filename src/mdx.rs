@@ -516,7 +516,9 @@ fn finish_esm(end: usize, needs_from: bool, saw_from: bool) -> Option<usize> {
 
 /// If a `//` line comment or `/* … */` block comment starts at `start`, return
 /// the byte offset just past it.  A line comment stops at — but does not consume
-/// — the terminating newline.  Returns `None` when no comment starts there.
+/// — the terminating newline (a line comment that runs to the end of the span is
+/// complete).  Returns `None` when no comment starts there, or when a block
+/// comment is left unterminated (no closing `*/`).
 fn skip_comment(span: &str, start: usize) -> Option<usize> {
     let bytes = span.as_bytes();
     match (bytes.get(start), bytes.get(start + 1)) {
@@ -535,9 +537,10 @@ fn skip_comment(span: &str, start: usize) -> Option<usize> {
                 index += char_len(bytes[index]);
             }
             if index < span.len() {
-                index += 2; // consume the closing `*/`
+                Some(index + 2) // consume the closing `*/`
+            } else {
+                None // unterminated block comment
             }
-            Some(index)
         }
         _ => None,
     }
@@ -1515,6 +1518,18 @@ mod tests {
     fn skip_string_handles_escapes() {
         let span = r#""a\"b""#; // "a\"b"
         assert_eq!(skip_string(span, 0), Some(span.len()));
+    }
+
+    #[test]
+    fn skip_comment_block_and_line() {
+        // A closed block comment is skipped past its `*/`.
+        assert_eq!(skip_comment("/* x */y", 0), Some("/* x */".len()));
+        // A line comment that runs to the end of the span is complete.
+        assert_eq!(skip_comment("// done", 0), Some("// done".len()));
+        // An unterminated block comment is not a complete comment.
+        assert_eq!(skip_comment("/* x", 0), None);
+        // Not a comment.
+        assert_eq!(skip_comment("/ x", 0), None);
     }
 
     #[test]
