@@ -294,14 +294,16 @@ impl<'a> Serializer<'a> {
                         }
                     }
                     is_first = false;
-                } else if sourcepos.start.line > prev_end_line + 1 {
+                } else if sourcepos.start.line > prev_end_line + 1 && !self.output.ends_with("\n\n")
+                {
                     // Preserve a blank line that separated two HTML blocks in the
                     // source (otherwise consecutive comments/placeholders would be
                     // concatenated without their original separation).
-                    if !self.output.ends_with('\n') {
+                    if self.output.ends_with('\n') {
                         self.output.push('\n');
+                    } else {
+                        self.output.push_str("\n\n");
                     }
-                    self.output.push('\n');
                 }
                 prev_end_line = sourcepos.end.line;
                 self.output.push_str(&html_block.literal);
