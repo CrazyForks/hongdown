@@ -164,6 +164,105 @@ fn test_whitespace_only() {
     assert!(result.trim().is_empty() || result.is_empty());
 }
 
+/// MDX mode: ESM `import`/`export` statements are preserved verbatim instead of
+/// being mangled by punctuation transforms and Markdown escaping.
+mod mdx_esm {
+    use hongdown::{LineWidth, Options, format};
+
+    fn mdx_options() -> Options {
+        Options {
+            mdx: true,
+            ..Options::default()
+        }
+    }
+
+    /// Without MDX mode (the default), an import's string literal is corrupted:
+    /// its straight double quotes become curly quotes.  This pins MDX mode as
+    /// strictly opt-in.
+    #[test]
+    fn esm_corrupted_when_mdx_disabled() {
+        let input = "import { Chart } from \"./chart.js\";\n";
+        let result = format(input, &Options::default()).unwrap();
+        assert!(
+            result.contains('\u{201c}') || result.contains('\u{201d}'),
+            "expected curly quotes when MDX mode is off: {result:?}"
+        );
+        assert!(!result.contains("from \"./chart.js\""));
+    }
+
+    /// With MDX mode on, the import line is preserved byte-for-byte.
+    #[test]
+    fn esm_import_preserved_when_mdx_enabled() {
+        let input = "import { Chart } from \"./chart.js\";\n";
+        let result = format(input, &mdx_options()).unwrap();
+        assert_eq!(result, "import { Chart } from \"./chart.js\";\n");
+    }
+
+    /// `export const … = { … }` with single quotes is preserved verbatim.
+    #[test]
+    fn esm_export_object_preserved() {
+        let input = "export const meta = { author: 'Hong Minhee' };\n";
+        let result = format(input, &mdx_options()).unwrap();
+        assert_eq!(result, "export const meta = { author: 'Hong Minhee' };\n");
+    }
+
+    /// A multi-line import (brace list spanning lines) is preserved verbatim,
+    /// including its internal newlines and indentation.
+    #[test]
+    fn esm_multiline_import_preserved() {
+        let input = "import {\n  Chart,\n  Tabs,\n} from \"./ui.js\";\n";
+        let result = format(input, &mdx_options()).unwrap();
+        assert_eq!(result, input);
+    }
+
+    /// Surrounding prose is still formatted (wrapped at the line width) while the
+    /// import passes through untouched.
+    #[test]
+    fn esm_prose_still_wraps() {
+        let input = "import { Chart } from \"./chart.js\";\n\n\
+            This is a fairly long paragraph of prose that comfortably exceeds the \
+            eighty column width and therefore must be wrapped by the formatter.\n";
+        let options = Options {
+            line_width: Some(LineWidth::new(80).unwrap()),
+            ..mdx_options()
+        };
+        let result = format(input, &options).unwrap();
+        assert!(result.contains("import { Chart } from \"./chart.js\";"));
+        // The prose paragraph must have been wrapped onto multiple lines.
+        let prose = result.split("\n\n").nth(1).unwrap_or("");
+        assert!(
+            prose.lines().count() > 1,
+            "expected the prose to wrap: {result:?}"
+        );
+        assert!(prose.lines().all(|line| line.chars().count() <= 80));
+    }
+
+    /// Formatting an MDX document with ESM statements twice yields identical
+    /// output.
+    #[test]
+    fn esm_idempotent() {
+        let input = "import { Chart } from \"./chart.js\";\n\n\
+            export const meta = { author: 'Hong Minhee' };\n\n\
+            Some prose with \"quotes\" and -- dashes.\n";
+        let options = mdx_options();
+        let first = format(input, &options).unwrap();
+        let second = format(&first, &options).unwrap();
+        assert_eq!(first, second, "MDX formatting should be idempotent");
+        assert!(first.contains("import { Chart } from \"./chart.js\";"));
+        assert!(first.contains("export const meta = { author: 'Hong Minhee' };"));
+    }
+
+    /// MDX mode does not change a plain Markdown document that has no MDX
+    /// constructs: output equals the default-options output.
+    #[test]
+    fn no_change_for_plain_markdown() {
+        let input = "# Title\n\nA paragraph with \"quotes\" and a [link](https://example.com/).\n";
+        let with_mdx = format(input, &mdx_options()).unwrap();
+        let without_mdx = format(input, &Options::default()).unwrap();
+        assert_eq!(with_mdx, without_mdx);
+    }
+}
+
 mod cli_tests {
     use std::io::Write;
     use std::process::{Command, Stdio};

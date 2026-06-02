@@ -14,6 +14,7 @@
 use std::collections::HashMap;
 
 pub mod config;
+mod mdx;
 mod serializer;
 
 #[cfg(feature = "wasm")]
@@ -51,6 +52,21 @@ pub struct Options {
     /// `$`, a shell prompt like `$ cmd`, or a price like `$5` is not treated as
     /// math.  Set to `false` to treat every `$` as literal text.
     pub math: bool,
+
+    /// Enable MDX mode. Default: false.
+    ///
+    /// MDX documents embed JavaScript/JSX that comrak (a plain CommonMark+GFM
+    /// parser) does not understand: ESM `import`/`export` statements, JSX
+    /// elements and fragments, and `{…}` expressions.  Without MDX mode these
+    /// constructs are parsed as ordinary prose and then mangled by punctuation
+    /// transforms and Markdown escaping.
+    ///
+    /// When enabled, Hongdown detects those constructs and passes them through
+    /// verbatim — "first, do no harm" — while still formatting the surrounding
+    /// Markdown prose.  The embedded JavaScript/JSX itself is preserved as-is,
+    /// not reformatted.  The CLI enables this automatically for files with the
+    /// *.mdx* extension.
+    pub mdx: bool,
 
     /// Use setext-style (underlined) for h1 headings. Default: true.
     pub setext_h1: bool,
@@ -177,6 +193,7 @@ impl Default for Options {
         Self {
             line_width: Some(LineWidth::default()),
             math: true,
+            mdx: false,
             setext_h1: true,
             setext_h2: true,
             heading_sentence_case: false,
@@ -236,7 +253,6 @@ pub fn format(input: &str, options: &Options) -> Result<String, FormatError> {
         return Ok(String::new());
     }
 
-    let arena = Arena::new();
     let mut comrak_options = ComrakOptions::default();
     comrak_options.extension.front_matter_delimiter = Some("---".to_string());
     comrak_options.extension.table = true;
@@ -246,6 +262,16 @@ pub fn format(input: &str, options: &Options) -> Result<String, FormatError> {
     comrak_options.extension.tasklist = true;
     comrak_options.extension.math_dollars = options.math;
 
+    if options.mdx
+        && let Some((protected, map)) = mdx::protect(input, &comrak_options)
+    {
+        let arena = Arena::new();
+        let root = parse_document(&arena, &protected, &comrak_options);
+        let output = serializer::serialize_with_source(root, options, Some(&protected));
+        return Ok(mdx::restore(&output, &map));
+    }
+
+    let arena = Arena::new();
     let root = parse_document(&arena, input, &comrak_options);
     let output = serializer::serialize_with_source(root, options, Some(input));
 
@@ -282,7 +308,6 @@ pub fn format_with_warnings(input: &str, options: &Options) -> Result<FormatResu
         });
     }
 
-    let arena = Arena::new();
     let mut comrak_options = ComrakOptions::default();
     comrak_options.extension.front_matter_delimiter = Some("---".to_string());
     comrak_options.extension.table = true;
@@ -292,6 +317,20 @@ pub fn format_with_warnings(input: &str, options: &Options) -> Result<FormatResu
     comrak_options.extension.tasklist = true;
     comrak_options.extension.math_dollars = options.math;
 
+    if options.mdx
+        && let Some((protected, map)) = mdx::protect(input, &comrak_options)
+    {
+        let arena = Arena::new();
+        let root = parse_document(&arena, &protected, &comrak_options);
+        let result =
+            serializer::serialize_with_source_and_warnings(root, options, Some(&protected));
+        return Ok(FormatResult {
+            output: mdx::restore(&result.output, &map),
+            warnings: result.warnings,
+        });
+    }
+
+    let arena = Arena::new();
     let root = parse_document(&arena, input, &comrak_options);
     let result = serializer::serialize_with_source_and_warnings(root, options, Some(input));
 
