@@ -479,14 +479,19 @@ fn scan_esm(span: &str, start: usize) -> Option<usize> {
                 // A genuine `from` clause is followed by the module string
                 // specifier, e.g. `from "./x"`.  Requiring the string rejects
                 // ordinary prose such as "import these ideas from elsewhere."
+                // The specifier may sit on the next line, so skip newlines too.
                 let mut probe = index + 4;
-                while probe < span.len() && matches!(bytes[probe], b' ' | b'\t') {
+                while probe < span.len() && matches!(bytes[probe], b' ' | b'\t' | b'\n' | b'\r') {
                     probe += 1;
                 }
                 if matches!(bytes.get(probe), Some(b'"' | b'\'' | b'`')) {
                     saw_from = true;
+                    // Jump to the specifier so an intervening newline is not
+                    // mistaken for the end of the statement.
+                    index = probe;
+                } else {
+                    index += 4;
                 }
-                index += 4;
             }
             _ => index += char_len(bytes[index]),
         }
@@ -1183,6 +1188,14 @@ mod tests {
     #[test]
     fn scan_esm_default_import_with_string_from() {
         let span = "import Chart from \"./chart.js\";";
+        assert_eq!(scan_esm(span, 0), Some(span.len()));
+    }
+
+    #[test]
+    fn scan_esm_from_clause_across_newline() {
+        // The module specifier may sit on the next line after `from`; the
+        // statement must continue across that newline.
+        let span = "import Chart from\n  \"./chart.js\";";
         assert_eq!(scan_esm(span, 0), Some(span.len()));
     }
 
