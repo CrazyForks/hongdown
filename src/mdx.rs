@@ -449,8 +449,12 @@ fn scan_esm(span: &str, start: usize) -> Option<usize> {
             b'"' | b'\'' | b'`' => {
                 index = skip_string(span, index)?;
             }
-            b'/' if let Some(after) = skip_comment(span, index) => {
-                index = after;
+            b'/' => {
+                if let Some(after) = skip_comment(span, index) {
+                    index = after;
+                } else {
+                    index += 1;
+                }
             }
             b'{' | b'(' | b'[' => {
                 depth += 1;
@@ -735,26 +739,31 @@ fn skip_braces(span: &str, start: usize) -> BraceScan {
                 prev = Some(VALUE); // a string is a value: a following `/` is division
                 prev_word = None;
             }
-            b'/' if let Some(after) = skip_comment(span, index) => {
-                index = after; // comments do not change the preceding token
-            }
-            b'/' if prev == Some(b'}') => {
-                // A `/` right after `}` is genuinely ambiguous without a JS
-                // parser: regex after a block close, or division after an object
-                // literal.  Rather than guess (and risk miscounting a `}` inside
-                // a regex character class), give up and leave the whole
-                // expression to comrak.
-                return BraceScan::Ambiguous;
-            }
-            b'/' if allows_regex(prev, prev_word) => {
-                if let Some(after) = skip_regex(span, index) {
-                    index = after;
-                    prev = Some(VALUE); // a regex is a value: a following `/` is division
+            b'/' => {
+                if let Some(after) = skip_comment(span, index) {
+                    index = after; // comments do not change the preceding token
+                } else if prev == Some(b'}') {
+                    // A `/` right after `}` is genuinely ambiguous without a JS
+                    // parser: regex after a block close, or division after an
+                    // object literal.  Rather than guess (and risk miscounting a
+                    // `}` inside a regex character class), give up and leave the
+                    // whole expression to comrak.
+                    return BraceScan::Ambiguous;
+                } else if allows_regex(prev, prev_word) {
+                    if let Some(after) = skip_regex(span, index) {
+                        index = after;
+                        prev = Some(VALUE); // a regex is a value: a following `/` is division
+                    } else {
+                        index += 1;
+                        prev = Some(b'/');
+                    }
+                    prev_word = None;
                 } else {
+                    // Division.
                     index += 1;
                     prev = Some(b'/');
+                    prev_word = None;
                 }
-                prev_word = None;
             }
             b' ' | b'\t' | b'\n' | b'\r' => index += 1,
             other => {
