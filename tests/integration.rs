@@ -302,6 +302,18 @@ mod mdx_jsx {
         assert_eq!(on, input);
     }
 
+    /// A multi-line opening tag with no `{…}` attribute is also corrupted by
+    /// comrak (it is multi-line inline HTML it does not round-trip) and is
+    /// preserved by MDX mode.
+    #[test]
+    fn multiline_opener_without_expression() {
+        let input = "<Chart\n  data=\"value\"\n/>\n";
+        let off = format(input, &Options::default()).unwrap();
+        assert_ne!(off, input, "expected corruption when off");
+        let on = format(input, &mdx_options()).unwrap();
+        assert_eq!(on, input);
+    }
+
     /// JSX fragments are preserved verbatim.
     #[test]
     fn fragment_preserved() {

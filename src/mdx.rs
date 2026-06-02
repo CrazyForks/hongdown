@@ -12,8 +12,8 @@
 //! mangles and replaces each with a unique HTML-comment placeholder, recording
 //! the original text.  comrak emits HTML comments verbatim (as `HtmlBlock` /
 //! `HtmlInline`), so the placeholders survive serialization untouched while the
-//! surrounding Markdown prose is formatted normally.  [`restore`] then swaps the
-//! placeholders back for their original text.
+//! surrounding Markdown prose is formatted normally.  [`Protection::restore`]
+//! then swaps the placeholders back for their original text.
 //!
 //! The detection is AST-guided: only the source spans of `Paragraph` nodes are
 //! scanned.  Content inside fenced/indented code blocks, inline code spans,
@@ -57,6 +57,12 @@ impl Protection {
 
     /// Map a 1-indexed line number in the protected source back to the original
     /// source.
+    ///
+    /// This is exact for block-level constructs (each protected line corresponds
+    /// to one original line).  For the rare case of a multi-line construct
+    /// embedded inline within a paragraph, lines after it on the *same* protected
+    /// line map to the line's start, which can be a few lines early — a minor
+    /// imprecision in warning positions, not in the formatted output.
     pub(crate) fn original_line(&self, protected_line: usize) -> usize {
         if protected_line == 0 {
             return protected_line;
@@ -104,21 +110,24 @@ pub(crate) fn protect(source: &str, comrak_options: &ComrakOptions) -> Option<Pr
         // scanned: code spans and math are emitted verbatim; links/images have
         // their own `[…](…)` bracket/paren structure (a `{…}` in link text would
         // otherwise be protected, desyncing it from its reference definition);
-        // and inline HTML tags (which comrak already preserves) can carry `{…}`
-        // inside a quoted attribute.  Collect their (span-local) ranges to skip.
+        // and a single-line inline HTML tag (which comrak preserves) can carry
+        // `{…}` inside a quoted attribute.  A *multi-line* inline HTML tag is NOT
+        // skipped — comrak does not round-trip it cleanly, so it is left for the
+        // JSX scanner to protect.  Collect the skip ranges (span-local).
         let mut skips: Vec<(usize, usize)> = Vec::new();
         for inner in node.descendants() {
             let (is_owned, inner_sourcepos) = {
                 let data = inner.data.borrow();
-                let is_owned = matches!(
-                    data.value,
+                let pos = data.sourcepos;
+                let is_owned = match data.value {
                     NodeValue::Code(_)
-                        | NodeValue::Math(_)
-                        | NodeValue::Link(_)
-                        | NodeValue::Image(_)
-                        | NodeValue::HtmlInline(_)
-                );
-                (is_owned, data.sourcepos)
+                    | NodeValue::Math(_)
+                    | NodeValue::Link(_)
+                    | NodeValue::Image(_) => true,
+                    NodeValue::HtmlInline(_) => pos.start.line == pos.end.line,
+                    _ => false,
+                };
+                (is_owned, pos)
             };
             if !is_owned {
                 continue;
@@ -1421,6 +1430,20 @@ mod tests {
             protect_source("Pre {realA} then {{a:1} / b / /[}]/.x} end.\n").expect("realA");
         assert_eq!(protection.replacements.len(), 1);
         assert_eq!(protection.replacements[0].original, "{realA}");
+    }
+
+    #[test]
+    fn protect_protects_multiline_opener_without_expression() {
+        // A multi-line opener with no `{…}` attribute is multi-line inline HTML
+        // that comrak does not round-trip, so it must be protected (its
+        // single-line `HtmlInline` skip exclusion does not apply).
+        let source = "<Chart\n  data=\"value\"\n/>\n";
+        let protection = protect_source(source).expect("should protect");
+        assert_eq!(protection.replacements.len(), 1);
+        assert_eq!(
+            protection.replacements[0].original,
+            "<Chart\n  data=\"value\"\n/>"
+        );
     }
 
     #[test]
