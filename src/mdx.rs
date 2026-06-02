@@ -550,6 +550,12 @@ fn is_tag_name_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_' | b'$')
 }
 
+/// Whether `byte` can start a JSX tag or component name.  Like a JavaScript
+/// identifier, a name may begin with a letter, `_`, or `$`.
+fn is_tag_name_start(byte: u8) -> bool {
+    byte.is_ascii_alphabetic() || matches!(byte, b'_' | b'$')
+}
+
 /// A parsed JSX opening tag (or fragment opener `<>`).
 struct OpenTag<'a> {
     /// Byte offset just past the tag's closing `>` or `/>`.
@@ -596,8 +602,8 @@ fn scan_open_tag(span: &str, start: usize) -> OpenTagScan<'_> {
             multiline: false,
         });
     }
-    // A tag name must begin with a letter.
-    if !bytes.get(start + 1).is_some_and(u8::is_ascii_alphabetic) {
+    // A tag name must begin with a letter, `_`, or `$`.
+    if !bytes.get(start + 1).is_some_and(|&b| is_tag_name_start(b)) {
         return OpenTagScan::NoMatch;
     }
     let name_start = start + 1;
@@ -917,7 +923,7 @@ fn scan_jsx(span: &str, start: usize) -> JsxScan {
     // Must be able to begin a JSX construct: `<>` or `<` + tag name.
     match bytes.get(start + 1) {
         Some(b'>') => {}
-        Some(&byte) if byte.is_ascii_alphabetic() => {}
+        Some(&byte) if is_tag_name_start(byte) => {}
         _ => return JsxScan::NoMatch,
     }
 
@@ -959,9 +965,7 @@ fn scan_jsx(span: &str, start: usize) -> JsxScan {
                 }
             }
             b'<' if matches!(bytes.get(index + 1), Some(b'>'))
-                || bytes
-                    .get(index + 1)
-                    .is_some_and(|b| b.is_ascii_alphabetic()) =>
+                || bytes.get(index + 1).is_some_and(|&b| is_tag_name_start(b)) =>
             {
                 match scan_open_tag(span, index) {
                     OpenTagScan::Parsed(tag) => {
@@ -1229,6 +1233,19 @@ mod tests {
     fn scan_jsx_self_closing_with_expression_attr() {
         let span = "<Chart data={data} />";
         assert_eq!(jsx_end(span), Some(span.len()));
+    }
+
+    #[test]
+    fn scan_jsx_tag_name_starting_with_underscore_or_dollar() {
+        // JSX component names may begin with `_` or `$`, like JS identifiers.
+        let underscore = "<_Component data={x} />";
+        assert_eq!(jsx_end(underscore), Some(underscore.len()));
+        let dollar = "<$El data={x} />";
+        assert_eq!(jsx_end(dollar), Some(dollar.len()));
+        // A container whose `_`-named opener carries an expression attribute is
+        // protected, and its `</_Box>` close is matched.
+        let container = "<_Box id={i}>text</_Box>";
+        assert_eq!(jsx_end(container), Some(container.len()));
     }
 
     #[test]
