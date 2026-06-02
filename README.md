@@ -100,6 +100,9 @@ hongdown --line-width 100 input.md
 
 # Disable word wrapping entirely
 hongdown --no-line-width input.md
+
+# Enable MDX mode for non-.mdx input (.mdx files enable it automatically)
+hongdown --mdx input.md
 ~~~~
 
 ### HTML comment directives
@@ -214,6 +217,7 @@ git_aware = true          # Respect .gitignore and skip .git directory (default:
 # Formatting options
 line_width = 80           # Maximum line width (min: 8, default: 80); set to false to disable wrapping
 math = true               # Preserve TeX math ($…$ and $$…$$) verbatim (default: true)
+mdx = false               # MDX mode: preserve embedded JS/JSX verbatim (default: false)
 
 [heading]
 setext_h1 = true          # Use === underline for h1 (default: true)
@@ -463,6 +467,49 @@ $$
 x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
 $$
 ~~~~
+
+### MDX
+
+MDX documents mix Markdown with JavaScript and JSX.  Because the underlying
+CommonMark parser does not understand those constructs, formatting an MDX
+document normally corrupts the embedded code.  *MDX mode* (“first, do no harm”)
+detects the JS/JSX constructs and passes them through verbatim, while the
+surrounding Markdown prose is still formatted.
+
+Within paragraph text, the constructs Hongdown would otherwise corrupt are
+preserved verbatim — never escaped or punctuation-transformed:
+
+ -  ESM `import`/`export` statements, JSX elements and fragments (`<Tabs …>`,
+    `<Chart … />`, `<>…</>`), and `{…}` expressions (including `{/* … */}`
+    comments)
+ -  The embedded JavaScript/JSX is preserved, not reformatted
+ -  Files with the *.mdx* extension enable MDX mode automatically; for stdin or
+    *.md* input, enable it with `--mdx` or `mdx = true` in *.hongdown.toml*
+
+~~~~ mdx
+import { Chart } from "./chart.js";
+
+export const meta = { author: "Hong Minhee" };
+
+<PackageManagerTabs
+  command={{ npm: "npm add @scope/pkg" }}
+/>
+
+A paragraph of prose is still wrapped and punctuation-transformed, while the
+JSX and imports above are left exactly as written.
+~~~~
+
+A JSX tag that is already valid inline HTML (for example a single `{value}`
+attribute) is left to the underlying parser, which keeps the tag while still
+formatting the element's Markdown children; only tags that break the HTML
+grammar (a `{{…}}` attribute, embedded quotes or spaces, or a multi-line opener)
+are protected as a whole.
+
+Some constructs are intentionally left unprotected: anything inside a heading
+(an explicit `{#id}` anchor stays a heading anchor), braces inside inline code
+(`` `{x}` ``), math (`$\frac{1}{2}$`), or link/image syntax, an expression
+containing a regex literal whose context is ambiguous (a `/` immediately after
+`}`), and an ESM object whose body contains a blank line.
 
 ### Links
 

@@ -677,3 +677,60 @@ The HTML specification defines this behavior.
 
 *[HTML]: HyperText Markup Language
 ~~~~
+
+
+MDX
+---
+
+MDX documents interleave Markdown with JavaScript and JSX.  Those constructs are
+not part of CommonMark, so formatting them as ordinary Markdown corrupts the
+embedded code.  When MDX mode is enabled, the guiding principle is “first, do no
+harm”: detect the JavaScript/JSX constructs and preserve them verbatim, while
+still formatting the surrounding Markdown prose.
+
+MDX mode is off by default.  It is enabled automatically for files with the
+*.mdx* extension, and can be enabled explicitly for other input.
+
+Protection applies to constructs that appear in paragraph text and that Hongdown
+would otherwise corrupt.  Constructs inside headings are left to the heading
+formatter (an explicit `{#id}` anchor stays a heading anchor).
+
+### Preserve embedded JavaScript and JSX
+
+The following constructs are preserved exactly as written — never wrapped,
+escaped, or punctuation-transformed:
+
+ -  ESM `import` and `export` statements
+ -  JSX elements (`<Tabs …>…</Tabs>`, `<Chart … />`) and fragments (`<>…</>`)
+ -  `{…}` expressions, including JSX comments (`{/* … */}`)
+
+~~~~ mdx
+import { Chart } from "./chart.js";
+
+export const meta = { author: "Hong Minhee" };
+
+<Chart data={{ title: "Sales" }} />
+
+The total is {formatCurrency("USD", total)} for the year.
+~~~~
+
+The embedded JavaScript and JSX is preserved, not reformatted; only the
+surrounding Markdown is formatted.  A JSX element whose opening tag is valid
+inline HTML (for example a single `{value}` attribute) keeps its tag while its
+Markdown children are still formatted; an element whose opening tag breaks the
+HTML grammar (a `{{…}}` attribute, embedded quotes or spaces, or a multi-line
+opener) is preserved as a whole.
+
+### Leave ambiguous and parser-owned constructs alone
+
+To avoid corrupting code, some constructs are deliberately left to the
+underlying parser instead of being protected:
+
+ -  Braces inside inline code (`` `{x}` ``), math (`$\frac{1}{2}$`), and
+    link/image syntax are not treated as expressions
+ -  Constructs inside a heading are left to the heading formatter (an explicit
+    `{#id}` anchor stays a heading anchor, not an expression)
+ -  Where distinguishing a regex literal from division would require a full
+    JavaScript parser (a `/` immediately after `}`), or where an ESM object's
+    body contains a blank line, the construct is left unprotected rather than
+    risk mis-protecting it
