@@ -2629,6 +2629,22 @@ fn test_shortcut_link_followed_by_footnote() {
 }
 
 #[test]
+fn test_sole_html_comment_has_no_leading_blank_lines() {
+    // A document whose only content is an HTML comment must not gain leading
+    // blank lines: it is a "trailing" HTML block with nothing preceding it.
+    let result = parse_and_serialize_with_source("<!-- hi -->\n");
+    assert_eq!(result, "<!-- hi -->\n");
+}
+
+#[test]
+fn test_leading_html_comment_block_then_content() {
+    // An HTML comment that opens the document (followed by prose) keeps its
+    // position with no spurious leading blank lines.
+    let result = parse_and_serialize_with_source("<!-- hi -->\n\nText.\n");
+    assert_eq!(result, "<!-- hi -->\n\nText.\n");
+}
+
+#[test]
 fn test_trailing_html_comment_after_references() {
     // Trailing HTML comments (like cSpell ignore directives) should remain
     // at the end of the document after reference definitions.

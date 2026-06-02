@@ -277,9 +277,13 @@ impl<'a> Serializer<'a> {
             }
 
             if let NodeValue::HtmlBlock(html_block) = &child.data.borrow().value {
-                // Add a blank line before the first trailing HTML block
+                // Add a blank line before the first trailing HTML block, but only
+                // when something precedes it — a document whose only content is
+                // HTML blocks must not gain leading blank lines.
                 if is_first {
-                    if !self.output.ends_with("\n\n") {
+                    if self.output.is_empty() {
+                        // Nothing precedes this block; no separator needed.
+                    } else if !self.output.ends_with("\n\n") {
                         if self.output.ends_with('\n') {
                             self.output.push('\n');
                         } else {
