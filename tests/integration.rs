@@ -263,6 +263,124 @@ mod mdx_esm {
     }
 }
 
+/// MDX mode: JSX elements and fragments that comrak would corrupt are preserved
+/// verbatim, while plain prose around them is still formatted.
+mod mdx_jsx {
+    use hongdown::{Options, format};
+
+    fn mdx_options() -> Options {
+        Options {
+            mdx: true,
+            ..Options::default()
+        }
+    }
+
+    /// A single-line tag with an expression attribute is corrupted without MDX
+    /// mode (its string literal is curled) and preserved with it.
+    #[test]
+    fn single_line_expression_attribute() {
+        let input = "<Chart data={{ title: \"Hello\" }} />\n";
+        let off = format(input, &Options::default()).unwrap();
+        assert!(
+            off.contains('\u{201c}'),
+            "expected corruption when off: {off:?}"
+        );
+        let on = format(input, &mdx_options()).unwrap();
+        assert_eq!(on, input);
+    }
+
+    /// A multi-line self-closing element (open tag incomplete on line 1) loses
+    /// its indentation and curls quotes without MDX mode; with it, every byte is
+    /// preserved.
+    #[test]
+    fn multiline_self_closing_element() {
+        let input =
+            "<PackageManagerTabs\n  command={{\n    npm: \"npm add @scope/pkg\",\n  }}\n/>\n";
+        let off = format(input, &Options::default()).unwrap();
+        assert_ne!(off, input, "expected corruption when off");
+        let on = format(input, &mdx_options()).unwrap();
+        assert_eq!(on, input);
+    }
+
+    /// JSX fragments are preserved verbatim.
+    #[test]
+    fn fragment_preserved() {
+        let input = "<>It's a \"fragment\"</>\n";
+        let on = format(input, &mdx_options()).unwrap();
+        assert_eq!(on, input);
+        let off = format(input, &Options::default()).unwrap();
+        assert!(
+            off.contains('\u{201c}'),
+            "expected corruption when off: {off:?}"
+        );
+    }
+
+    /// A container element with an expression attribute is preserved as a whole.
+    #[test]
+    fn braced_container_preserved() {
+        let input = "<Tabs value={selected}>It's \"nested\" content</Tabs>\n";
+        let on = format(input, &mdx_options()).unwrap();
+        assert_eq!(on, input);
+    }
+
+    /// A plain (brace-free, single-line) tag is handled by comrak already, so MDX
+    /// mode does not change it.
+    #[test]
+    fn plain_container_unchanged() {
+        let input = "<Note type=\"tip\">Some text here.</Note>\n";
+        let on = format(input, &mdx_options()).unwrap();
+        let off = format(input, &Options::default()).unwrap();
+        assert_eq!(on, off);
+    }
+
+    /// Inside a plain container, a braced child element is still protected
+    /// individually while the surrounding prose is formatted: the child's string
+    /// literal keeps straight quotes, but the prose quotes are curled.
+    #[test]
+    fn braced_child_in_plain_container() {
+        let input = "<Note>It's \"great\" and <Badge label={\"wow\"} /> indeed.</Note>\n";
+        let on = format(input, &mdx_options()).unwrap();
+        assert!(
+            on.contains("label={\"wow\"}"),
+            "child should keep straight quotes: {on:?}"
+        );
+        assert!(on.contains('\u{201c}'), "prose quotes should curl: {on:?}");
+    }
+
+    /// An inline JSX element in prose is preserved while the surrounding prose is
+    /// still punctuation-transformed.
+    #[test]
+    fn inline_jsx_in_prose() {
+        let input = "He said \"hi\" then <Badge count={n} /> appeared.\n";
+        let on = format(input, &mdx_options()).unwrap();
+        assert!(on.contains("<Badge count={n} />"));
+        assert!(
+            on.contains('\u{201c}'),
+            "prose quotes should still curl: {on:?}"
+        );
+    }
+
+    /// Formatting an MDX document with JSX is idempotent.
+    #[test]
+    fn jsx_idempotent() {
+        let input = "<Chart data={{ title: \"Hello\" }} />\n\n\
+            A paragraph with \"quotes\" and a <Badge count={n} /> inline element.\n";
+        let options = mdx_options();
+        let first = format(input, &options).unwrap();
+        let second = format(&first, &options).unwrap();
+        assert_eq!(first, second);
+    }
+
+    /// Comparison operators and stray `<` in prose are not mistaken for JSX.
+    #[test]
+    fn comparison_not_treated_as_jsx() {
+        let input = "If a < b and c > d then proceed.\n";
+        let on = format(input, &mdx_options()).unwrap();
+        let off = format(input, &Options::default()).unwrap();
+        assert_eq!(on, off);
+    }
+}
+
 mod cli_tests {
     use std::io::Write;
     use std::process::{Command, Stdio};

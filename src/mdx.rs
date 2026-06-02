@@ -149,8 +149,9 @@ fn span_bytes(source: &str, line_starts: &[usize], sourcepos: Sourcepos) -> Opti
 /// is left unprotected (a documented limitation) rather than scanning into
 /// unrelated later content.
 ///
-/// Currently detects ESM `import`/`export` statements; JSX elements and `{…}`
-/// expressions are added incrementally.
+/// Detects ESM `import`/`export` statements (recognized at line starts) and JSX
+/// elements/fragments (recognized anywhere).  `{…}` expressions are added
+/// incrementally.
 fn find_constructs(span: &str) -> Vec<(usize, usize)> {
     let bytes = span.as_bytes();
     let mut ranges = Vec::new();
@@ -171,6 +172,15 @@ fn find_constructs(span: &str) -> Vec<(usize, usize)> {
                 at_line_start = bytes.get(index) == Some(&b'\n');
                 continue;
             }
+        }
+        // JSX elements and fragments can appear anywhere (flow or inline).
+        if bytes[index] == b'<'
+            && let Some(end) = scan_jsx(span, index)
+        {
+            ranges.push((index, end));
+            index = end;
+            at_line_start = bytes.get(index) == Some(&b'\n');
+            continue;
         }
         if bytes[index] == b'\n' {
             at_line_start = true;
@@ -295,25 +305,8 @@ fn scan_esm(span: &str, start: usize) -> Option<usize> {
             b'"' | b'\'' | b'`' => {
                 index = skip_string(span, index)?;
             }
-            b'/' if bytes.get(index + 1) == Some(&b'/') => {
-                // Line comment: skip to (but not past) the end of the line so the
-                // newline arm still sees it for the depth check.
-                index += 2;
-                while index < span.len() && bytes[index] != b'\n' {
-                    index += char_len(bytes[index]);
-                }
-            }
-            b'/' if bytes.get(index + 1) == Some(&b'*') => {
-                // Block comment: skip to the closing `*/`.
-                index += 2;
-                while index < span.len()
-                    && !(bytes[index] == b'*' && bytes.get(index + 1) == Some(&b'/'))
-                {
-                    index += char_len(bytes[index]);
-                }
-                if index < span.len() {
-                    index += 2;
-                }
+            b'/' if let Some(after) = skip_comment(span, index) => {
+                index = after;
             }
             b'{' | b'(' | b'[' => {
                 depth += 1;
@@ -361,6 +354,256 @@ fn finish_esm(end: usize, needs_from: bool, saw_from: bool) -> Option<usize> {
     } else {
         Some(end)
     }
+}
+
+/// If a `//` line comment or `/* … */` block comment starts at `start`, return
+/// the byte offset just past it.  A line comment stops at — but does not consume
+/// — the terminating newline.  Returns `None` when no comment starts there.
+fn skip_comment(span: &str, start: usize) -> Option<usize> {
+    let bytes = span.as_bytes();
+    match (bytes.get(start), bytes.get(start + 1)) {
+        (Some(b'/'), Some(b'/')) => {
+            let mut index = start + 2;
+            while index < span.len() && bytes[index] != b'\n' {
+                index += char_len(bytes[index]);
+            }
+            Some(index)
+        }
+        (Some(b'/'), Some(b'*')) => {
+            let mut index = start + 2;
+            while index < span.len()
+                && !(bytes[index] == b'*' && bytes.get(index + 1) == Some(&b'/'))
+            {
+                index += char_len(bytes[index]);
+            }
+            if index < span.len() {
+                index += 2; // consume the closing `*/`
+            }
+            Some(index)
+        }
+        _ => None,
+    }
+}
+
+/// Whether `byte` can appear in a JSX tag or component name (after the first
+/// letter): identifiers, member access (`Foo.Bar`), and hyphenated custom
+/// element names.
+fn is_tag_name_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_' | b'$')
+}
+
+/// A parsed JSX opening tag (or fragment opener `<>`).
+struct OpenTag<'a> {
+    /// Byte offset just past the tag's closing `>` or `/>`.
+    end: usize,
+    /// The tag/component name (empty for a fragment).
+    name: &'a str,
+    /// Whether the tag is self-closing (`/>`).
+    self_closing: bool,
+    /// Whether this is a fragment opener `<>`.
+    is_fragment: bool,
+    /// Whether the tag carries a `{…}` expression attribute.
+    has_expression: bool,
+    /// Whether the tag spans more than one line.
+    multiline: bool,
+}
+
+/// Parse a JSX opening tag (or fragment `<>`) starting at `start` (a `<`).
+/// String literals and `{…}` expression attributes are skipped so that
+/// `>`/`{`/`}` inside them do not terminate the tag.  Returns `None` if the tag
+/// is not well-formed within the span.
+fn scan_open_tag(span: &str, start: usize) -> Option<OpenTag<'_>> {
+    let bytes = span.as_bytes();
+    // Fragment opener `<>`.
+    if bytes.get(start + 1) == Some(&b'>') {
+        return Some(OpenTag {
+            end: start + 2,
+            name: "",
+            self_closing: false,
+            is_fragment: true,
+            has_expression: false,
+            multiline: false,
+        });
+    }
+    // A tag name must begin with a letter.
+    if !bytes.get(start + 1).is_some_and(u8::is_ascii_alphabetic) {
+        return None;
+    }
+    let name_start = start + 1;
+    let mut index = name_start;
+    while index < span.len() && is_tag_name_byte(bytes[index]) {
+        index += 1;
+    }
+    let name = &span[name_start..index];
+
+    let mut has_expression = false;
+    let mut multiline = false;
+    while index < span.len() {
+        match bytes[index] {
+            b'>' => {
+                return Some(OpenTag {
+                    end: index + 1,
+                    name,
+                    self_closing: false,
+                    is_fragment: false,
+                    has_expression,
+                    multiline,
+                });
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'>') => {
+                return Some(OpenTag {
+                    end: index + 2,
+                    name,
+                    self_closing: true,
+                    is_fragment: false,
+                    has_expression,
+                    multiline,
+                });
+            }
+            b'{' => {
+                has_expression = true;
+                index = skip_braces(span, index)?;
+            }
+            b'"' | b'\'' | b'`' => {
+                index = skip_string(span, index)?;
+            }
+            b'\n' => {
+                multiline = true;
+                index += 1;
+            }
+            byte => index += char_len(byte),
+        }
+    }
+    None
+}
+
+/// Read a JSX closing tag `</name>` (or fragment close `</>`) starting at `start`
+/// (a `<` followed by `/`).  Returns the tag name (empty for a fragment) and the
+/// byte offset just past the `>`.
+fn read_close_tag(span: &str, start: usize) -> Option<(&str, usize)> {
+    let bytes = span.as_bytes();
+    let mut index = start + 2;
+    let name_start = index;
+    while index < span.len() && is_tag_name_byte(bytes[index]) {
+        index += 1;
+    }
+    let name = &span[name_start..index];
+    while index < span.len() && matches!(bytes[index], b' ' | b'\t' | b'\n') {
+        index += 1;
+    }
+    if bytes.get(index) != Some(&b'>') {
+        return None;
+    }
+    Some((name, index + 1))
+}
+
+/// Skip a balanced `{…}` expression starting at `start` (a `{`).  Returns the
+/// byte offset just past the matching `}`.  String literals and comments inside
+/// are skipped so their braces do not affect nesting.  Returns `None` if the
+/// braces never balance within the span.
+fn skip_braces(span: &str, start: usize) -> Option<usize> {
+    let bytes = span.as_bytes();
+    let mut depth = 0i32;
+    let mut index = start;
+    while index < span.len() {
+        match bytes[index] {
+            b'{' => {
+                depth += 1;
+                index += 1;
+            }
+            b'}' => {
+                depth -= 1;
+                index += 1;
+                if depth == 0 {
+                    return Some(index);
+                }
+            }
+            b'"' | b'\'' | b'`' => {
+                index = skip_string(span, index)?;
+            }
+            b'/' if let Some(after) = skip_comment(span, index) => {
+                index = after;
+            }
+            byte => index += char_len(byte),
+        }
+    }
+    None
+}
+
+/// If a JSX element or fragment that comrak would otherwise corrupt starts at
+/// `start` (a `<`), return the byte offset just past its end.
+///
+/// A construct is protected only when comrak misparses it: a fragment (`<>…</>`),
+/// or an element whose opening tag carries a `{…}` expression attribute or spans
+/// multiple lines.  A plain single-line HTML-shaped tag (e.g. `<Chart x="y" />`)
+/// is already preserved verbatim by comrak, so it is left untouched (returns
+/// `None`).  Autolinks (`<https://…>`) and stray `<` in prose also return `None`.
+///
+/// Container elements are protected as a whole (opening tag through the matching
+/// closing tag), consistent with comrak's existing treatment of tag-based JSX;
+/// the embedded JSX is preserved rather than reformatted.  String literals and
+/// `{…}` expressions (which may themselves contain `<`/`>`) are skipped while
+/// matching tags.  Returns `None` for anything that cannot be delimited as a
+/// balanced construct within the span (do-no-harm).
+fn scan_jsx(span: &str, start: usize) -> Option<usize> {
+    let bytes = span.as_bytes();
+    // Must be able to begin a JSX construct: `<>` or `<` + tag name.
+    match bytes.get(start + 1) {
+        Some(b'>') => {}
+        Some(&byte) if byte.is_ascii_alphabetic() => {}
+        _ => return None,
+    }
+
+    // The protection decision depends only on the *root* construct: comrak
+    // corrupts a fragment, or a tag with a `{…}` attribute or multi-line opener.
+    // A plain root tag (even a container) is preserved by comrak as-is, so it is
+    // left alone — the caller then scans its children, where any nested
+    // expression/JSX is protected independently and prose stays formatted.
+    let root = scan_open_tag(span, start)?;
+    if !(root.is_fragment || root.has_expression || root.multiline) {
+        return None;
+    }
+    if root.self_closing {
+        return Some(root.end);
+    }
+
+    // Protected container: scan to the matching closing tag, tracking nesting.
+    // Nested tags' own attributes do not affect the (already decided) protection.
+    let mut stack: Vec<&str> = vec![root.name];
+    let mut index = root.end;
+    while index < span.len() {
+        match bytes[index] {
+            b'<' if bytes.get(index + 1) == Some(&b'/') => {
+                let (name, after) = read_close_tag(span, index)?;
+                match stack.pop() {
+                    Some(open) if open == name => {}
+                    _ => return None, // mismatched or stray close tag
+                }
+                index = after;
+                if stack.is_empty() {
+                    return Some(index);
+                }
+            }
+            b'<' if matches!(bytes.get(index + 1), Some(b'>'))
+                || bytes
+                    .get(index + 1)
+                    .is_some_and(|b| b.is_ascii_alphabetic()) =>
+            {
+                let tag = scan_open_tag(span, index)?;
+                index = tag.end;
+                if !tag.self_closing {
+                    stack.push(tag.name);
+                }
+            }
+            b'<' => index += 1, // a literal `<` in element children
+            b'{' => {
+                // A `{…}` expression among element children.
+                index = skip_braces(span, index)?;
+            }
+            byte => index += char_len(byte),
+        }
+    }
+    None
 }
 
 /// Skip a string literal that starts at `start` (a `"`, `'`, or `` ` `` quote).
@@ -543,6 +786,101 @@ mod tests {
         // protected.
         assert!(protect_source("export these notes from class today.\n").is_none());
         assert!(protect_source("import more discipline into your life.\n").is_none());
+    }
+
+    #[test]
+    fn scan_jsx_self_closing_with_expression_attr() {
+        let span = "<Chart data={data} />";
+        assert_eq!(scan_jsx(span, 0), Some(span.len()));
+    }
+
+    #[test]
+    fn scan_jsx_plain_self_closing_not_protected() {
+        // A complete single-line tag is already preserved verbatim by comrak.
+        assert_eq!(scan_jsx("<Chart data=\"x\" />", 0), None);
+    }
+
+    #[test]
+    fn scan_jsx_multiline_self_closing() {
+        let span = "<PackageManagerTabs\n  command={{ npm: \"x\" }}\n/>";
+        assert_eq!(scan_jsx(span, 0), Some(span.len()));
+    }
+
+    #[test]
+    fn scan_jsx_multiline_open_tag_without_expression() {
+        let span = "<Chart\n  data=\"x\"\n/>";
+        assert_eq!(scan_jsx(span, 0), Some(span.len()));
+    }
+
+    #[test]
+    fn scan_jsx_fragment() {
+        let span = "<>hello</>";
+        assert_eq!(scan_jsx(span, 0), Some(span.len()));
+    }
+
+    #[test]
+    fn scan_jsx_container_with_expression_attr() {
+        let span = "<Tabs value={selected}>content</Tabs>";
+        assert_eq!(scan_jsx(span, 0), Some(span.len()));
+    }
+
+    #[test]
+    fn scan_jsx_plain_container_not_protected() {
+        // comrak preserves the tags; any expression children are handled
+        // separately by the expression scanner.
+        assert_eq!(scan_jsx("<Tabs>content</Tabs>", 0), None);
+    }
+
+    #[test]
+    fn scan_jsx_plain_container_with_braced_child_not_protected() {
+        // The root tag is plain, so the whole container is not protected even
+        // though a child has an expression attribute — the child is protected
+        // separately and the prose between tags stays formattable.
+        assert_eq!(scan_jsx("<Note>x <Badge count={n} /></Note>", 0), None);
+    }
+
+    #[test]
+    fn scan_jsx_double_brace_attribute() {
+        let span = "<Foo style={{ color: \"red\" }} />";
+        assert_eq!(scan_jsx(span, 0), Some(span.len()));
+    }
+
+    #[test]
+    fn scan_jsx_nested_self_closing_in_braced_container() {
+        let span = "<Foo bar={1}><Baz/></Foo>";
+        assert_eq!(scan_jsx(span, 0), Some(span.len()));
+    }
+
+    #[test]
+    fn scan_jsx_expression_attribute_with_angle_brackets() {
+        // The `<Bar/>` lives inside an attribute expression; the element is
+        // protected as a whole via its `{…}` attribute.
+        let span = "<Foo render={() => <Bar/>} />";
+        assert_eq!(scan_jsx(span, 0), Some(span.len()));
+    }
+
+    #[test]
+    fn scan_jsx_attribute_string_with_angle_and_brace_not_protected() {
+        // `>` and `{` live in a quoted attribute, so comrak parses the tag fine.
+        assert_eq!(scan_jsx("<Foo title=\"a > b {c}\" />", 0), None);
+    }
+
+    #[test]
+    fn scan_jsx_rejects_comparison_and_non_tag() {
+        assert_eq!(scan_jsx("< b", 0), None);
+        assert_eq!(scan_jsx("<3 ideas", 0), None);
+        assert_eq!(scan_jsx("</close>", 0), None);
+    }
+
+    #[test]
+    fn scan_jsx_rejects_autolink() {
+        assert_eq!(scan_jsx("<https://example.com>", 0), None);
+        assert_eq!(scan_jsx("<user@example.com>", 0), None);
+    }
+
+    #[test]
+    fn scan_jsx_unterminated_returns_none() {
+        assert_eq!(scan_jsx("<Foo bar={1}>no close", 0), None);
     }
 
     #[test]
