@@ -714,7 +714,7 @@ fn read_close_tag(span: &str, start: usize) -> Option<(&str, usize)> {
         index += 1;
     }
     let name = &span[name_start..index];
-    while index < span.len() && matches!(bytes[index], b' ' | b'\t' | b'\n') {
+    while index < span.len() && matches!(bytes[index], b' ' | b'\t' | b'\n' | b'\r') {
         index += 1;
     }
     if bytes.get(index) != Some(&b'>') {
@@ -1354,6 +1354,15 @@ mod tests {
     fn scan_jsx_fragment() {
         let span = "<>hello</>";
         assert_eq!(jsx_end(span), Some(span.len()));
+    }
+
+    #[test]
+    fn read_close_tag_skips_whitespace_including_carriage_return() {
+        // A CRLF (or any whitespace) between the name and `>` is skipped.
+        let span = "</Foo\r\n>";
+        assert_eq!(read_close_tag(span, 0), Some(("Foo", span.len())));
+        // Fragment close `</>`.
+        assert_eq!(read_close_tag("</>", 0), Some(("", "</>".len())));
     }
 
     #[test]
