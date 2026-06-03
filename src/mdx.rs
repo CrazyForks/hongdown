@@ -495,8 +495,14 @@ fn scan_esm(span: &str, start: usize) -> Option<usize> {
                     // Ambiguous regex-or-division after `}`; do not guess.
                     return None;
                 } else if allows_regex(prev, prev_word) {
-                    index = skip_regex(span, index).unwrap_or(index + 1);
-                    prev = Some(VALUE);
+                    if let Some(after) = skip_regex(span, index) {
+                        index = after;
+                        prev = Some(VALUE); // a regex is a value: a following `/` is division
+                    } else {
+                        // Not a valid regex after all; treat the `/` as division.
+                        index += 1;
+                        prev = Some(b'/');
+                    }
                     prev_word = None;
                 } else {
                     index += 1;
