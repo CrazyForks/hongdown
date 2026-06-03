@@ -6,6 +6,38 @@ Version 0.5.0
 
 To be released.
 
+ -  Added MDX support.  MDX documents embed JavaScript and JSX that comrak (the
+    underlying CommonMark parser) does not understand, so Hongdown used to
+    mangle them—turning straight quotes into curly quotes, backslash-escaping
+    Markdown punctuation, and collapsing indentation.  When MDX mode is
+    enabled, Hongdown now detects those constructs and preserves them verbatim
+    while still formatting the surrounding Markdown prose.
+
+    Within Markdown prose, the protected constructs are ESM `import`/`export`
+    statements, JSX elements and fragments, and `{…}` expressions (including JSX
+    comments like `{/* … */}`).  The embedded JavaScript/JSX is preserved as-is,
+    not reformatted; constructs that the underlying parser already handles
+    correctly—such as a valid inline-HTML JSX tag or a `{#id}` heading
+    anchor—are left to it.
+
+    MDX mode is enabled automatically for files with the *.mdx* extension, which
+    are now also discovered when a directory is passed on the command line.  It
+    can be turned on explicitly for stdin or *.md* input with the `--mdx`
+    command-line flag or the `mdx` option in *.hongdown.toml* (Rust API:
+    `Options.mdx`, type `bool`; WASM/JavaScript: `mdx`, type `boolean`).  All
+    default to off, so non-MDX documents are unaffected.  [[#22], [#23]]
+
+ -  Fixed a bug where a document whose only content was one or more HTML blocks
+    (for example a single HTML comment) gained two spurious leading blank lines.
+    [[#23]]
+
+ -  Fixed a bug where two consecutive trailing HTML blocks that were separated
+    by a blank line in the source were emitted on adjacent lines, dropping the
+    blank line between them.  [[#23]]
+
+[#22]: https://github.com/dahlia/hongdown/issues/22
+[#23]: https://github.com/dahlia/hongdown/pull/23
+
 
 Version 0.4.3
 -------------

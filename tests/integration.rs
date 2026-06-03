@@ -164,6 +164,441 @@ fn test_whitespace_only() {
     assert!(result.trim().is_empty() || result.is_empty());
 }
 
+/// MDX mode: ESM `import`/`export` statements are preserved verbatim instead of
+/// being mangled by punctuation transforms and Markdown escaping.
+mod mdx_esm {
+    use hongdown::{LineWidth, Options, format};
+
+    fn mdx_options() -> Options {
+        Options {
+            mdx: true,
+            ..Options::default()
+        }
+    }
+
+    /// Without MDX mode (the default), an import's string literal is corrupted:
+    /// its straight double quotes become curly quotes.  This pins MDX mode as
+    /// strictly opt-in.
+    #[test]
+    fn esm_corrupted_when_mdx_disabled() {
+        let input = "import { Chart } from \"./chart.js\";\n";
+        let result = format(input, &Options::default()).unwrap();
+        assert!(
+            result.contains('\u{201c}') || result.contains('\u{201d}'),
+            "expected curly quotes when MDX mode is off: {result:?}"
+        );
+        assert!(!result.contains("from \"./chart.js\""));
+    }
+
+    /// With MDX mode on, the import line is preserved byte-for-byte.
+    #[test]
+    fn esm_import_preserved_when_mdx_enabled() {
+        let input = "import { Chart } from \"./chart.js\";\n";
+        let result = format(input, &mdx_options()).unwrap();
+        assert_eq!(result, "import { Chart } from \"./chart.js\";\n");
+    }
+
+    /// `export const … = { … }` with single quotes is preserved verbatim.
+    #[test]
+    fn esm_export_object_preserved() {
+        let input = "export const meta = { author: 'Hong Minhee' };\n";
+        let result = format(input, &mdx_options()).unwrap();
+        assert_eq!(result, "export const meta = { author: 'Hong Minhee' };\n");
+    }
+
+    /// A multi-line import (brace list spanning lines) is preserved verbatim,
+    /// including its internal newlines and indentation.
+    #[test]
+    fn esm_multiline_import_preserved() {
+        let input = "import {\n  Chart,\n  Tabs,\n} from \"./ui.js\";\n";
+        let result = format(input, &mdx_options()).unwrap();
+        assert_eq!(result, input);
+    }
+
+    /// Surrounding prose is still formatted (wrapped at the line width) while the
+    /// import passes through untouched.
+    #[test]
+    fn esm_prose_still_wraps() {
+        let input = "import { Chart } from \"./chart.js\";\n\n\
+            This is a fairly long paragraph of prose that comfortably exceeds the \
+            eighty column width and therefore must be wrapped by the formatter.\n";
+        let options = Options {
+            line_width: Some(LineWidth::new(80).unwrap()),
+            ..mdx_options()
+        };
+        let result = format(input, &options).unwrap();
+        assert!(result.contains("import { Chart } from \"./chart.js\";"));
+        // The prose paragraph must have been wrapped onto multiple lines.
+        let prose = result.split("\n\n").nth(1).unwrap_or("");
+        assert!(
+            prose.lines().count() > 1,
+            "expected the prose to wrap: {result:?}"
+        );
+        assert!(prose.lines().all(|line| line.chars().count() <= 80));
+    }
+
+    /// Formatting an MDX document with ESM statements twice yields identical
+    /// output.
+    #[test]
+    fn esm_idempotent() {
+        let input = "import { Chart } from \"./chart.js\";\n\n\
+            export const meta = { author: 'Hong Minhee' };\n\n\
+            Some prose with \"quotes\" and -- dashes.\n";
+        let options = mdx_options();
+        let first = format(input, &options).unwrap();
+        let second = format(&first, &options).unwrap();
+        assert_eq!(first, second, "MDX formatting should be idempotent");
+        assert!(first.contains("import { Chart } from \"./chart.js\";"));
+        assert!(first.contains("export const meta = { author: 'Hong Minhee' };"));
+    }
+
+    /// MDX mode does not change a plain Markdown document that has no MDX
+    /// constructs: output equals the default-options output.
+    #[test]
+    fn no_change_for_plain_markdown() {
+        let input = "# Title\n\nA paragraph with \"quotes\" and a [link](https://example.com/).\n";
+        let with_mdx = format(input, &mdx_options()).unwrap();
+        let without_mdx = format(input, &Options::default()).unwrap();
+        assert_eq!(with_mdx, without_mdx);
+    }
+}
+
+/// MDX mode: JSX elements and fragments that comrak would corrupt are preserved
+/// verbatim, while plain prose around them is still formatted.
+mod mdx_jsx {
+    use hongdown::{Options, format};
+
+    fn mdx_options() -> Options {
+        Options {
+            mdx: true,
+            ..Options::default()
+        }
+    }
+
+    /// A single-line tag with an expression attribute is corrupted without MDX
+    /// mode (its string literal is curled) and preserved with it.
+    #[test]
+    fn single_line_expression_attribute() {
+        let input = "<Chart data={{ title: \"Hello\" }} />\n";
+        let off = format(input, &Options::default()).unwrap();
+        assert!(
+            off.contains('\u{201c}'),
+            "expected corruption when off: {off:?}"
+        );
+        let on = format(input, &mdx_options()).unwrap();
+        assert_eq!(on, input);
+    }
+
+    /// A multi-line self-closing element (open tag incomplete on line 1) loses
+    /// its indentation and curls quotes without MDX mode; with it, every byte is
+    /// preserved.
+    #[test]
+    fn multiline_self_closing_element() {
+        let input =
+            "<PackageManagerTabs\n  command={{\n    npm: \"npm add @scope/pkg\",\n  }}\n/>\n";
+        let off = format(input, &Options::default()).unwrap();
+        assert_ne!(off, input, "expected corruption when off");
+        let on = format(input, &mdx_options()).unwrap();
+        assert_eq!(on, input);
+    }
+
+    /// A multi-line opening tag with no `{…}` attribute is also corrupted by
+    /// comrak (it is multi-line inline HTML it does not round-trip) and is
+    /// preserved by MDX mode.
+    #[test]
+    fn multiline_opener_without_expression() {
+        let input = "<Chart\n  data=\"value\"\n/>\n";
+        let off = format(input, &Options::default()).unwrap();
+        assert_ne!(off, input, "expected corruption when off");
+        let on = format(input, &mdx_options()).unwrap();
+        assert_eq!(on, input);
+    }
+
+    /// JSX fragments are preserved verbatim.
+    #[test]
+    fn fragment_preserved() {
+        let input = "<>It's a \"fragment\"</>\n";
+        let on = format(input, &mdx_options()).unwrap();
+        assert_eq!(on, input);
+        let off = format(input, &Options::default()).unwrap();
+        assert!(
+            off.contains('\u{201c}'),
+            "expected corruption when off: {off:?}"
+        );
+    }
+
+    /// A container whose opening tag comrak cannot parse (here a `{{…}}` object
+    /// attribute, which breaks CommonMark's tag grammar) is preserved as a whole,
+    /// keeping its children verbatim.
+    #[test]
+    fn corrupt_braced_container_preserved() {
+        let input = "<Tabs value={{ id: selected }}>It's \"nested\" content</Tabs>\n";
+        let off = format(input, &Options::default()).unwrap();
+        assert!(
+            off.contains('\u{201c}'),
+            "expected corruption when off: {off:?}"
+        );
+        let on = format(input, &mdx_options()).unwrap();
+        assert_eq!(on, input);
+    }
+
+    /// A container whose opening tag *is* valid inline HTML (a simple `{…}`
+    /// attribute) is handled by comrak: the JS attribute is preserved while the
+    /// Markdown children are still formatted.
+    #[test]
+    fn simple_braced_container_keeps_attribute_formats_children() {
+        let input = "<Tabs value={selected}>It's \"nested\" content</Tabs>\n";
+        let on = format(input, &mdx_options()).unwrap();
+        assert!(
+            on.contains("value={selected}"),
+            "JS attribute preserved: {on:?}"
+        );
+        assert!(on.contains('\u{201c}'), "children formatted: {on:?}");
+    }
+
+    /// A plain (brace-free, single-line) tag is handled by comrak already, so MDX
+    /// mode does not change it.
+    #[test]
+    fn plain_container_unchanged() {
+        let input = "<Note type=\"tip\">Some text here.</Note>\n";
+        let on = format(input, &mdx_options()).unwrap();
+        let off = format(input, &Options::default()).unwrap();
+        assert_eq!(on, off);
+    }
+
+    /// Inside a plain container, a braced child element is still protected
+    /// individually while the surrounding prose is formatted: the child's string
+    /// literal keeps straight quotes, but the prose quotes are curled.
+    #[test]
+    fn braced_child_in_plain_container() {
+        let input = "<Note>It's \"great\" and <Badge label={\"wow\"} /> indeed.</Note>\n";
+        let on = format(input, &mdx_options()).unwrap();
+        assert!(
+            on.contains("label={\"wow\"}"),
+            "child should keep straight quotes: {on:?}"
+        );
+        assert!(on.contains('\u{201c}'), "prose quotes should curl: {on:?}");
+    }
+
+    /// An inline JSX element in prose is preserved while the surrounding prose is
+    /// still punctuation-transformed.
+    #[test]
+    fn inline_jsx_in_prose() {
+        let input = "He said \"hi\" then <Badge count={n} /> appeared.\n";
+        let on = format(input, &mdx_options()).unwrap();
+        assert!(on.contains("<Badge count={n} />"));
+        assert!(
+            on.contains('\u{201c}'),
+            "prose quotes should still curl: {on:?}"
+        );
+    }
+
+    /// Formatting an MDX document with JSX is idempotent.
+    #[test]
+    fn jsx_idempotent() {
+        let input = "<Chart data={{ title: \"Hello\" }} />\n\n\
+            A paragraph with \"quotes\" and a <Badge count={n} /> inline element.\n";
+        let options = mdx_options();
+        let first = format(input, &options).unwrap();
+        let second = format(&first, &options).unwrap();
+        assert_eq!(first, second);
+    }
+
+    /// Comparison operators and stray `<` in prose are not mistaken for JSX.
+    #[test]
+    fn comparison_not_treated_as_jsx() {
+        let input = "If a < b and c > d then proceed.\n";
+        let on = format(input, &mdx_options()).unwrap();
+        let off = format(input, &Options::default()).unwrap();
+        assert_eq!(on, off);
+    }
+}
+
+/// MDX mode: bare `{…}` expressions are preserved verbatim, including their
+/// comments and string literals, while surrounding prose is still formatted.
+mod mdx_expressions {
+    use hongdown::{Options, format};
+
+    fn mdx_options() -> Options {
+        Options {
+            mdx: true,
+            ..Options::default()
+        }
+    }
+
+    /// A bare flow expression `{/* … */}` is corrupted without MDX mode (escaped
+    /// `*`, curled quotes) and preserved with it.
+    #[test]
+    fn flow_comment_expression() {
+        let input = "{/* a JSX comment with \"quotes\" */}\n";
+        let off = format(input, &Options::default()).unwrap();
+        assert_ne!(off, input, "expected corruption when off");
+        let on = format(input, &mdx_options()).unwrap();
+        assert_eq!(on, input);
+    }
+
+    /// An inline expression in prose is preserved while the prose is formatted.
+    #[test]
+    fn inline_expression_in_prose() {
+        let input = "Total: {count} items in the \"cart\".\n";
+        let on = format(input, &mdx_options()).unwrap();
+        assert!(on.contains("{count}"));
+        assert!(on.contains('\u{201c}'), "prose quotes should curl: {on:?}");
+    }
+
+    /// An expression's own string literal keeps straight quotes.
+    #[test]
+    fn expression_string_preserved() {
+        let input = "Price is {formatCurrency(\"USD\", 5)} today.\n";
+        let off = format(input, &Options::default()).unwrap();
+        assert!(off.contains('\u{201c}'), "expected corruption when off");
+        let on = format(input, &mdx_options()).unwrap();
+        assert_eq!(on, input);
+    }
+
+    /// A `{#id}` heading anchor is not treated as an expression; the heading is
+    /// formatted normally.
+    #[test]
+    fn heading_anchor_not_protected() {
+        let input = "## Heading title {#my-id}\n";
+        let on = format(input, &mdx_options()).unwrap();
+        let off = format(input, &Options::default()).unwrap();
+        assert_eq!(on, off);
+    }
+
+    /// Braces inside inline code and math are not mistaken for expressions.
+    #[test]
+    fn braces_in_code_and_math_untouched() {
+        let code = "Use `{x}` inline.\n";
+        let math = "The value $\\frac{1}{2}$ is a half.\n";
+        for input in [code, math] {
+            let on = format(input, &mdx_options()).unwrap();
+            let off = format(input, &Options::default()).unwrap();
+            assert_eq!(
+                on, off,
+                "code/math braces should be left to comrak: {input:?}"
+            );
+        }
+    }
+
+    /// Braces inside Markdown link/image syntax (text or destination) are owned
+    /// by comrak, so MDX mode leaves them alone and stays idempotent — a `{…}`
+    /// in link text must not desync from its reference definition.
+    #[test]
+    fn braces_in_links_untouched() {
+        let cases = [
+            "See [user](https://example.com/{id}) here.\n",
+            "Link [{label}](https://example.com/) text.\n",
+            "Image ![alt](https://example.com/{file}.png) here.\n",
+        ];
+        for input in cases {
+            let on = format(input, &mdx_options()).unwrap();
+            let off = format(input, &Options::default()).unwrap();
+            assert_eq!(
+                on, off,
+                "link/image braces should be left to comrak: {input:?}"
+            );
+            assert_eq!(
+                on,
+                format(&on, &mdx_options()).unwrap(),
+                "should be idempotent: {input:?}"
+            );
+        }
+    }
+
+    /// A real expression alongside a link is still protected.
+    #[test]
+    fn expression_next_to_link_still_protected() {
+        let input = "Mixed [{label}](u) and a real {expr} here.\n";
+        let on = format(input, &mdx_options()).unwrap();
+        assert!(on.contains("{expr}"));
+        assert!(on.contains("[{label}](u)"));
+        assert_eq!(on, format(&on, &mdx_options()).unwrap());
+    }
+
+    /// An expression containing a regex literal whose character class holds a
+    /// `}` is preserved as a whole (the regex brace must not end the expression).
+    #[test]
+    fn expression_with_regex_brace() {
+        let input = "Result: {value.replace(/[}]/g, \"x\")} done.\n";
+        let off = format(input, &Options::default()).unwrap();
+        assert!(
+            off.contains('\u{201c}'),
+            "expected corruption when off: {off:?}"
+        );
+        let on = format(input, &mdx_options()).unwrap();
+        assert_eq!(on, input);
+    }
+
+    /// Division inside an expression is not mistaken for a regex literal.
+    #[test]
+    fn expression_with_division_is_idempotent() {
+        let input = "Ratio: {a / b} and {c / d}.\n";
+        let on = format(input, &mdx_options()).unwrap();
+        assert!(on.contains("{a / b}"));
+        assert_eq!(on, format(&on, &mdx_options()).unwrap());
+    }
+}
+
+/// MDX mode end to end: the full reproduction from the issue round-trips
+/// byte-for-byte and is idempotent.
+mod mdx_document {
+    use hongdown::{Options, format, format_with_warnings};
+
+    /// A warning after a multi-line construct (collapsed to a one-line
+    /// placeholder while formatting) is still reported at its original line.
+    #[test]
+    fn warning_line_maps_back_across_multiline_construct() {
+        let input = "import {\n  a,\n  b,\n} from \"x\";\n\nText with [an undefined ref] here.\n";
+        let options = Options {
+            mdx: true,
+            ..Options::default()
+        };
+        let result = format_with_warnings(input, &options).unwrap();
+        assert_eq!(result.warnings.len(), 1, "{:?}", result.warnings);
+        // The undefined reference is on line 6 of the original source.
+        assert_eq!(result.warnings[0].line, 6);
+    }
+
+    #[test]
+    fn issue_reproduction_preserved_and_idempotent() {
+        let input = "import { Chart } from \"./chart.js\";\n\n\
+            export const meta = { author: 'Hong Minhee' };\n\n\
+            <PackageManagerTabs\n  command={{\n    npm: \"npm add @scope/pkg\",\n    \
+            deno: \"deno add jsr:@scope/pkg\",\n  }}\n/>\n\n\
+            {/* a JSX comment with \"quotes\" */}\n";
+        let options = Options {
+            mdx: true,
+            ..Options::default()
+        };
+        let result = format(input, &options).unwrap();
+        assert_eq!(result, input, "MDX constructs should be preserved verbatim");
+        let again = format(&result, &options).unwrap();
+        assert_eq!(result, again, "MDX formatting should be idempotent");
+    }
+
+    /// Prose interleaved with MDX constructs is still formatted while the
+    /// constructs are preserved.
+    #[test]
+    fn prose_between_constructs_is_formatted() {
+        let input = "import { x } from \"y\";\n\n\
+            This paragraph has \"smart quotes\" and needs no wrapping.\n\n\
+            <Chart data={x} />\n";
+        let options = Options {
+            mdx: true,
+            ..Options::default()
+        };
+        let result = format(input, &options).unwrap();
+        assert!(result.contains("import { x } from \"y\";"));
+        assert!(result.contains("<Chart data={x} />"));
+        assert!(
+            result.contains('\u{201c}'),
+            "prose quotes should curl: {result:?}"
+        );
+        assert_eq!(result, format(&result, &options).unwrap());
+    }
+}
+
 mod cli_tests {
     use std::io::Write;
     use std::process::{Command, Stdio};
@@ -572,6 +1007,77 @@ mod cli_tests {
 
         assert_eq!(exit_code, 0, "All files should pass check");
         assert!(stdout.is_empty());
+    }
+
+    /// A `.mdx` file passed on the command line enables MDX mode automatically,
+    /// preserving embedded JavaScript verbatim.
+    #[test]
+    fn test_mdx_file_enables_mdx_mode() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let mdx_file = temp_dir.path().join("example.mdx");
+        fs::write(&mdx_file, "import { Chart } from \"./chart.js\";\n")
+            .expect("Failed to write example.mdx");
+
+        let (stdout, _stderr, exit_code) = run_hongdown(&[mdx_file.to_str().unwrap()], None);
+        assert_eq!(exit_code, 0);
+        assert!(
+            stdout.contains("import { Chart } from \"./chart.js\";"),
+            "expected the import to be preserved for a .mdx file: {stdout:?}"
+        );
+    }
+
+    /// A `.md` file with the same content is NOT MDX-protected by default (its
+    /// quotes are curled), confirming auto-detection is extension-specific.
+    #[test]
+    fn test_md_file_does_not_enable_mdx_mode() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let md_file = temp_dir.path().join("example.md");
+        fs::write(&md_file, "import { Chart } from \"./chart.js\";\n")
+            .expect("Failed to write example.md");
+
+        let (stdout, _stderr, exit_code) = run_hongdown(&[md_file.to_str().unwrap()], None);
+        assert_eq!(exit_code, 0);
+        assert!(
+            stdout.contains('\u{201c}'),
+            "expected curly quotes for a .md file without --mdx: {stdout:?}"
+        );
+    }
+
+    /// The `--mdx` flag enables MDX mode for a `.md` file (and for stdin).
+    #[test]
+    fn test_mdx_flag_enables_mdx_mode_for_md() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let md_file = temp_dir.path().join("example.md");
+        fs::write(&md_file, "import { Chart } from \"./chart.js\";\n")
+            .expect("Failed to write example.md");
+
+        let (stdout, _stderr, exit_code) =
+            run_hongdown(&["--mdx", md_file.to_str().unwrap()], None);
+        assert_eq!(exit_code, 0);
+        assert!(
+            stdout.contains("import { Chart } from \"./chart.js\";"),
+            "expected --mdx to preserve the import: {stdout:?}"
+        );
+    }
+
+    /// `--mdx` also applies to stdin input.
+    #[test]
+    fn test_mdx_flag_applies_to_stdin() {
+        let (stdout, _stderr, exit_code) = run_hongdown(
+            &["--mdx", "--stdin"],
+            Some("export const meta = { author: 'Hong Minhee' };\n"),
+        );
+        assert_eq!(exit_code, 0);
+        assert!(stdout.contains("export const meta = { author: 'Hong Minhee' };"));
     }
 }
 

@@ -271,15 +271,22 @@ impl<'a> Serializer<'a> {
         start_index: usize,
     ) {
         let mut is_first = true;
+        let mut prev_end_line = 0usize;
         for (i, child) in children.iter().enumerate() {
             if i < start_index {
                 continue;
             }
 
-            if let NodeValue::HtmlBlock(html_block) = &child.data.borrow().value {
-                // Add a blank line before the first trailing HTML block
+            let data = child.data.borrow();
+            if let NodeValue::HtmlBlock(html_block) = &data.value {
+                let sourcepos = data.sourcepos;
                 if is_first {
-                    if !self.output.ends_with("\n\n") {
+                    // Add a blank line before the first trailing HTML block, but
+                    // only when something precedes it — a document whose only
+                    // content is HTML blocks must not gain leading blank lines.
+                    if self.output.is_empty() {
+                        // Nothing precedes this block; no separator needed.
+                    } else if !self.output.ends_with("\n\n") {
                         if self.output.ends_with('\n') {
                             self.output.push('\n');
                         } else {
@@ -287,7 +294,18 @@ impl<'a> Serializer<'a> {
                         }
                     }
                     is_first = false;
+                } else if sourcepos.start.line > prev_end_line + 1 && !self.output.ends_with("\n\n")
+                {
+                    // Preserve a blank line that separated two HTML blocks in the
+                    // source (otherwise consecutive comments/placeholders would be
+                    // concatenated without their original separation).
+                    if self.output.ends_with('\n') {
+                        self.output.push('\n');
+                    } else {
+                        self.output.push_str("\n\n");
+                    }
                 }
+                prev_end_line = sourcepos.end.line;
                 self.output.push_str(&html_block.literal);
             }
         }

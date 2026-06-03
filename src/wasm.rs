@@ -35,6 +35,10 @@ pub struct JsOptions {
     /// Recognize and preserve TeX/LaTeX math expressions (default: true).
     pub math: Option<bool>,
 
+    /// Enable MDX mode: preserve embedded JavaScript/JSX verbatim (default:
+    /// false).
+    pub mdx: Option<bool>,
+
     /// Use setext-style for h1 headings (default: true).
     pub setext_h1: Option<bool>,
 
@@ -154,6 +158,9 @@ impl JsOptions {
         }
         if let Some(v) = self.math {
             opts.math = v;
+        }
+        if let Some(v) = self.mdx {
+            opts.mdx = v;
         }
         if let Some(v) = self.setext_h1 {
             opts.setext_h1 = v;
@@ -389,7 +396,16 @@ pub fn format_with_code_formatter(
     comrak_options.extension.tasklist = true;
     comrak_options.extension.math_dollars = opts.math;
 
-    let root = parse_document(&arena, input, &comrak_options);
+    // In MDX mode, protect embedded JavaScript/JSX before parsing and restore it
+    // afterwards (see [`crate::mdx`]).
+    let protection = if opts.mdx {
+        crate::mdx::protect(input, &comrak_options)
+    } else {
+        None
+    };
+    let source: &str = protection.as_ref().map_or(input, |p| p.source.as_str());
+
+    let root = parse_document(&arena, source, &comrak_options);
 
     // Create callback closure if provided
     let callback: crate::serializer::CodeFormatterCallback = code_formatter.map(|func| {
@@ -412,15 +428,23 @@ pub fn format_with_code_formatter(
     });
 
     let result =
-        crate::serializer::serialize_with_code_formatter(root, &opts, Some(input), callback);
+        crate::serializer::serialize_with_code_formatter(root, &opts, Some(source), callback);
+
+    let output = match &protection {
+        Some(p) => p.restore(&result.output),
+        None => result.output,
+    };
 
     let js_result = JsFormatResult {
-        output: result.output,
+        output,
         warnings: result
             .warnings
             .into_iter()
             .map(|w| JsWarning {
-                line: w.line,
+                // Map protected-source line numbers back to the original.
+                line: protection
+                    .as_ref()
+                    .map_or(w.line, |p| p.original_line(w.line)),
                 message: w.message,
             })
             .collect(),

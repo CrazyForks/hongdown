@@ -1,5 +1,6 @@
 //! Hongdown CLI - A Markdown formatter for Hong Minhee's style conventions.
 
+use std::borrow::Cow;
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
@@ -46,6 +47,11 @@ struct Args {
     #[arg(long, conflicts_with = "line_width")]
     no_line_width: bool,
 
+    /// Enable MDX mode for all inputs (preserve embedded JavaScript/JSX).
+    /// Files with the *.mdx* extension enable this automatically.
+    #[arg(long)]
+    mdx: bool,
+
     /// Path to configuration file.
     #[arg(long, value_name = "FILE")]
     config: Option<PathBuf>,
@@ -74,6 +80,7 @@ fn main() -> ExitCode {
     let options = Options {
         line_width,
         math: config.math,
+        mdx: config.mdx || args.mdx,
         setext_h1: config.heading.setext_h1,
         setext_h2: config.heading.setext_h2,
         heading_sentence_case: config.heading.sentence_case,
@@ -222,7 +229,8 @@ fn process_files_parallel(
             }
         };
 
-        match format_with_warnings(&input, options) {
+        let file_options = options_for_file(options, file);
+        match format_with_warnings(&input, &file_options) {
             Ok(result) => {
                 // Print warnings to stderr
                 for warning in &result.warnings {
@@ -276,7 +284,8 @@ fn process_files_sequential(files: &[PathBuf], options: &Options) -> ExitCode {
             }
         };
 
-        match format_with_warnings(&input, options) {
+        let file_options = options_for_file(options, file);
+        match format_with_warnings(&input, &file_options) {
             Ok(result) => {
                 // Print warnings to stderr
                 for warning in &result.warnings {
@@ -310,7 +319,8 @@ fn process_files_diff(files: &[PathBuf], options: &Options) -> ExitCode {
             }
         };
 
-        match format_with_warnings(&input, options) {
+        let file_options = options_for_file(options, file);
+        match format_with_warnings(&input, &file_options) {
             Ok(result) => {
                 // Print warnings to stderr
                 for warning in &result.warnings {
@@ -376,7 +386,8 @@ fn expand_paths(paths: &[PathBuf]) -> Vec<PathBuf> {
     result
 }
 
-/// Recursively collect all Markdown files (`.md` and `.markdown`) from a directory.
+/// Recursively collect all Markdown files (`.md`, `.markdown`, and `.mdx`) from a
+/// directory.
 fn collect_md_files(dir: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
     for entry in WalkDir::new(dir).follow_links(true) {
@@ -384,7 +395,9 @@ fn collect_md_files(dir: &Path) -> Vec<PathBuf> {
         let path = entry.path();
         if path.is_file() {
             let is_markdown = path.extension().is_some_and(|ext| {
-                ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown")
+                ext.eq_ignore_ascii_case("md")
+                    || ext.eq_ignore_ascii_case("markdown")
+                    || ext.eq_ignore_ascii_case("mdx")
             });
             if is_markdown {
                 files.push(path.to_path_buf());
@@ -393,6 +406,25 @@ fn collect_md_files(dir: &Path) -> Vec<PathBuf> {
     }
     files.sort();
     files
+}
+
+/// Whether `path` has the `.mdx` extension (case-insensitive).
+fn has_mdx_extension(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("mdx"))
+}
+
+/// Build the formatting options for a specific file, enabling MDX mode
+/// automatically for `.mdx` files.  Borrows the base options unless a per-file
+/// override is needed.
+fn options_for_file<'a>(base: &'a Options, path: &Path) -> Cow<'a, Options> {
+    if !base.mdx && has_mdx_extension(path) {
+        let mut options = base.clone();
+        options.mdx = true;
+        Cow::Owned(options)
+    } else {
+        Cow::Borrowed(base)
+    }
 }
 
 /// Load configuration from file or use defaults.
