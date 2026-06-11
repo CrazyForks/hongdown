@@ -7,6 +7,7 @@ proper_nouns = [
   "Hong Minhee",
   "Hongdown",
   "mise",
+  "Windows Package Manager",
 ]
 
 [code_block.formatters]

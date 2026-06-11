@@ -29,6 +29,12 @@ output following a distinctive style used across multiple projects including
 Installation
 ------------
 
+### Windows Package Manager
+
+~~~~ pwsh
+winget install HongMinhee.Hongdown
+~~~~
+
 ### npm
 
 ~~~~ bash
@@ -38,19 +44,19 @@ npm install -g hongdown
 ### mise
 
 ~~~~ bash
-mise use -g github:dahlia/hongdown
-~~~~
-
-### Cargo
-
-~~~~ bash
-cargo install hongdown
+mise use -g aqua:dahlia/hongdown
 ~~~~
 
 ### Nix
 
 ~~~~ bash
 nix run github:dahlia/hongdown
+~~~~
+
+### Cargo
+
+~~~~ bash
+cargo install hongdown
 ~~~~
 
 ### Pre-built binaries
