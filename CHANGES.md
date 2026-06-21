@@ -4,7 +4,7 @@ Hongdown changelog
 Version 0.5.0
 -------------
 
-To be released.
+Released on June 21, 2026.
 
  -  Added MDX support.  MDX documents embed JavaScript and JSX that Comrak (the
     underlying CommonMark parser) does not understand, so Hongdown used to
