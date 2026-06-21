@@ -24,7 +24,7 @@ Usage
 -----
 
 ~~~~ typescript
-import { format, formatWithWarnings } from "@hongdown/wasm";
+import { format, formatWithWarnings, loadConfigFromToml } from "@hongdown/wasm";
 
 // Basic usage
 const markdown = "# Hello\nWorld";
@@ -47,7 +47,15 @@ if (warnings.length > 0) {
     console.warn(`Line ${warning.line}: ${warning.message}`);
   }
 }
+
+// Parse .hongdown.toml for WASM formatting
+const config = await loadConfigFromToml("line_width = 100");
+const configured = await format(markdown, config.options);
 ~~~~
+
+External code block formatters configured in `code_block.formatters` are
+reported as warnings because the WASM runtime cannot execute external
+commands.  Use the Hongdown CLI for those settings.
 
 
 Options

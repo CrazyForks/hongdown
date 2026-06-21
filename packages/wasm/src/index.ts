@@ -15,6 +15,7 @@
  */
 
 import type {
+  ConfigLoadResult,
   FormatOptions,
   FormatResult,
   FormatWithCodeFormatterOptions,
@@ -23,6 +24,7 @@ import type {
 import { loadWasmBuffer } from "#wasm-loader";
 import init, {
   format as wasmFormat,
+  loadConfigFromToml as wasmLoadConfigFromToml,
   formatWithWarnings as wasmFormatWithWarnings,
   formatWithCodeFormatter as wasmFormatWithCodeFormatter,
 } from "../pkg/hongdown.js";
@@ -88,6 +90,23 @@ export async function format(
 ): Promise<string> {
   await ensureInitialized();
   return wasmFormat(input, options);
+}
+
+/**
+ * Parse a `.hongdown.toml` configuration string into JavaScript options.
+ *
+ * External code block formatters are reported as warnings because the WASM
+ * runtime cannot execute external commands. Use the Hongdown CLI backend for
+ * those settings.
+ *
+ * @param toml - TOML configuration source
+ * @returns Formatting options and any warnings
+ */
+export async function loadConfigFromToml(
+  toml: string,
+): Promise<ConfigLoadResult> {
+  await ensureInitialized();
+  return wasmLoadConfigFromToml(toml) as ConfigLoadResult;
 }
 
 /**
@@ -162,6 +181,7 @@ export async function formatWithCodeFormatter(
 // Re-export types
 export type {
   CodeFormatterCallback,
+  ConfigLoadResult,
   FormatOptions,
   FormatResult,
   FormatWithCodeFormatterOptions,

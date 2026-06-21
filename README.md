@@ -541,6 +541,39 @@ the philosophy behind these conventions and detailed formatting rules.
 Editor integrations
 -------------------
 
+### Visual Studio Code
+
+Install the *Hongdown* extension from the [Visual Studio Marketplace] or
+[Open VSX Registry], then make it the default formatter for Markdown and MDX:
+
+~~~~ json
+{
+  "[markdown]": {
+    "editor.defaultFormatter": "hongminhee.hongdown"
+  },
+  "[mdx]": {
+    "editor.defaultFormatter": "hongminhee.hongdown"
+  }
+}
+~~~~
+
+The extension uses a bundled WebAssembly build by default.  To use a system
+Hongdown CLI instead:
+
+~~~~ json
+{
+  "hongdown.backend": "cli",
+  "hongdown.cli.path": "hongdown"
+}
+~~~~
+
+By default, the extension looks for *.hongdown.toml* in the workspace root.  For
+a standalone file outside any workspace, it falls back to the file's containing
+directory.  Set `hongdown.config.path` to use a different configuration file.
+
+[Visual Studio Marketplace]: https://marketplace.visualstudio.com/items?itemName=hongminhee.hongdown
+[Open VSX Registry]: https://open-vsx.org/extension/hongminhee/hongdown
+
 ### Zed
 
 Add the following to your Zed settings to use Hongdown as the Markdown
@@ -620,7 +653,7 @@ npm install @hongdown/wasm
 ~~~~
 
 ~~~~ typescript
-import { format, formatWithWarnings } from "@hongdown/wasm";
+import { format, formatWithWarnings, loadConfigFromToml } from "@hongdown/wasm";
 
 // Basic usage
 const markdown = "# Hello\nWorld";
@@ -640,7 +673,15 @@ if (warnings.length > 0) {
     console.warn(`Line ${warning.line}: ${warning.message}`);
   }
 }
+
+// Parse .hongdown.toml for WASM formatting
+const { options: configOptions } = await loadConfigFromToml(configToml);
+const configured = await format(markdown, configOptions);
 ~~~~
+
+External code block formatters configured in `code_block.formatters` are
+reported as warnings because the WASM runtime cannot execute external
+commands.  Use the CLI for those settings.
 
 The library works in Node.js, Bun, Deno, and web browsers.  See the
 [TypeScript type definitions] for all available options.

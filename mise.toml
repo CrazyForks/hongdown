@@ -20,7 +20,7 @@ run = "cargo run -- --write"
 
 [tasks.check]
 description = "Run all quality checks"
-depends = ["check:clippy", "check:fmt", "check:type", "check:markdown"]
+depends = ["check:clippy", "check:fmt", "check:type", "check:markdown", "check:vscode"]
 
 [tasks."check:clippy"]
 description = "Run clippy linter"
@@ -38,9 +38,17 @@ run = "cargo check"
 description = "Check Markdown formatting"
 run = "cargo run -- --check"
 
+[tasks."check:vscode"]
+description = "Type-check the VS Code extension"
+depends = ["build:wasm"]
+run = """
+pnpm --filter ./packages/vscode install --ignore-scripts --no-frozen-lockfile
+pnpm --filter ./packages/vscode check
+"""
+
 [tasks.test]
 description = "Run all tests"
-depends = ["test:rust", "test:wasm"]
+depends = ["test:rust", "test:wasm", "test:vscode"]
 
 [tasks."test:rust"]
 description = "Run Rust tests"
@@ -51,12 +59,20 @@ description = "Run WASM package tests"
 depends = ["build:wasm"]
 run = "pnpm --filter @hongdown/wasm test"
 
+[tasks."test:vscode"]
+description = "Run VS Code extension tests"
+depends = ["build:wasm"]
+run = """
+pnpm --filter ./packages/vscode install --ignore-scripts --no-frozen-lockfile
+pnpm --filter ./packages/vscode test
+"""
+
 [tasks."build:wasm"]
 description = "Build WASM package"
 run = """
 wasm-pack build --target web --features wasm
 mkdir -p packages/wasm/pkg
 cp -r pkg/* packages/wasm/pkg/
-pnpm --filter @hongdown/wasm install
+pnpm --filter @hongdown/wasm install --ignore-scripts --no-frozen-lockfile
 pnpm --filter @hongdown/wasm build
 """

@@ -1,0 +1,108 @@
+{
+  "name": "hongdown",
+  "displayName": "Hongdown",
+  "version": "0.0.0",
+  "publisher": "hongminhee",
+  "type": "module",
+  "description": "Format Markdown documents with Hongdown.",
+  "license": "GPL-3.0-or-later",
+  "author": "Hong Minhee <hong@minhee.org>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dahlia/hongdown.git",
+    "directory": "packages/vscode"
+  },
+  "homepage": "https://github.com/dahlia/hongdown",
+  "bugs": {
+    "url": "https://github.com/dahlia/hongdown/issues"
+  },
+  "categories": [
+    "Formatters"
+  ],
+  "keywords": [
+    "markdown",
+    "formatter",
+    "hongdown"
+  ],
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "activationEvents": [
+    "onLanguage:markdown",
+    "onLanguage:mdx"
+  ],
+  "main": "./dist/extension.cjs",
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "The bundled WASM formatter works in restricted mode. The CLI backend is available only for trusted workspaces.",
+      "restrictedConfigurations": [
+        "hongdown.backend",
+        "hongdown.cli.path",
+        "hongdown.config.path"
+      ]
+    }
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "mdx",
+        "aliases": [
+          "MDX",
+          "mdx"
+        ],
+        "extensions": [
+          ".mdx"
+        ]
+      }
+    ],
+    "configuration": {
+      "title": "Hongdown",
+      "properties": {
+        "hongdown.backend": {
+          "type": "string",
+          "enum": [
+            "wasm",
+            "cli"
+          ],
+          "default": "wasm",
+          "scope": "resource",
+          "markdownDescription": "Controls which Hongdown formatter backend to use. `wasm` uses the bundled WebAssembly formatter. `cli` runs the system Hongdown CLI."
+        },
+        "hongdown.cli.path": {
+          "type": "string",
+          "default": "hongdown",
+          "scope": "machine-overridable",
+          "markdownDescription": "Path to the Hongdown CLI executable when `#hongdown.backend#` is `cli`. Use `hongdown` to resolve it from `PATH`."
+        },
+        "hongdown.config.path": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "markdownDescription": "Path to a `.hongdown.toml` file. Relative paths are resolved from the workspace folder, or from the file's containing directory when no workspace is open. Leave empty to use `.hongdown.toml` in the workspace root when present."
+        }
+      }
+    }
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsdown && pnpm run vendor:wasm",
+    "check": "tsc --noEmit",
+    "package:vsix": "pnpm run build && npx --yes @vscode/vsce package --no-dependencies --skip-license --out hongdown-vscode-${npm_package_version}.vsix",
+    "test": "node --experimental-transform-types --test test/*.test.ts",
+    "vendor:wasm": "node scripts/vendor-wasm.mjs"
+  },
+  "devDependencies": {
+    "@hongdown/wasm": "workspace:*",
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.100.0",
+    "tsdown": "^0.20.0-beta.1",
+    "typescript": "^5.0.0"
+  }
+}

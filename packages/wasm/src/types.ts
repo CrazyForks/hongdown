@@ -80,6 +80,14 @@ export interface FormatOptions {
   headingCommonNouns?: string[];
 
   /**
+   * Spacing between heading text and an explicit anchor ID (`{#name}`).
+   * Positive values use an exact gap; zero or negative values right-align the
+   * anchor to `lineWidth + headingAnchorAlign`.
+   * @default 0
+   */
+  headingAnchorAlign?: number;
+
+  /**
    * Marker character for unordered lists: `"-"`, `"*"`, or `"+"`.
    * @default "-"
    */
@@ -289,4 +297,19 @@ export interface FormatResult {
    * Warnings generated during formatting.
    */
   warnings: Warning[];
+}
+
+/**
+ * Result of parsing a `.hongdown.toml` configuration file for WASM formatting.
+ */
+export interface ConfigLoadResult {
+  /**
+   * Formatting options equivalent to the TOML configuration.
+   */
+  options: FormatOptions;
+
+  /**
+   * Warnings about configuration entries unavailable in the WASM runtime.
+   */
+  warnings: string[];
 }

@@ -17,6 +17,7 @@ jobs:
   version:
     runs-on: ubuntu-latest
     outputs:
+      base_version: ${{ steps.version.outputs.base_version }}
       version: ${{ steps.version.outputs.version }}
     steps:
     - uses: actions/checkout@v6
@@ -33,6 +34,7 @@ jobs:
         else
           VERSION="${BASE_VERSION}-dev.${GITHUB_RUN_NUMBER}+${GITHUB_SHA::8}"
         fi
+        echo "base_version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
         echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
   lint:
@@ -293,9 +295,68 @@ jobs:
     - uses: actions/deploy-pages@v4
       id: deployment
 
+  build-vscode-extension:
+    needs: [version, build-wasm]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      vsix_name: ${{ steps.package.outputs.vsix_name }}
+    steps:
+    - uses: actions/checkout@v6
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+    - uses: pnpm/action-setup@v4
+      with:
+        version: latest
+    - uses: actions/download-artifact@v6
+      with:
+        name: wasm-package
+        path: packages/wasm
+    - name: Install dependencies
+      run: pnpm install --no-frozen-lockfile
+    - name: Install dasel
+      env:
+        DASEL_VERSION: "3.2.1"
+      run: |
+        set -euxo pipefail
+        curl -sSLf \
+          "https://github.com/TomWright/dasel/releases/download/v${DASEL_VERSION}/dasel_linux_amd64" \
+          -o dasel
+        chmod +x dasel
+        echo "$PWD" >> "$GITHUB_PATH"
+    - name: Package VS Code extension
+      id: package
+      env:
+        BASE_VERSION: ${{ needs.version.outputs.base_version }}
+        VERSION: ${{ needs.version.outputs.version }}
+      run: |
+        set -euxo pipefail
+        dasel -i json --root "version = \"$BASE_VERSION\"" \
+          < packages/vscode/package.json > packages/vscode/package.json.tmp
+        mv packages/vscode/package.json.tmp packages/vscode/package.json
+
+        PNPM_CONFIG_FROZEN_LOCKFILE=false \
+          pnpm --filter ./packages/vscode build
+
+        VSIX_LABEL="${VERSION//+/-}"
+        VSIX_NAME="hongdown-vscode-${VSIX_LABEL}.vsix"
+        (
+          cd packages/vscode
+          npx --yes @vscode/vsce package \
+            --no-dependencies \
+            --skip-license \
+            --out "../../$VSIX_NAME"
+        )
+        echo "vsix_name=$VSIX_NAME" >> "$GITHUB_OUTPUT"
+    - uses: actions/upload-artifact@v6
+      with:
+        name: ${{ steps.package.outputs.vsix_name }}
+        path: ${{ steps.package.outputs.vsix_name }}
+
   release:
     if: github.event_name == 'push' && github.ref_type == 'tag'
-    needs: [build, build-wasm]
+    needs: [build, build-wasm, build-vscode-extension]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -571,3 +632,47 @@ jobs:
         fi
 
         pnpm publish --access public --provenance --no-git-checks $TAG
+
+  publish-vscode-extension:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: [build-vscode-extension]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v6
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+    - uses: pnpm/action-setup@v4
+      with:
+        version: latest
+    - uses: actions/download-artifact@v6
+      with:
+        name: ${{ needs.build-vscode-extension.outputs.vsix_name }}
+        path: artifacts
+    - name: Install dependencies
+      run: pnpm install --no-frozen-lockfile
+    # Visual Studio Marketplace publishing currently uses an Azure DevOps
+    # Personal Access Token.  Global Azure DevOps PATs are retired on
+    # December 1, 2026, so this step should move to Microsoft Entra ID
+    # authentication before then:
+    # https://code.visualstudio.com/api/working-with-extensions/publishing-extension
+    # https://devblogs.microsoft.com/devops/reducing-pat-usage-across-azure-devops/
+    - name: Publish to Visual Studio Marketplace
+      env:
+        VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        VSIX_NAME: ${{ needs.build-vscode-extension.outputs.vsix_name }}
+      run: |
+        set -euxo pipefail
+        npx --yes @vscode/vsce publish \
+          --packagePath "artifacts/$VSIX_NAME" \
+          --skip-duplicate
+    - name: Publish to Open VSX Registry
+      env:
+        OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        VSIX_NAME: ${{ needs.build-vscode-extension.outputs.vsix_name }}
+      run: |
+        set -euxo pipefail
+        npx --yes ovsx --pat "$OVSX_PAT" publish \
+          "artifacts/$VSIX_NAME" \
+          --skip-duplicate

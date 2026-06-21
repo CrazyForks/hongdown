@@ -7,14 +7,15 @@ use wasm_bindgen::prelude::*;
 
 use crate::Options;
 use crate::config::{
-    DashPattern, DashSetting, FenceChar, IndentWidth, LeadingSpaces, LineWidth, MinFenceLength,
-    OrderedListPad, OrderedMarker, ThematicBreakStyle, TrailingSpaces, UnorderedMarker,
+    Config, DashPattern, DashSetting, FenceChar, IndentWidth, LeadingSpaces, LineWidth,
+    MinFenceLength, OrderedListPad, OrderedMarker, ThematicBreakStyle, TrailingSpaces,
+    UnorderedMarker,
 };
 
 /// JavaScript-friendly line width setting.
 ///
 /// Can be either `false` (no wrapping) or a positive integer.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum JsLineWidthSetting {
     /// Disabled when `false`; `true` is ignored (keeps default).
@@ -26,7 +27,7 @@ pub enum JsLineWidthSetting {
 /// JavaScript-friendly options struct.
 ///
 /// All fields are optional and use camelCase naming for JavaScript conventions.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct JsOptions {
     /// Line width for wrapping (`false` disables wrapping; default: 80).
@@ -55,6 +56,9 @@ pub struct JsOptions {
     /// Words to treat as common nouns in sentence case.
     /// These are excluded from built-in proper nouns.
     pub heading_common_nouns: Option<Vec<String>>,
+
+    /// Spacing between heading body and explicit anchor ID.
+    pub heading_anchor_align: Option<i32>,
 
     /// Marker for unordered lists: "-", "*", or "+" (default: "-").
     pub unordered_marker: Option<String>,
@@ -120,7 +124,7 @@ pub struct JsOptions {
 /// JavaScript-friendly dash setting.
 ///
 /// Can be either `false` (disabled) or a string pattern.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum JsDashSetting {
     /// Disabled when false.
@@ -176,6 +180,9 @@ impl JsOptions {
         }
         if let Some(ref v) = self.heading_common_nouns {
             opts.heading_common_nouns = v.clone();
+        }
+        if let Some(v) = self.heading_anchor_align {
+            opts.heading_anchor_align = v;
         }
         if let Some(ref v) = self.unordered_marker {
             opts.unordered_marker = match v.as_str() {
@@ -272,6 +279,65 @@ impl JsOptions {
     }
 }
 
+impl From<&Config> for JsOptions {
+    fn from(config: &Config) -> Self {
+        Self {
+            line_width: Some(match config.line_width {
+                Some(width) => JsLineWidthSetting::Width(width.get()),
+                None => JsLineWidthSetting::NoWrap(false),
+            }),
+            math: Some(config.math),
+            mdx: Some(config.mdx),
+            setext_h1: Some(config.heading.setext_h1),
+            setext_h2: Some(config.heading.setext_h2),
+            heading_sentence_case: Some(config.heading.sentence_case),
+            heading_proper_nouns: Some(config.heading.proper_nouns.clone()),
+            heading_common_nouns: Some(config.heading.common_nouns.clone()),
+            heading_anchor_align: Some(config.heading.anchor_align),
+            unordered_marker: Some(config.unordered_list.unordered_marker.as_char().to_string()),
+            leading_spaces: Some(config.unordered_list.leading_spaces.get()),
+            trailing_spaces: Some(config.unordered_list.trailing_spaces.get()),
+            indent_width: Some(config.unordered_list.indent_width.get()),
+            odd_level_marker: Some(config.ordered_list.odd_level_marker.as_char().to_string()),
+            even_level_marker: Some(config.ordered_list.even_level_marker.as_char().to_string()),
+            ordered_list_pad: Some(match config.ordered_list.pad {
+                OrderedListPad::Start => "start".to_string(),
+                OrderedListPad::End => "end".to_string(),
+            }),
+            ordered_list_indent_width: Some(config.ordered_list.indent_width.get()),
+            fence_char: Some(config.code_block.fence_char.as_char().to_string()),
+            min_fence_length: Some(config.code_block.min_fence_length.get()),
+            space_after_fence: Some(config.code_block.space_after_fence),
+            default_language: Some(config.code_block.default_language.clone()),
+            thematic_break_style: Some(config.thematic_break.style.as_str().to_string()),
+            thematic_break_leading_spaces: Some(config.thematic_break.leading_spaces.get()),
+            curly_double_quotes: Some(config.punctuation.curly_double_quotes),
+            curly_single_quotes: Some(config.punctuation.curly_single_quotes),
+            curly_apostrophes: Some(config.punctuation.curly_apostrophes),
+            ellipsis: Some(config.punctuation.ellipsis),
+            en_dash: Some(dash_setting_to_js(&config.punctuation.en_dash)),
+            em_dash: Some(dash_setting_to_js(&config.punctuation.em_dash)),
+        }
+    }
+}
+
+fn dash_setting_to_js(setting: &DashSetting) -> JsDashSetting {
+    match setting {
+        DashSetting::Disabled => JsDashSetting::Disabled(false),
+        DashSetting::Pattern(pattern) => JsDashSetting::Pattern(pattern.as_str().to_string()),
+    }
+}
+
+/// Result of loading a TOML configuration for JavaScript callers.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JsConfigResult {
+    /// Formatting options equivalent to the TOML configuration.
+    pub options: JsOptions,
+    /// Warnings about configuration entries unavailable in the WASM runtime.
+    pub warnings: Vec<String>,
+}
+
 /// Format result with warnings.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -311,6 +377,29 @@ pub fn format(input: &str, options: JsValue) -> Result<String, JsError> {
 
     let opts = js_opts.to_options();
     crate::format(input, &opts).map_err(|e| JsError::new(&e.to_string()))
+}
+
+/// Parse a `.hongdown.toml` configuration string into JavaScript options.
+///
+/// External code block formatters are reported as warnings because the WASM
+/// runtime cannot execute external commands. Use the CLI formatter backend for
+/// those settings.
+#[wasm_bindgen(js_name = loadConfigFromToml)]
+pub fn load_config_from_toml(toml: &str) -> Result<JsValue, JsError> {
+    let config = Config::from_toml(toml).map_err(|e| JsError::new(&e.to_string()))?;
+    let mut warnings = Vec::new();
+
+    if !config.code_block.formatters.is_empty() {
+        warnings.push(
+            "External code formatters in code_block.formatters are ignored by the WASM formatter. Use the Hongdown CLI backend to run them.".to_string(),
+        );
+    }
+
+    let result = JsConfigResult {
+        options: JsOptions::from(&config),
+        warnings,
+    };
+    serde_wasm_bindgen::to_value(&result).map_err(|e| JsError::new(&e.to_string()))
 }
 
 /// Format Markdown and return both output and warnings.

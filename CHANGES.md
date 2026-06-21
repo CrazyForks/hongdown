@@ -35,6 +35,19 @@ To be released.
     by a blank line in the source were emitted on adjacent lines, dropping the
     blank line between them.  [[#23]]
 
+ -  Added an [official Visual Studio Code extension].  The extension formats
+    Markdown and MDX documents with a bundled WebAssembly build by default, can
+    be configured to run a system Hongdown CLI instead, and is packaged as a
+    *.vsix* artifact by CI.  Tag releases publish the same *.vsix* to GitHub
+    Releases, Visual Studio Marketplace, and Open VSX Registry.
+
+ -  Added `loadConfigFromToml()` and `headingAnchorAlign` to the
+    WASM/JavaScript API so editor integrations can reuse *.hongdown.toml*
+    settings without shelling out to the CLI.  External code block formatters in
+    `code_block.formatters` are reported as warnings because the WASM runtime
+    cannot execute external commands.
+
+[official Visual Studio Code extension]: https://marketplace.visualstudio.com/items?itemName=hongminhee.hongdown
 [#22]: https://github.com/dahlia/hongdown/issues/22
 [#23]: https://github.com/dahlia/hongdown/pull/23
 

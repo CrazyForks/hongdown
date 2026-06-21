@@ -35,6 +35,24 @@ importers:
 
   packages/hongdown: {}
 
+  packages/vscode:
+    devDependencies:
+      '@hongdown/wasm':
+        specifier: workspace:*
+        version: link:../wasm
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.5
+      '@types/vscode':
+        specifier: ^1.100.0
+        version: 1.125.0
+      tsdown:
+        specifier: ^0.20.0-beta.1
+        version: 0.20.0-beta.1(typescript@5.9.3)
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
+
   packages/wasm:
     devDependencies:
       '@types/node':
@@ -586,6 +604,9 @@ packages:
 
   '@types/node@22.19.5':
     resolution: {integrity: sha512-HfF8+mYcHPcPypui3w3mvzuIErlNOh2OAG+BCeBZCEwyiD5ls2SiCwEyT47OELtf7M3nHxBdu0FsmzdKxkN52Q==}
+
+  '@types/vscode@1.125.0':
+    resolution: {integrity: sha512-0icm/ZQAaism87P0ekHqi4/Ju9du+Tm0RUW+y7vqRsxY2cY0FNRX1nAnaW7nT6npPt2tfHiheZ55Zm9UhqonFA==}
 
   '@unocss/astro@66.5.12':
     resolution: {integrity: sha512-ynhlljsTGTHAcQHbpqxe3IXEDXjPm9IdeDWAhPet7UiGXhW230vEZ+1/OoARqLysVSVz4pPb81MDgS167Oo4Nw==}
@@ -1570,6 +1591,8 @@ snapshots:
   '@types/node@22.19.5':
     dependencies:
       undici-types: 6.21.0
+
+  '@types/vscode@1.125.0': {}
 
   '@unocss/astro@66.5.12(vite@7.3.1(@types/node@22.19.5)(jiti@2.6.1))':
     dependencies:

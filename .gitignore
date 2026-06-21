@@ -9,5 +9,7 @@ result
 
 # build artifacts
 /packages/wasm/dist/
+/packages/vscode/dist/
+/packages/vscode/*.vsix
 /demo/dist/
 node_modules/

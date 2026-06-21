@@ -1,4 +1,9 @@
-import { format, formatWithWarnings, formatWithCodeFormatter } from "@hongdown/wasm";
+import {
+  format,
+  formatWithWarnings,
+  formatWithCodeFormatter,
+  loadConfigFromToml,
+} from "@hongdown/wasm";
 import type { FormatOptions } from "@hongdown/wasm";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
@@ -93,6 +98,14 @@ describe("format", () => {
       output.includes("react"),
       "Output should lowercase excluded proper noun",
     );
+  });
+
+  it("respects headingAnchorAlign option", async () => {
+    const input = "# Heading {#id}";
+    const output = await format(input, {
+      headingAnchorAlign: 1,
+    });
+    assert.equal(output, "Heading {#id}\n=============\n");
   });
 
   it("respects fenceChar option", async () => {
@@ -246,6 +259,7 @@ describe("options", () => {
       headingSentenceCase: false,
       headingProperNouns: [],
       headingCommonNouns: [],
+      headingAnchorAlign: 0,
       unorderedMarker: "-",
       leadingSpaces: 1,
       trailingSpaces: 2,
@@ -270,5 +284,49 @@ describe("options", () => {
     };
     const output = await format(input, options);
     assert.ok(output.length > 0, "Should produce output");
+  });
+});
+
+describe("loadConfigFromToml", () => {
+  it("converts TOML config to formatting options", async () => {
+    const { options, warnings } = await loadConfigFromToml(`
+line_width = 100
+math = false
+mdx = true
+
+[heading]
+setext_h1 = false
+anchor_align = 1
+
+[code_block]
+fence_char = "\`"
+default_language = "text"
+
+[punctuation]
+en_dash = "--"
+em_dash = false
+`);
+
+    assert.deepEqual(warnings, []);
+    assert.equal(options.lineWidth, 100);
+    assert.equal(options.math, false);
+    assert.equal(options.mdx, true);
+    assert.equal(options.setextH1, false);
+    assert.equal(options.headingAnchorAlign, 1);
+    assert.equal(options.fenceChar, "`");
+    assert.equal(options.defaultLanguage, "text");
+    assert.equal(options.enDash, "--");
+    assert.equal(options.emDash, false);
+  });
+
+  it("warns about external code formatters in WASM config", async () => {
+    const { options, warnings } = await loadConfigFromToml(`
+[code_block.formatters]
+javascript = ["prettier", "--parser", "babel"]
+`);
+
+    assert.equal(options.fenceChar, "~");
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /external code formatters/i);
   });
 });
