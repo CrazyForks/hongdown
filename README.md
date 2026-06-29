@@ -31,8 +31,15 @@ Installation
 
 ### Windows Package Manager
 
-~~~~ pwsh
+~~~~ powershell
 winget install HongMinhee.Hongdown
+~~~~
+
+### Scoop
+
+~~~~ powershell
+scoop bucket add extras
+scoop install hongdown
 ~~~~
 
 ### npm
