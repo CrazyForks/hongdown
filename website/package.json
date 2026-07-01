@@ -1,5 +1,5 @@
 {
-  "name": "hongdown-demo",
+  "name": "hongdown-website",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -7,14 +7,22 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit && node scripts/check-anchors.ts"
   },
   "dependencies": {
+    "@fontsource-variable/source-serif-4": "^5.2.9",
+    "@fontsource/ibm-plex-mono": "^5.2.7",
     "@hongdown/wasm": "workspace:*",
     "solid-js": "^1.9.10"
   },
   "devDependencies": {
     "@iconify-json/carbon": "^1.2.16",
+    "@types/node": "^22.19.5",
+    "@unocss/reset": "^66.7.4",
+    "marked": "^18.0.5",
+    "marked-gfm-heading-id": "^4.1.4",
+    "marked-shiki": "^1.2.1",
+    "shiki": "^4.3.0",
     "typescript": "^5.7.3",
     "unocss": "^66.5.12",
     "vite": "^7.3.1",

@@ -1,5 +1,10 @@
 include = ["*.md", "**/*.md"]
-exclude = ["target/**", "**/node_modules/**", "demo/src/sample.md"]
+exclude = [
+  "target/**",
+  "**/node_modules/**",
+  "website/src/sample.md",
+  "website/src/sample-short.md",
+]
 
 [heading]
 sentence_case = true

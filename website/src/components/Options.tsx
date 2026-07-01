@@ -16,8 +16,8 @@ export const OptionsPanel: Component<OptionsPanelProps> = (props) => {
   };
 
   const Group: Component<{ title: string; children: any }> = (p) => (
-    <div class="flex flex-col gap-3 p-4 rounded-lg bg-white dark:bg-neutral-800">
-      <h3 class="text-sm font-bold text-neutral-500 dark:text-neutral-400 pb-2 mb-1">
+    <div class="flex flex-col gap-3 p-4 rounded-lg surface">
+      <h3 class="font-mono text-sm font-semibold text-quiet pb-2 mb-1">
         {p.title}
       </h3>
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
@@ -27,14 +27,14 @@ export const OptionsPanel: Component<OptionsPanelProps> = (props) => {
   );
 
   return (
-    <div class="bg-neutral-100 dark:bg-neutral-800">
+    <div class="surface-raised">
       <button
-        class="w-full px-6 py-4 flex items-center justify-between bg-transparent hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors text-neutral-900 dark:text-neutral-100"
+        class="w-full px-6 py-4 flex items-center justify-between bg-transparent hover:bg-paper-shade dark:hover:bg-night-shade transition-colors text-ink dark:text-snow cursor-pointer"
         onClick={() => setIsOpen(!isOpen())}
       >
         <div class="flex items-center gap-2">
-          <span class="font-bold text-sm text-neutral-900 dark:text-neutral-100">Formatting Options</span>
-          <span class="text-xs text-neutral-500 dark:text-neutral-400">
+          <span class="font-mono font-semibold text-sm text-ink dark:text-snow">Formatting options</span>
+          <span class="font-mono text-xs text-quiet">
             {Object.keys(props.options).length} customized
           </span>
         </div>
@@ -48,22 +48,26 @@ export const OptionsPanel: Component<OptionsPanelProps> = (props) => {
       </button>
 
       {isOpen() && (
-        <div class="p-6 flex flex-col gap-6 bg-neutral-50 dark:bg-neutral-900/50 max-h-[60vh] overflow-y-auto">
+        <div class="p-6 flex flex-col gap-6 surface-raised max-h-[60vh] overflow-y-auto">
           <div class="flex justify-end">
             <button
-              class="btn btn-outline text-xs flex items-center gap-1"
+              class="btn-quiet text-xs"
               onClick={props.resetOptions}
             >
               <div class="i-carbon-reset w-3 h-3" />
-              Reset to Defaults
+              Reset to defaults
             </button>
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <Group title="General">
               <NumberInput
-                label="Line Width"
-                value={props.options.lineWidth ?? 80}
+                label="Line width"
+                value={
+                  typeof props.options.lineWidth === "number"
+                    ? props.options.lineWidth
+                    : 80
+                }
                 min={20}
                 max={200}
                 onChange={(v) => updateOption("lineWidth", v)}
@@ -82,21 +86,21 @@ export const OptionsPanel: Component<OptionsPanelProps> = (props) => {
                 onChange={(v) => updateOption("setextH2", v)}
               />
               <Toggle
-                label="Sentence Case"
+                label="Sentence case"
                 checked={props.options.headingSentenceCase ?? false}
                 onChange={(v) => updateOption("headingSentenceCase", v)}
               />
               {props.options.headingSentenceCase && (
                 <>
                   <TextAreaInput
-                    label="Proper Nouns"
+                    label="Proper nouns"
                     value={props.options.headingProperNouns ?? []}
                     placeholder="One per line"
                     rows={3}
                     onChange={(v) => updateOption("headingProperNouns", v)}
                   />
                   <TextAreaInput
-                    label="Common Nouns"
+                    label="Common nouns"
                     value={props.options.headingCommonNouns ?? []}
                     placeholder="One per line"
                     rows={3}
@@ -106,7 +110,7 @@ export const OptionsPanel: Component<OptionsPanelProps> = (props) => {
               )}
             </Group>
 
-            <Group title="Unordered Lists">
+            <Group title="Unordered lists">
               <Select
                 label="Marker"
                 value={props.options.unorderedMarker ?? "-"}
@@ -118,21 +122,21 @@ export const OptionsPanel: Component<OptionsPanelProps> = (props) => {
                 onChange={(v) => updateOption("unorderedMarker", v)}
               />
               <NumberInput
-                label="Leading Spaces"
+                label="Leading spaces"
                 value={props.options.leadingSpaces ?? 1}
                 min={0}
                 max={10}
                 onChange={(v) => updateOption("leadingSpaces", v)}
               />
               <NumberInput
-                label="Trailing Spaces"
+                label="Trailing spaces"
                 value={props.options.trailingSpaces ?? 2}
                 min={1}
                 max={10}
                 onChange={(v) => updateOption("trailingSpaces", v)}
               />
               <NumberInput
-                label="Indent Width"
+                label="Indent width"
                 value={props.options.indentWidth ?? 4}
                 min={2}
                 max={10}
@@ -140,9 +144,9 @@ export const OptionsPanel: Component<OptionsPanelProps> = (props) => {
               />
             </Group>
 
-            <Group title="Ordered Lists">
+            <Group title="Ordered lists">
               <Select
-                label="Odd Level Marker"
+                label="Odd-level marker"
                 value={props.options.oddLevelMarker ?? "."}
                 options={[
                   { label: ".", value: "." },
@@ -151,7 +155,7 @@ export const OptionsPanel: Component<OptionsPanelProps> = (props) => {
                 onChange={(v) => updateOption("oddLevelMarker", v)}
               />
               <Select
-                label="Even Level Marker"
+                label="Even-level marker"
                 value={props.options.evenLevelMarker ?? ")"}
                 options={[
                   { label: ".", value: "." },
@@ -169,7 +173,7 @@ export const OptionsPanel: Component<OptionsPanelProps> = (props) => {
                 onChange={(v) => updateOption("orderedListPad", v)}
               />
               <NumberInput
-                label="Indent Width"
+                label="Indent width"
                 value={props.options.orderedListIndentWidth ?? 4}
                 min={2}
                 max={10}
@@ -177,9 +181,9 @@ export const OptionsPanel: Component<OptionsPanelProps> = (props) => {
               />
             </Group>
 
-            <Group title="Code Blocks">
+            <Group title="Code blocks">
               <Select
-                label="Fence Char"
+                label="Fence character"
                 value={props.options.fenceChar ?? "~"}
                 options={[
                   { label: "~", value: "~" },
@@ -188,26 +192,26 @@ export const OptionsPanel: Component<OptionsPanelProps> = (props) => {
                 onChange={(v) => updateOption("fenceChar", v)}
               />
               <NumberInput
-                label="Min Fence Length"
+                label="Min fence length"
                 value={props.options.minFenceLength ?? 4}
                 min={3}
                 max={20}
                 onChange={(v) => updateOption("minFenceLength", v)}
               />
               <Toggle
-                label="Space After Fence"
+                label="Space after fence"
                 checked={props.options.spaceAfterFence ?? true}
                 onChange={(v) => updateOption("spaceAfterFence", v)}
               />
               <TextInput
-                label="Default Language"
+                label="Default language"
                 value={props.options.defaultLanguage ?? ""}
                 placeholder="e.g. text"
                 onChange={(v) => updateOption("defaultLanguage", v)}
               />
             </Group>
 
-            <Group title="Thematic Breaks">
+            <Group title="Thematic breaks">
               <TextInput
                 label="Style"
                 value={
@@ -217,7 +221,7 @@ export const OptionsPanel: Component<OptionsPanelProps> = (props) => {
                 onChange={(v) => updateOption("thematicBreakStyle", v)}
               />
               <NumberInput
-                label="Leading Spaces"
+                label="Leading spaces"
                 value={props.options.thematicBreakLeadingSpaces ?? 3}
                 min={0}
                 max={3}
@@ -228,17 +232,17 @@ export const OptionsPanel: Component<OptionsPanelProps> = (props) => {
             <Group title="Typography">
               <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2">
                 <Toggle
-                  label="Curly Double Quotes"
+                  label="Curly double quotes"
                   checked={props.options.curlyDoubleQuotes ?? true}
                   onChange={(v) => updateOption("curlyDoubleQuotes", v)}
                 />
                 <Toggle
-                  label="Curly Single Quotes"
+                  label="Curly single quotes"
                   checked={props.options.curlySingleQuotes ?? true}
                   onChange={(v) => updateOption("curlySingleQuotes", v)}
                 />
                 <Toggle
-                  label="Curly Apostrophes"
+                  label="Curly apostrophes"
                   checked={props.options.curlyApostrophes ?? false}
                   onChange={(v) => updateOption("curlyApostrophes", v)}
                 />
@@ -253,13 +257,13 @@ export const OptionsPanel: Component<OptionsPanelProps> = (props) => {
             <Group title="Dashes">
               <div class="flex flex-col gap-3">
                 <Toggle
-                  label="En Dash"
+                  label="En dash"
                   checked={props.options.enDash !== false}
                   onChange={(v) => updateOption("enDash", v ? "--" : false)}
                 />
                 {props.options.enDash !== false && (
                   <TextInput
-                    label="En Dash Pattern"
+                    label="En dash pattern"
                     value={
                       typeof props.options.enDash === "string"
                         ? props.options.enDash
@@ -269,13 +273,13 @@ export const OptionsPanel: Component<OptionsPanelProps> = (props) => {
                   />
                 )}
                 <Toggle
-                  label="Em Dash"
+                  label="Em dash"
                   checked={props.options.emDash !== false}
                   onChange={(v) => updateOption("emDash", v ? "---" : false)}
                 />
                 {props.options.emDash !== false && (
                   <TextInput
-                    label="Em Dash Pattern"
+                    label="Em dash pattern"
                     value={
                       typeof props.options.emDash === "string"
                         ? props.options.emDash

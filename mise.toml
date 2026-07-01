@@ -20,7 +20,7 @@ run = "cargo run -- --write"
 
 [tasks.check]
 description = "Run all quality checks"
-depends = ["check:clippy", "check:fmt", "check:type", "check:markdown", "check:vscode"]
+depends = ["check:clippy", "check:fmt", "check:type", "check:markdown", "check:vscode", "check:website"]
 
 [tasks."check:clippy"]
 description = "Run clippy linter"
@@ -44,6 +44,14 @@ depends = ["build:wasm"]
 run = """
 pnpm --filter ./packages/vscode install --ignore-scripts --no-frozen-lockfile
 pnpm --filter ./packages/vscode check
+"""
+
+[tasks."check:website"]
+description = "Type-check the website and validate style guide anchors"
+depends = ["build:wasm"]
+run = """
+pnpm --filter ./website install --ignore-scripts --no-frozen-lockfile
+pnpm --filter ./website check
 """
 
 [tasks.test]

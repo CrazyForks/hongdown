@@ -1,4 +1,4 @@
-import { Component } from "solid-js";
+import { Component, For } from "solid-js";
 
 interface ToggleProps {
   label: string;
@@ -16,12 +16,15 @@ export const Toggle: Component<ToggleProps> = (props) => {
           checked={props.checked}
           onChange={(e) => props.onChange(e.currentTarget.checked)}
         />
-        <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-accent rounded-full peer dark:bg-neutral-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-600 peer-checked:bg-accent"></div>
+        <div class="w-9 h-5 bg-paper-shade peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-hong/60 rounded-full peer dark:bg-night-shade peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-paper after:rounded-full after:h-4 after:w-4 after:transition-all after:shadow-sm peer-checked:bg-hong dark:peer-checked:bg-hong"></div>
       </div>
-      <span class="text-sm font-medium">{props.label}</span>
+      <span class="text-sm font-mono">{props.label}</span>
     </label>
   );
 };
+
+const LABEL_CLASS =
+  "font-mono text-xs tracking-wide text-quiet";
 
 interface SelectProps {
   label: string;
@@ -33,17 +36,15 @@ interface SelectProps {
 export const Select: Component<SelectProps> = (props) => {
   return (
     <div class="flex flex-col gap-1">
-      <label class="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-        {props.label}
-      </label>
+      <label class={LABEL_CLASS}>{props.label}</label>
       <select
-        class="input-base text-sm"
+        class="input-base text-sm font-mono"
         value={props.value}
         onChange={(e) => props.onChange(e.currentTarget.value)}
       >
-        {props.options.map((opt) => (
-          <option value={opt.value}>{opt.label}</option>
-        ))}
+        <For each={props.options}>
+          {(opt) => <option value={opt.value}>{opt.label}</option>}
+        </For>
       </select>
     </div>
   );
@@ -60,12 +61,10 @@ interface NumberInputProps {
 export const NumberInput: Component<NumberInputProps> = (props) => {
   return (
     <div class="flex flex-col gap-1">
-      <label class="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-        {props.label}
-      </label>
+      <label class={LABEL_CLASS}>{props.label}</label>
       <input
         type="number"
-        class="input-base text-sm"
+        class="input-base text-sm font-mono"
         value={props.value}
         min={props.min}
         max={props.max}
@@ -85,12 +84,10 @@ interface TextInputProps {
 export const TextInput: Component<TextInputProps> = (props) => {
   return (
     <div class="flex flex-col gap-1">
-      <label class="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-        {props.label}
-      </label>
+      <label class={LABEL_CLASS}>{props.label}</label>
       <input
         type="text"
-        class="input-base text-sm"
+        class="input-base text-sm font-mono"
         value={props.value}
         placeholder={props.placeholder}
         onInput={(e) => props.onChange(e.currentTarget.value)}
@@ -120,9 +117,7 @@ export const TextAreaInput: Component<TextAreaInputProps> = (props) => {
 
   return (
     <div class="flex flex-col gap-1">
-      <label class="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-        {props.label}
-      </label>
+      <label class={LABEL_CLASS}>{props.label}</label>
       <textarea
         class="input-base text-sm resize-none font-mono"
         rows={props.rows ?? 3}

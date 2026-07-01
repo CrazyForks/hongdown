@@ -11,5 +11,5 @@ result
 /packages/wasm/dist/
 /packages/vscode/dist/
 /packages/vscode/*.vsix
-/demo/dist/
+/website/dist/
 node_modules/

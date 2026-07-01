@@ -62,16 +62,21 @@ hongdown/
 │   └── wasm/             # WASM library package (@hongdown/wasm)
 │       ├── src/          # TypeScript wrapper source
 │       └── test/         # Tests for Node.js, Bun, Deno
-├── demo/                 # Web demo application (hongdown-demo)
+├── website/              # Website: landing, demo, style guide (hongdown-website)
 │   ├── src/
-│   │   ├── components/   # UI components (TabBar, Options, Inputs)
-│   │   ├── App.tsx       # Main application logic
-│   │   ├── index.tsx     # Entry point
-│   │   ├── sample.ts     # Sample Markdown content
-│   │   └── styles.css    # Custom styles (scrollbar, etc.)
-│   ├── index.html        # HTML template
-│   ├── vite.config.ts    # Vite configuration
-│   └── uno.config.ts     # UnoCSS configuration
+│   │   ├── entries/      # Page entry points (index, demo, style)
+│   │   ├── pages/        # Page components
+│   │   ├── components/   # UI components (playground, landing, shared)
+│   │   ├── content/      # Data modules (style rule cards, install)
+│   │   └── styles.css    # Hand-written CSS (Setext device, Shiki, etc.)
+│   ├── plugins/          # Vite plugin rendering STYLE.md at build time
+│   ├── scripts/          # check-anchors.ts (style card anchor check)
+│   ├── index.html        # Landing page entry (/)
+│   ├── demo/index.html   # Full playground entry (/demo/)
+│   ├── style/index.html  # Style guide entry (/style/)
+│   ├── DESIGN.md         # Design language documentation
+│   ├── vite.config.ts    # Vite configuration (MPA)
+│   └── uno.config.ts     # UnoCSS configuration (design tokens)
 ├── pnpm-workspace.yaml   # pnpm workspace configuration
 └── package.json          # Root workspace package.json
 ~~~~
@@ -138,34 +143,34 @@ Test helper functions in *src/serializer/tests.rs*:
     for directive support
  -  `parse_and_serialize_with_warnings(input)` - Format and capture warnings
 
-### Demo application
+### Website
 
-The *demo/* directory contains a web-based playground for Hongdown.  To run
-the demo locally:
+The *website/* directory contains the Hongdown website, deployed to
+GitHub Pages at <https://dahlia.github.io/hongdown/>.  It has three
+pages:
+
+ -  `/` — landing page with philosophy, installation, style rule
+    highlight cards, and a simple playground
+ -  `/demo/` — the full playground with every formatting option
+ -  `/style/` — the style guide, generated at build time from the
+    repository root *STYLE.md* by a Vite plugin
+    (*website/plugins/style-doc.ts*)
+
+Common commands:
 
 ~~~~ bash
-pnpm --filter hongdown-demo dev     # Start development server
-pnpm --filter hongdown-demo build   # Build for production
+pnpm --filter hongdown-website dev     # Start development server
+pnpm --filter hongdown-website build   # Build for production
+pnpm --filter hongdown-website check   # Type check + style anchor check
 ~~~~
 
-The demo app uses:
+The website uses *Solid.js*, *UnoCSS*, *Vite*, and *@hongdown/wasm*.
+The design language (tokens, typography, the Setext underline device,
+dark mode rules) is documented in *website/DESIGN.md* — read it before
+changing the UI, and keep it up to date when design decisions change.
 
- -  *Solid.js* for reactive UI
- -  *UnoCSS* for styling with atomic CSS
- -  *Vite* for bundling and development
- -  *@hongdown/wasm* for real-time Markdown formatting
-
-Design principles:
-
- -  *Borderless design*: Visual hierarchy is established through background
-    color differences (e.g., `bg-neutral-50` vs `bg-white` in light mode)
-    rather than borders
- -  *Responsive layout*: Desktop shows split-view (editor/output side-by-side),
-    mobile shows tabbed interface (Editor/Output/Warnings tabs)
- -  *Dark mode*: Automatically respects system preferences via
-    `@media (prefers-color-scheme: dark)`
-
-When modifying the demo UI, verify changes in both light and dark modes.
+Dark mode follows the system preference only.  When modifying the
+website UI, verify changes in both light and dark modes.
 
 ### Formatting
 
@@ -194,6 +199,9 @@ This runs all checks in parallel:
  -  `mise run check:fmt` - Check code formatting
  -  `mise run check:type` - Run Rust type checking
  -  `mise run check:markdown` - Check Markdown formatting
+ -  `mise run check:vscode` - Type-check the VS Code extension
+ -  `mise run check:website` - Type-check the website and validate style
+    guide anchors
 
 You can also run individual Cargo commands directly:
 
@@ -496,6 +504,18 @@ formatting rules enforced by Hongdown.
 When modifying Hongdown's formatting behavior, you must also update
 *STYLE.md* to reflect the changes.  The specification should always match
 the actual behavior of the formatter.
+
+When *STYLE.md* changes, the website must be kept in sync as well:
+
+ -  The `/style/` page picks up *STYLE.md* automatically at build time —
+    no action needed there.
+ -  The landing page's style rule cards
+    (*website/src/content/style-rules.ts*) reference *STYLE.md* headings
+    by text.  Run `pnpm --filter hongdown-website check` (also part of
+    `mise run check`) to verify the referenced headings still exist, and
+    update the cards if a heading was renamed or removed.
+ -  If a rule showcased on the landing page changed in substance, update
+    that card's example snippet and note accordingly.
 
 [Hong Minhee's Markdown style convention]: ./STYLE.md
 [STYLE.md]: ./STYLE.md

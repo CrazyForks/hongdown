@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- An "H" set as a Setext (underlined) heading: H over a double rule. -->
+  <rect width="64" height="64" rx="12" fill="#BE3450"/>
+  <text x="32" y="40" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="34" font-weight="600" fill="#FCFCFB" text-anchor="middle">H</text>
+  <path d="M17 48h30" stroke="#FCFCFB" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M17 55h30" stroke="#FCFCFB" stroke-width="3.5" stroke-linecap="round" opacity=".55"/>
+</svg>

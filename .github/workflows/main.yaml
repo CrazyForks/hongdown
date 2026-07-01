@@ -257,7 +257,7 @@ jobs:
           packages/wasm/
           !packages/wasm/node_modules/
 
-  deploy-demo:
+  deploy-website:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [build-wasm]
     runs-on: ubuntu-latest
@@ -284,14 +284,14 @@ jobs:
         path: packages/wasm
     - name: Install dependencies
       run: pnpm install --no-frozen-lockfile
-    - name: Build Demo
-      run: pnpm --filter hongdown-demo build
+    - name: Build website
+      run: pnpm --filter hongdown-website build
       env:
         GITHUB_ACTIONS: "true"
     - uses: actions/configure-pages@v5
     - uses: actions/upload-pages-artifact@v3
       with:
-        path: demo/dist
+        path: website/dist
     - uses: actions/deploy-pages@v4
       id: deployment
 

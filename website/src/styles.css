@@ -1,0 +1,292 @@
+/* Design language: see DESIGN.md.  The recurring device on this site is
+ * the Setext heading — real `=` and `-` characters clipped to the width
+ * of the heading text, exactly as Hongdown formats them. */
+
+:root {
+  --hong: #be3450;
+  --rule-faint: #a39c92;
+  --surface-raised: #f4f3f0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --hong: #e7768c;
+    --rule-faint: #6e6861;
+    --surface-raised: #1e1b18;
+  }
+}
+
+/* Setext heading device.  Apply to a heading set in the mono face; the
+ * underline is made of real characters and clips to the text width. */
+.setext {
+  width: fit-content;
+}
+
+.setext::after {
+  display: block;
+  overflow: hidden;
+  width: 0;
+  min-width: 100%;
+  white-space: nowrap;
+  line-height: 1.1;
+  font-weight: 400;
+}
+
+.setext-1::after {
+  content: "================================================================================";
+  color: var(--hong);
+}
+
+.setext-2::after {
+  content: "--------------------------------------------------------------------------------";
+  color: var(--rule-faint);
+}
+
+/* Crimson links.  Defined in plain CSS (not as an UnoCSS shortcut) so
+ * the --hong custom property handles the dark variant. */
+.link-hong {
+  color: var(--hong);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in srgb, var(--hong) 40%, transparent);
+  transition: text-decoration-color 0.15s;
+}
+
+.link-hong:hover {
+  text-decoration-color: var(--hong);
+}
+
+/* The header wordmark: a miniature Setext H1 (text over a double rule). */
+.wordmark {
+  border-bottom: 3px double var(--hong);
+  padding-bottom: 2px;
+}
+
+/* The hero underline draws itself in on page load. */
+.rule-draw::after {
+  animation: rule-draw 700ms ease-out 150ms backwards;
+}
+
+@keyframes rule-draw {
+  from {
+    min-width: 0;
+  }
+  to {
+    min-width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rule-draw::after {
+    animation: none;
+  }
+}
+
+/* Shiki code blocks: the plugin emits dual-theme inline styles; this
+ * flips them with the system color scheme. */
+.shiki {
+  padding: 1rem 1.25rem;
+  border-radius: 0.375rem;
+  overflow-x: auto;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  background-color: var(--surface-raised) !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .shiki,
+  .shiki span {
+    color: var(--shiki-dark) !important;
+    font-style: var(--shiki-dark-font-style) !important;
+    font-weight: var(--shiki-dark-font-weight) !important;
+    text-decoration: var(--shiki-dark-text-decoration) !important;
+  }
+
+  .shiki {
+    background-color: var(--surface-raised) !important;
+  }
+}
+
+/* The style guide document (rendered from STYLE.md). */
+.style-doc {
+  font-size: 1.0625rem;
+  line-height: 1.75;
+}
+
+.style-doc h1,
+.style-doc h2,
+.style-doc h3,
+.style-doc h4 {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-weight: 600;
+  line-height: 1.3;
+  scroll-margin-top: 5.5rem;
+}
+
+/* STYLE.md's own H1/H2 get the same Setext underlines Hongdown would
+ * give them in plain text. */
+.style-doc h1,
+.style-doc h2 {
+  width: fit-content;
+}
+
+.style-doc h1::after,
+.style-doc h2::after {
+  display: block;
+  overflow: hidden;
+  width: 0;
+  min-width: 100%;
+  white-space: nowrap;
+  line-height: 1.1;
+  font-weight: 400;
+}
+
+.style-doc h1 {
+  font-size: 1.875rem;
+  margin: 0 0 2rem;
+}
+
+.style-doc h1::after {
+  content: "================================================================================";
+  color: var(--hong);
+}
+
+.style-doc h2 {
+  font-size: 1.375rem;
+  margin: 3.5rem 0 1.25rem;
+}
+
+.style-doc h2::after {
+  content: "--------------------------------------------------------------------------------";
+  color: var(--rule-faint);
+}
+
+.style-doc h3 {
+  font-size: 1.0625rem;
+  margin: 2.25rem 0 0.75rem;
+}
+
+.style-doc h4 {
+  font-size: 0.9375rem;
+  margin: 1.75rem 0 0.5rem;
+}
+
+.style-doc p {
+  margin: 0.75rem 0;
+}
+
+.style-doc a {
+  color: var(--hong);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in srgb, var(--hong) 40%, transparent);
+}
+
+.style-doc a:hover {
+  text-decoration-color: var(--hong);
+}
+
+.style-doc code {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.875em;
+  background-color: var(--surface-raised);
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+}
+
+.style-doc pre code {
+  background-color: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+}
+
+.style-doc pre {
+  margin: 1.25rem 0;
+}
+
+.style-doc blockquote {
+  margin: 1.25rem 0;
+  padding-left: 1.25rem;
+  border-left: 3px solid var(--hong);
+  font-style: italic;
+}
+
+.style-doc blockquote p {
+  margin: 0.5rem 0;
+}
+
+.style-doc ul,
+.style-doc ol {
+  padding-left: 1.5rem;
+  margin: 0.75rem 0;
+}
+
+.style-doc li {
+  margin: 0.375rem 0;
+}
+
+.style-doc li::marker {
+  color: var(--rule-faint);
+}
+
+/* Scrollbars. */
+@media (prefers-color-scheme: dark) {
+  ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #3a352f;
+    border-radius: 6px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #4c463f;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #3a352f transparent;
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #d8d5cf;
+    border-radius: 6px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #bab6ae;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #d8d5cf transparent;
+  }
+}
