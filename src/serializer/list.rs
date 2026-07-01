@@ -93,6 +93,18 @@ impl<'a> Serializer<'a> {
         self.ordered_list_max_items = old_max_items;
     }
 
+    /// Push a blank line, keeping the blockquote `>` prefix when inside one.
+    ///
+    /// Blank lines between blocks of a list item nested in a blockquote must
+    /// keep the `>` marker; otherwise the blockquote is split and re-parsing
+    /// the output produces a different document (not idempotent).
+    fn push_blank_line(&mut self) {
+        if self.in_block_quote {
+            self.output.push_str(self.blockquote_prefix.trim_end());
+        }
+        self.output.push('\n');
+    }
+
     /// Serialize a list item, optionally with a task list checkbox.
     ///
     /// # Arguments
@@ -253,11 +265,10 @@ impl<'a> Serializer<'a> {
                         false
                     };
 
+                    self.output.push('\n');
                     if has_blank_line_before {
                         // Blank line to separate from preceding paragraph
-                        self.output.push_str("\n\n");
-                    } else {
-                        self.output.push('\n');
+                        self.push_blank_line();
                     }
                     self.serialize_node(child);
                 }
@@ -270,13 +281,11 @@ impl<'a> Serializer<'a> {
                                 &children[i - 1].data.borrow().value,
                                 NodeValue::CodeBlock(_) | NodeValue::List(_)
                             );
-                        if prev_ends_with_newline {
-                            // Previous element already ends with \n, so just add one more \n
+                        if !prev_ends_with_newline {
+                            // End the previous paragraph's line first
                             self.output.push('\n');
-                        } else {
-                            // First \n ends the previous paragraph, second \n creates blank line
-                            self.output.push_str("\n\n");
                         }
+                        self.push_blank_line();
                         if self.in_block_quote {
                             self.output.push_str("> ");
                         }
@@ -295,7 +304,8 @@ impl<'a> Serializer<'a> {
                 }
                 NodeValue::CodeBlock(code_block) => {
                     // Code blocks in list items need blank line and indentation
-                    self.output.push_str("\n\n");
+                    self.output.push('\n');
+                    self.push_blank_line();
                     if self.in_block_quote {
                         self.output.push_str("> ");
                     }
@@ -309,20 +319,18 @@ impl<'a> Serializer<'a> {
                 }
                 NodeValue::Table(_) => {
                     // Tables in list items need a blank line separator like other block elements.
+                    self.output.push('\n');
                     if !is_first {
-                        self.output.push_str("\n\n");
-                    } else {
-                        self.output.push('\n');
+                        self.push_blank_line();
                     }
                     self.serialize_node(child);
                 }
                 NodeValue::BlockQuote | NodeValue::Alert(_) => {
                     // Block quotes and alerts in list items need blank line
                     // The indentation is handled by the blockquote/alert serialization itself
+                    self.output.push('\n');
                     if !is_first {
-                        self.output.push_str("\n\n");
-                    } else {
-                        self.output.push('\n');
+                        self.push_blank_line();
                     }
                     if self.in_block_quote {
                         self.output.push_str("> ");

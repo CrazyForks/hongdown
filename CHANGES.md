@@ -7,6 +7,20 @@ Version 0.6.0
 To be released.
 
 
+Version 0.5.1
+-------------
+
+Released on July 2, 2026.
+
+ -  Fixed a bug where formatting was not idempotent for fenced code blocks
+    inside list items nested in blockquotes.  Blank lines between the blocks
+    of a blockquoted list item lost their `>` marker, so running Hongdown
+    a second time reinterpreted the fenced code blocks as indented code and
+    wrapped them in another fence.  [[#24]]
+
+[#24]: https://github.com/dahlia/hongdown/issues/24
+
+
 Version 0.5.0
 -------------
 
@@ -56,6 +70,18 @@ Released on June 21, 2026.
 [official Visual Studio Code extension]: https://marketplace.visualstudio.com/items?itemName=hongminhee.hongdown
 [#22]: https://github.com/dahlia/hongdown/issues/22
 [#23]: https://github.com/dahlia/hongdown/pull/23
+
+
+Version 0.4.4
+-------------
+
+Released on July 2, 2026.
+
+ -  Fixed a bug where formatting was not idempotent for fenced code blocks
+    inside list items nested in blockquotes.  Blank lines between the blocks
+    of a blockquoted list item lost their `>` marker, so running Hongdown
+    a second time reinterpreted the fenced code blocks as indented code and
+    wrapped them in another fence.  [[#24]]
 
 
 Version 0.4.3
