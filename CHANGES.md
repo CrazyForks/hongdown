@@ -6,6 +6,14 @@ Version 0.4.4
 
 To be released.
 
+ -  Fixed a bug where formatting was not idempotent for fenced code blocks
+    inside list items nested in blockquotes.  Blank lines between the blocks
+    of a blockquoted list item lost their `>` marker, so running Hongdown
+    a second time reinterpreted the fenced code blocks as indented code and
+    wrapped them in another fence.  [[#24]]
+
+[#24]: https://github.com/dahlia/hongdown/issues/24
+
 
 Version 0.4.3
 -------------

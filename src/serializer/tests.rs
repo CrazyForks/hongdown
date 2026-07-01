@@ -5282,3 +5282,50 @@ fn test_private_use_char_not_corrupted_by_math_sentinels() {
     );
     assert!(result.contains("$a + b$"));
 }
+
+#[test]
+fn test_code_block_in_list_item_in_blockquote() {
+    // Blank lines around a fenced code block nested in a blockquoted list
+    // item must keep the `>` prefix; otherwise the blockquote is split and
+    // the output is not idempotent.
+    // https://github.com/dahlia/hongdown/issues/24
+    let input = ">  -  First item:
+>
+>     ~~~~ sh
+>     echo hello
+>     ~~~~
+>
+>     Trailing paragraph.
+";
+    let once = parse_and_serialize_with_source(input);
+    assert_eq!(once, input, "already-formatted input should be unchanged");
+    let twice = parse_and_serialize_with_source(&once);
+    assert_eq!(once, twice, "blockquoted list code block is not idempotent");
+}
+
+#[test]
+fn test_code_block_in_list_item_in_alert() {
+    // Regression test for the full reproduction case from
+    // https://github.com/dahlia/hongdown/issues/24
+    let input = "> [!TIP]
+> Here are some setup tips:
+>
+>  -  `SECRET_KEY` is a random string.  You can generate one with:
+>
+>     ~~~~ sh
+>     openssl rand -hex 32
+>     ~~~~
+>
+>  -  `INSTANCE_ACTOR_KEY` is a JWK.  You can generate one with:
+>
+>     ~~~~ sh
+>     mise run keygen
+>     ~~~~
+>
+>     Quote this value in `.env`.
+";
+    let once = parse_and_serialize_with_source(input);
+    assert_eq!(once, input, "already-formatted input should be unchanged");
+    let twice = parse_and_serialize_with_source(&once);
+    assert_eq!(once, twice, "alert list code block is not idempotent");
+}
