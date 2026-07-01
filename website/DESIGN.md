@@ -85,7 +85,23 @@ There is no sans-serif role.  If text is not prose, it is mono.
     (`ring-ink/8`) are acceptable only where two same-color surfaces
     would otherwise merge.
  -  Corner radii are modest: `rounded` (0.25 rem) for controls,
-    `rounded-lg` (0.5 rem) for cards.
+    `rounded-xl` (0.75 rem) for cards and panels.
+
+### Gradient tints
+
+Gradients exist only as *tints* of the accent — never as gradient text
+and never with a second hue.  All are defined in *src/styles.css*:
+
+ -  `.page-wash` — a radial crimson wash bleeding from the top of every
+    page (5% opacity in light mode, 8% in dark), like warm light
+    falling on paper.
+ -  `.card-tint` — a 3.5% diagonal tint on raised cards (rule cards,
+    the style page TOC).
+ -  `.btn-primary` gloss — a faint white-to-transparent overlay on the
+    primary button.
+
+Keep strengths at or below these values; if a tint is clearly visible
+as a gradient, it is too strong.
 
 ### The setext underline device
 
@@ -113,10 +129,11 @@ block.  Shiki code blocks emit dual-theme inline styles
 Motion
 ------
 
-Restraint: hover transitions, the copy-button check mark, and exactly
-one orchestrated moment — the hero underline drawing itself in on page
-load (`.rule-draw`).  Anything animated must respect
-`prefers-reduced-motion`.
+Restraint: hover transitions, the copy-button check mark, the rule
+cards' hover lift (`.card-lift`: a 2 px rise with a soft crimson-tinged
+shadow), and exactly one orchestrated moment — the hero underline
+drawing itself in on page load (`.rule-draw`).  Anything animated must
+respect `prefers-reduced-motion`.
 
 
 Page inventory

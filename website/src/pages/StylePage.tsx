@@ -11,12 +11,12 @@ export const StylePage: Component = () => {
   const sections = toc.filter((entry) => entry.level === 2);
 
   return (
-    <div class="min-h-screen flex flex-col">
+    <div class="min-h-screen flex flex-col page-wash">
       <SiteHeader current="style" />
       <main class="flex-1 col-80 pt-10 pb-16 w-full">
         <nav
           aria-label="Table of contents"
-          class="mb-12 surface-raised rounded-lg p-5"
+          class="mb-12 surface-raised card-tint rounded-xl p-5"
         >
           <h2 class="font-mono text-xs tracking-wide text-quiet mb-3 mt-0">
             Contents

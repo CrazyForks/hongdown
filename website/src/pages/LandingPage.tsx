@@ -12,7 +12,7 @@ import { SimplePlayground } from "../components/playground/SimplePlayground";
 
 export const LandingPage: Component = () => {
   return (
-    <div class="min-h-screen">
+    <div class="min-h-screen page-wash">
       <SiteHeader current="home" />
       <main>
         <Hero />

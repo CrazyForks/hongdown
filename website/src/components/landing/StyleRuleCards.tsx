@@ -28,7 +28,7 @@ export const StyleRuleCards: Component = () => {
       <div class="grid sm:grid-cols-2 gap-4">
         <For each={STYLE_RULES}>
           {(rule) => (
-            <div class="surface-raised rounded-lg p-5 flex flex-col gap-3">
+            <div class="surface-raised card-tint card-lift rounded-xl p-5 flex flex-col gap-3">
               <pre class="m-0 font-mono text-xs leading-relaxed overflow-x-auto text-ink dark:text-snow">
                 {rule.snippet}
               </pre>

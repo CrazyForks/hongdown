@@ -12,7 +12,7 @@ export const SimplePlayground: Component = () => {
 
   return (
     <div>
-      <div class="rounded-lg overflow-hidden ring-1 ring-ink/8 dark:ring-snow/8">
+      <div class="rounded-xl overflow-hidden ring-1 ring-ink/8 dark:ring-snow/8">
         <div class="grid md:grid-cols-2 h-[34rem] md:h-[26rem]">
           <div class="flex flex-col min-h-0 surface">
             <div class="px-4 pt-3 pb-1 font-mono text-xs text-quiet select-none">

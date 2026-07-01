@@ -16,7 +16,7 @@ export const OptionsPanel: Component<OptionsPanelProps> = (props) => {
   };
 
   const Group: Component<{ title: string; children: any }> = (p) => (
-    <div class="flex flex-col gap-3 p-4 rounded-lg surface">
+    <div class="flex flex-col gap-3 p-4 rounded-xl surface">
       <h3 class="font-mono text-sm font-semibold text-quiet pb-2 mb-1">
         {p.title}
       </h3>

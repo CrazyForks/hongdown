@@ -11,7 +11,7 @@ export const WarningsBadge: Component<WarningsBadgeProps> = (props) => {
   return (
     <Show when={props.warnings.length > 0}>
       <div class="absolute right-6 bottom-20 z-20">
-        <div class="bg-paper dark:bg-night-raised rounded-lg shadow-lg p-3 max-w-sm ring-1 ring-amber-500/30">
+        <div class="bg-paper dark:bg-night-raised rounded-xl shadow-lg p-3 max-w-sm ring-1 ring-amber-500/30">
           <div class="flex items-center gap-2 mb-2 text-amber-700 dark:text-amber-400 font-mono font-medium text-xs">
             <div class="i-carbon-warning-alt w-4 h-4" />
             Warnings ({props.warnings.length})
