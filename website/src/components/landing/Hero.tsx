@@ -16,15 +16,15 @@ export const Hero: Component = () => {
       </h1>
       <p class="text-body text-lg sm:text-xl mt-8 max-w-[40rem] leading-relaxed">
         Hongdown formats Markdown so the plain text reads as clearly as the
-        rendered page — Setext headings, aligned lists, reference links, and
+        rendered page: Setext headings, aligned lists, reference links, and
         80&#8209;column wrapping, applied automatically.
       </p>
       <p class="text-quiet font-serif mt-4 max-w-[40rem] leading-relaxed">
-        It is one person's style —{" "}
+        It is one person's style,{" "}
         <a class="link-hong" href="https://hongminhee.org/" target="_blank" rel="noopener">
           Hong Minhee
         </a>
-        's — refined over years of writing documentation for projects like{" "}
+        's, refined over years of writing documentation for projects like{" "}
         <a class="link-hong" href="https://fedify.dev/" target="_blank" rel="noopener">Fedify</a>,{" "}
         <a class="link-hong" href="https://logtape.org/" target="_blank" rel="noopener">LogTape</a>, and{" "}
         <a class="link-hong" href="https://optique.dev/" target="_blank" rel="noopener">Optique</a>.

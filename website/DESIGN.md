@@ -9,7 +9,7 @@ touching the UI; update it when a decision here changes.
 Concept
 -------
 
-The website reads like a beautifully formatted plain-text document —
+The website reads like a beautifully formatted plain-text document:
 Hongdown's own output is the visual language.  The product's thesis
 (*“Markdown should be readable as plain text, not just after rendering”*)
 is not just quoted; the site itself demonstrates it:
@@ -34,10 +34,13 @@ Voice and copy
     person's style, and why it is still worth adopting.
  -  Terse over salesy.  Describe what the formatter does in plain terms
     (“URLs move out of the prose”), not marketing language.
- -  Sentence case everywhere — headings, buttons, labels — matching the
+ -  Sentence case everywhere (headings, buttons, labels), matching the
     style convention Hongdown itself enforces.
  -  UI labels name what the user controls (“Line width”), never
     internals.
+ -  Avoid em dashes in copy; rewrite with a colon, comma, or period.
+    When one is truly needed, set it closed (no surrounding spaces),
+    like “by hand—that's intentional.”
 
 
 Design tokens
@@ -61,16 +64,16 @@ the two in sync.
 | `hong`          | `#BE3450` | `#E7768C` | The accent (see below)        |
 
 The accent is *crimson* on purpose: 홍/紅 (*hong*) means crimson, and a
-dahlia — the author's handle — is a crimson flower.  It is reserved for
+dahlia, the author's handle, is a crimson flower.  It is reserved for
 links, the hero/H1 Setext underline, primary buttons, toggles, and small
 markers.  Everything else stays neutral; do not introduce a second
 accent color.  Warnings may use amber, sparingly.
 
 ### Typography
 
- -  *IBM Plex Mono* — everything from the plain-text world: headings,
+ -  *IBM Plex Mono*: everything from the plain-text world, meaning headings,
     raw Markdown samples, code, navigation, buttons, labels, metadata.
- -  *Source Serif 4* — prose paragraphs (the “reading first” thesis:
+ -  *Source Serif 4*: prose paragraphs (the “reading first” thesis:
     book typography for a tool about readability).
 
 There is no sans-serif role.  If text is not prose, it is mono.
@@ -78,8 +81,8 @@ There is no sans-serif role.  If text is not prose, it is mono.
 ### Layout
 
  -  The content column is `col-80` (max-width 48 rem = 768 px), which is
-    exactly 80 columns of 16 px IBM Plex Mono — the style guide's line
-    width, as a layout measure.
+    exactly 80 columns of 16 px IBM Plex Mono: the style guide's line
+    width as a layout measure.
  -  *Borderless hierarchy*: separation comes from background shifts
     (`surface` vs `surface-raised`), not border lines.  Hairline rings
     (`ring-ink/8`) are acceptable only where two same-color surfaces
@@ -89,15 +92,15 @@ There is no sans-serif role.  If text is not prose, it is mono.
 
 ### Gradient tints
 
-Gradients exist only as *tints* of the accent — never as gradient text
+Gradients exist only as *tints* of the accent, never as gradient text
 and never with a second hue.  All are defined in *src/styles.css*:
 
- -  `.page-wash` — a radial crimson wash bleeding from the top of every
+ -  `.page-wash`: a radial crimson wash bleeding from the top of every
     page (5% opacity in light mode, 8% in dark), like warm light
     falling on paper.
- -  `.card-tint` — a 3.5% diagonal tint on raised cards (rule cards,
+ -  `.card-tint`: a 3.5% diagonal tint on raised cards (rule cards,
     the style page TOC).
- -  `.btn-primary` gloss — a faint white-to-transparent overlay on the
+ -  `.btn-primary` gloss: a faint white-to-transparent overlay on the
     primary button.
 
 Keep strengths at or below these values; if a tint is clearly visible
@@ -110,7 +113,7 @@ and the `.style-doc h1/h2` equivalents).  The underline is real `=`/`-`
 characters in a `::after` pseudo-element with
 `width: 0; min-width: 100%; overflow: hidden` so it clips to the heading text
 width without inflating the heading's `fit-content` box.  H1 underlines are
-crimson; H2 underlines are faint.  Do not replace these with `border-bottom` —
+crimson; H2 underlines are faint.  Do not replace these with `border-bottom`;
 the character texture is the point.
 
 
@@ -131,7 +134,7 @@ Motion
 
 Restraint: hover transitions, the copy-button check mark, the rule
 cards' hover lift (`.card-lift`: a 2 px rise with a soft crimson-tinged
-shadow), and exactly one orchestrated moment — the hero underline
+shadow), and exactly one orchestrated moment: the hero underline
 drawing itself in on page load (`.rule-draw`).  Anything animated must
 respect `prefers-reduced-motion`.
 
@@ -158,7 +161,7 @@ GitHub's rendering of STYLE.md.  The landing page's rule cards
 (*src/content/style-rules.ts*) reference STYLE.md headings *by text*;
 *scripts/check-anchors.ts* (run in `pnpm check` and `mise run check:website`)
 fails when a referenced heading disappears.  When STYLE.md changes, the page
-updates on the next build — but check the rule cards still showcase rules that
+updates on the next build, but check the rule cards still showcase rules that
 exist.
 
 

@@ -1,5 +1,5 @@
 /* Design language: see DESIGN.md.  The recurring device on this site is
- * the Setext heading — real `=` and `-` characters clipped to the width
+ * the Setext heading: real `=` and `-` characters clipped to the width
  * of the heading text, exactly as Hongdown formats them. */
 
 :root {
@@ -279,7 +279,7 @@
 }
 
 /* The reset removes list markers; restore them.  Unordered markers are
- * a literal hyphen — Hongdown's own list marker — where ::marker
+ * a literal hyphen (Hongdown's own list marker) where ::marker
  * content is supported, with disc as the fallback. */
 .style-doc ul {
   list-style-type: disc;

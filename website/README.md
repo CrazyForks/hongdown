@@ -4,10 +4,10 @@ Hongdown website
 The website for [Hongdown], deployed to GitHub Pages at
 <https://dahlia.github.io/hongdown/>.  It consists of three pages:
 
- -  `/` — landing page: philosophy, installation, style rule highlights,
+ -  `/`: landing page with philosophy, installation, style rule highlights,
     and a simple live playground.
- -  `/demo/` — the full playground with every formatting option.
- -  `/style/` — the complete style guide, rendered at build time from
+ -  `/demo/`: the full playground with every formatting option.
+ -  `/style/`: the complete style guide, rendered at build time from
     *[STYLE.md](../STYLE.md)* at the repository root.
 
 [Hongdown]: https://github.com/dahlia/hongdown

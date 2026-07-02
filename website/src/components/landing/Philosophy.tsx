@@ -41,7 +41,7 @@ export const Philosophy: Component = () => {
               </span>
               <p class="m-0 font-serif leading-relaxed">
                 <strong class="font-semibold">{tenet.term}</strong>
-                {" — "}
+                {": "}
                 <span class="text-quiet">{tenet.detail}</span>
               </p>
             </li>
@@ -50,7 +50,7 @@ export const Philosophy: Component = () => {
       </ul>
       <p class="font-serif text-quiet mt-8 max-w-[40rem] leading-relaxed">
         The style prioritizes reading over writing. Many of its rules are
-        tedious to follow by hand — that's intentional. The formatter does the
+        tedious to follow by hand—that's intentional. The formatter does the
         tedious part, so you can spend your attention on what the document
         says.
       </p>

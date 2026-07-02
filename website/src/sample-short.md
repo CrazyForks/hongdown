@@ -1,6 +1,6 @@
 # Hongdown in one minute
 
-Paste any *Markdown* on the left. Hongdown wraps prose at eighty columns, turns inline URLs into reference links, and keeps the plain text as readable as the rendered page -- see [the style guide](https://dahlia.github.io/hongdown/style/) for every rule.
+Paste any *Markdown* on the left. Hongdown wraps prose at eighty columns, turns inline URLs into reference links, and keeps the plain text as readable as the rendered page--see [the style guide](https://dahlia.github.io/hongdown/style/) for every rule.
 
 ## What just happened
 * Headings gained Setext underlines

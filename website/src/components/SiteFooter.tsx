@@ -11,7 +11,7 @@ export const SiteFooter: Component = () => {
         {"   " + THEMATIC_BREAK}
       </p>
       <p class="mb-3 max-w-prose">
-        <i>Hongdown</i> is <i>Hong</i> + <i>Markdown</i> — it also sounds like
+        <i>Hongdown</i> is <i>Hong</i> + <i>Markdown</i>. It also sounds like
         the Korean <span lang="ko" class="whitespace-nowrap">홍답다</span>, “befitting of Hong.”
       </p>
       <p class="flex flex-wrap gap-x-4 gap-y-1">

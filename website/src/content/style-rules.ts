@@ -74,7 +74,7 @@ New section
   },
   {
     title: "Typographic punctuation",
-    note: "Quotes curl, dashes lengthen, ellipses condense — never inside code.",
+    note: "Quotes curl, dashes lengthen, ellipses condense, but never inside code.",
     snippet: `"quotes"  →  “quotes”
 it's...   →  it's…
 Well--no  →  Well—no`,

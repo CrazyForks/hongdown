@@ -149,10 +149,10 @@ The *website/* directory contains the Hongdown website, deployed to
 GitHub Pages at <https://dahlia.github.io/hongdown/>.  It has three
 pages:
 
- -  `/` — landing page with philosophy, installation, style rule
+ -  `/`: landing page with philosophy, installation, style rule
     highlight cards, and a simple playground
- -  `/demo/` — the full playground with every formatting option
- -  `/style/` — the style guide, generated at build time from the
+ -  `/demo/`: the full playground with every formatting option
+ -  `/style/`: the style guide, generated at build time from the
     repository root *STYLE.md* by a Vite plugin
     (*website/plugins/style-doc.ts*)
 
@@ -166,7 +166,7 @@ pnpm --filter hongdown-website check   # Type check + style anchor check
 
 The website uses *Solid.js*, *UnoCSS*, *Vite*, and *@hongdown/wasm*.
 The design language (tokens, typography, the Setext underline device,
-dark mode rules) is documented in *website/DESIGN.md* — read it before
+dark mode rules) is documented in *website/DESIGN.md*; read it before
 changing the UI, and keep it up to date when design decisions change.
 
 Dark mode follows the system preference only.  When modifying the
@@ -507,7 +507,7 @@ the actual behavior of the formatter.
 
 When *STYLE.md* changes, the website must be kept in sync as well:
 
- -  The `/style/` page picks up *STYLE.md* automatically at build time —
+ -  The `/style/` page picks up *STYLE.md* automatically at build time;
     no action needed there.
  -  The landing page's style rule cards
     (*website/src/content/style-rules.ts*) reference *STYLE.md* headings
