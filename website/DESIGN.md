@@ -152,6 +152,15 @@ Shared chrome is `SiteHeader`/`SiteFooter`; the playground core
 (`createPlayground`, `Editor`, `Output`) is shared between the simple
 and full playgrounds.
 
+### The social preview image
+
+*public/og.png* (1200×630) is rendered from *og-template.html*, which
+restates the hero in the site's own tokens.  The template is not part
+of the build; it loads its fonts from Google Fonts at render time.  To
+regenerate the image, open the template in a browser at exactly
+1200×630, wait for `document.fonts.ready`, and screenshot it (e.g.
+with Playwright).
+
 ### The STYLE.md pipeline
 
 */style/* is generated from the repository root *STYLE.md* by
@@ -173,5 +182,3 @@ Non-goals
     GitHub.
  -  No CMS, no analytics, no cookie banners.
  -  No manual dark mode toggle.
- -  No `og:image` for now; if one is added later, derive it from the
-    favicon's Setext-H mark.
