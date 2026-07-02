@@ -1,4 +1,4 @@
-import { Component } from "solid-js";
+import { Component, createSignal, onCleanup } from "solid-js";
 
 import sampleShort from "../../sample-short.md?raw";
 import { page } from "../../lib/url";
@@ -7,8 +7,44 @@ import { Editor } from "./Editor";
 import { Output } from "./Output";
 
 // The landing page playground: editor and output only, no options.
+// The output wraps at the width of its own pane (measured in mono
+// columns) rather than the default 80, so the wrapped result never
+// soft-wraps awkwardly in the narrow card.
 export const SimplePlayground: Component = () => {
   const playground = createPlayground(sampleShort);
+  const [columns, setColumns] = createSignal<number | undefined>(undefined);
+
+  const observePane = (pre: HTMLPreElement) => {
+    const measure = () => {
+      const styles = getComputedStyle(pre);
+      const content =
+        pre.clientWidth -
+        parseFloat(styles.paddingLeft) -
+        parseFloat(styles.paddingRight);
+      const context = document.createElement("canvas").getContext("2d");
+      if (!content || !context) return;
+      context.font = `${styles.fontSize} ${styles.fontFamily}`;
+      const charWidth = context.measureText("0").width;
+      const cols = Math.max(20, Math.floor(content / charWidth));
+      if (cols !== columns()) {
+        setColumns(cols);
+        playground.setOptions({ lineWidth: cols });
+      }
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(pre);
+    // Re-measure once the mono webfont is in, since fallback metrics
+    // differ.
+    document.fonts.ready.then(measure);
+    onCleanup(() => observer.disconnect());
+  };
+
+  const command = () => {
+    const cols = columns();
+    return cols === undefined
+      ? "hongdown input.md"
+      : `hongdown --line-width ${cols} input.md`;
+  };
 
   return (
     <div>
@@ -26,9 +62,9 @@ export const SimplePlayground: Component = () => {
           </div>
           <div class="flex flex-col min-h-0 surface-raised">
             <div class="px-4 pt-3 pb-1 font-mono text-xs text-quiet select-none">
-              hongdown input.md
+              {command()}
             </div>
-            <Output value={playground.output()} />
+            <Output value={playground.output()} preRef={observePane} />
           </div>
         </div>
       </div>

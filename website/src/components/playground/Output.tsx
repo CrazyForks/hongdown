@@ -2,6 +2,7 @@ import { Component, createSignal } from "solid-js";
 
 interface OutputProps {
   value: string;
+  preRef?: (el: HTMLPreElement) => void;
 }
 
 export const Output: Component<OutputProps> = (props) => {
@@ -27,7 +28,10 @@ export const Output: Component<OutputProps> = (props) => {
           {copied() ? "Copied" : "Copy"}
         </button>
       </div>
-      <pre class="m-0 p-4 sm:p-5 font-mono text-sm leading-relaxed whitespace-pre-wrap select-text cursor-text text-ink dark:text-snow">
+      <pre
+        ref={props.preRef}
+        class="m-0 p-4 sm:p-5 font-mono text-sm leading-relaxed whitespace-pre-wrap select-text cursor-text text-ink dark:text-snow"
+      >
         {props.value}
       </pre>
     </div>
