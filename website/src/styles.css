@@ -278,12 +278,28 @@
   margin: 0.75rem 0;
 }
 
+/* The reset removes list markers; restore them.  Unordered markers are
+ * a literal hyphen — Hongdown's own list marker — where ::marker
+ * content is supported, with disc as the fallback. */
+.style-doc ul {
+  list-style-type: disc;
+}
+
+.style-doc ol {
+  list-style-type: decimal;
+}
+
 .style-doc li {
   margin: 0.375rem 0;
 }
 
 .style-doc li::marker {
   color: var(--rule-faint);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+.style-doc ul > li::marker {
+  content: "-  ";
 }
 
 /* Scrollbars. */
