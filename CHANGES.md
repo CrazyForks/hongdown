@@ -6,6 +6,30 @@ Version 0.5.2
 
 To be released.
 
+ -  Fixed a bug where formatting could silently change a link's destination.
+    Reference labels are generated from the link text, so two links with the
+    same text but different destinations were given the same label, and the
+    later definition overwrote the earlier one.  A label is now shared only
+    when the complete target matches, meaning both the URL and the title;
+    otherwise the colliding link gets a numbered label and full reference
+    syntax, as in `[guide][guide 2]`.  [[#26], [#29]]
+
+ -  Fixed a bug where a reference definition needed by a later section was
+    dropped entirely when an earlier section had already defined the same
+    label with a different destination, leaving the later link pointing at
+    the earlier section's URL.  [[#26], [#29]]
+
+ -  Fixed a bug where reference labels differing only in letter case, such as
+    `[Guide]` and `[guide]`, were emitted as two separate definitions.  Since
+    CommonMark matches reference labels case-insensitively, parsers ignored
+    the second definition and both links resolved to the first URL.  Labels
+    are now compared with runs of whitespace collapsed and Unicode case
+    folding applied, the same way the underlying parser resolves them.
+    [[#26], [#29]]
+
+[#26]: https://github.com/dahlia/hongdown/issues/26
+[#29]: https://github.com/dahlia/hongdown/pull/29
+
 
 Version 0.5.1
 -------------

@@ -236,15 +236,11 @@ impl<'a> Serializer<'a> {
                         for child in node.children() {
                             self.collect_inline_node(child, content);
                         }
+                        let actual_label =
+                            self.register_reference(actual_label, &link.url, &link.title);
                         content.push_str("][");
-                        content.push_str(actual_label);
+                        content.push_str(&actual_label);
                         content.push(']');
-
-                        self.add_reference(
-                            actual_label.to_string(),
-                            link.url.clone(),
-                            link.title.clone(),
-                        );
                     } else {
                         // Non-badge reference links: use helper
                         self.format_reference_link(content, &text, &label, &link.url, &link.title);

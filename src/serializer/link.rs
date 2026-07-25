@@ -14,30 +14,27 @@ impl<'a> Serializer<'a> {
         url: &str,
         title: &str,
     ) {
-        if label.starts_with('\x01') {
-            // Collapsed reference: [text][]
-            let actual_label = label.strip_prefix('\x01').unwrap();
-            output.push('[');
-            output.push_str(text);
-            output.push_str("][]");
+        let collapsed = label.starts_with('\x01');
+        let label = label.strip_prefix('\x01').unwrap_or(label);
+        // The label may already be taken by a different target, in which case a
+        // distinct one is allocated and the full reference form is required.
+        let label = self.register_reference(label, url, title);
 
-            self.add_reference(actual_label.to_string(), url.to_string(), title.to_string());
-        } else if text == label {
-            // Shortcut reference: [text]
-            output.push('[');
-            output.push_str(text);
-            output.push(']');
-
-            self.add_reference(label.to_string(), url.to_string(), title.to_string());
+        output.push('[');
+        output.push_str(text);
+        if label == text {
+            if collapsed {
+                // Collapsed reference: [text][]
+                output.push_str("][]");
+            } else {
+                // Shortcut reference: [text]
+                output.push(']');
+            }
         } else {
             // Full reference: [text][label]
-            output.push('[');
-            output.push_str(text);
             output.push_str("][");
-            output.push_str(label);
+            output.push_str(&label);
             output.push(']');
-
-            self.add_reference(label.to_string(), url.to_string(), title.to_string());
         }
     }
 
@@ -77,14 +74,22 @@ impl<'a> Serializer<'a> {
     ) {
         // Normalize: replace SoftBreak markers with spaces for shortcut refs
         let normalized_text = text.replace('\x00', " ");
+        // The link text is only usable as the label when it is not already
+        // taken by a different target; otherwise fall back to a full reference.
+        let label = self.register_reference(&normalized_text, url, title);
+
         output.push('[');
         output.push_str(&normalized_text);
-        output.push(']');
-        if use_collapsed {
-            output.push_str("[]");
+        if label == normalized_text {
+            output.push(']');
+            if use_collapsed {
+                output.push_str("[]");
+            }
+        } else {
+            output.push_str("][");
+            output.push_str(&label);
+            output.push(']');
         }
-
-        self.add_reference(normalized_text, url.to_string(), title.to_string());
     }
 
     /// Check if the next sibling of a node starts with `[`.
@@ -110,30 +115,25 @@ impl<'a> Serializer<'a> {
         url: &str,
         title: &str,
     ) {
-        if label.starts_with('\x01') {
-            // Collapsed reference: ![alt][]
-            let actual_label = label.strip_prefix('\x01').unwrap();
-            output.push_str("![");
-            output.push_str(text);
-            output.push_str("][]");
+        let collapsed = label.starts_with('\x01');
+        let label = label.strip_prefix('\x01').unwrap_or(label);
+        let label = self.register_reference(label, url, title);
 
-            self.add_reference(actual_label.to_string(), url.to_string(), title.to_string());
-        } else if text == label {
-            // Shortcut reference: ![alt]
-            output.push_str("![");
-            output.push_str(text);
-            output.push(']');
-
-            self.add_reference(label.to_string(), url.to_string(), title.to_string());
+        output.push_str("![");
+        output.push_str(text);
+        if label == text {
+            if collapsed {
+                // Collapsed reference: ![alt][]
+                output.push_str("][]");
+            } else {
+                // Shortcut reference: ![alt]
+                output.push(']');
+            }
         } else {
             // Full reference: ![alt][label]
-            output.push_str("![");
-            output.push_str(text);
             output.push_str("][");
-            output.push_str(label);
+            output.push_str(&label);
             output.push(']');
-
-            self.add_reference(label.to_string(), url.to_string(), title.to_string());
         }
     }
 
@@ -172,9 +172,9 @@ impl<'a> Serializer<'a> {
                 }
                 self.output.push_str("][");
                 let actual_label = label.strip_prefix('\x01').unwrap_or(&label);
-                self.output.push_str(actual_label);
+                let actual_label = self.register_reference(actual_label, url, title);
+                self.output.push_str(&actual_label);
                 self.output.push(']');
-                self.add_reference(actual_label.to_string(), url.to_string(), title.to_string());
             } else {
                 // Use helper for non-badge reference links
                 let mut output = String::new();
@@ -217,9 +217,6 @@ impl<'a> Serializer<'a> {
     }
 
     pub(super) fn serialize_image<'b>(&mut self, node: &'b AstNode<'b>, url: &str, title: &str) {
-        // Collect the alt text
-        let alt_text = self.collect_text(node);
-
         // Check if original was reference style
         if let Some((text, label)) = self.get_reference_style_info(node) {
             // Use a temporary buffer to avoid double borrow
@@ -229,7 +226,11 @@ impl<'a> Serializer<'a> {
             return;
         }
 
-        // Inline style: ![alt](url)
+        // Inline style: ![alt](url).  The alt text is collected only here:
+        // collecting it up front would register reference definitions for any
+        // links inside it even when the output is discarded, reserving labels
+        // that never appear in the document.
+        let alt_text = self.collect_text(node);
         Self::format_inline_image(&mut self.output, &alt_text, url, title);
     }
 }

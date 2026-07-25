@@ -5359,3 +5359,378 @@ fn test_code_block_in_list_item_in_alert() {
     let twice = parse_and_serialize_with_source(&once);
     assert_eq!(once, twice, "alert list code block is not idempotent");
 }
+
+#[test]
+fn test_duplicate_link_text_different_urls_get_distinct_labels() {
+    // Two links with the same text but different destinations must not share
+    // a reference label; otherwise the first link silently changes target.
+    let input = " -  Read [guide](https://example.com/first).\n \
+                 -  Read [guide](https://example.com/second).\n";
+    let result = parse_and_serialize(input);
+    assert!(
+        result.contains("[guide]: https://example.com/first"),
+        "first destination should be preserved, got:\n{}",
+        result
+    );
+    assert!(
+        result.contains("[guide 2]: https://example.com/second"),
+        "second destination should get a distinct label, got:\n{}",
+        result
+    );
+    assert!(
+        result.contains("[guide][guide 2]"),
+        "colliding link should use full reference syntax, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_duplicate_link_text_same_url_reuses_label() {
+    // Identical targets should still share a single definition.
+    let input = " -  Read [guide](https://example.com/).\n \
+                 -  Read [guide](https://example.com/).\n";
+    let result = parse_and_serialize(input);
+    let count = result.matches("[guide]: https://example.com/").count();
+    assert_eq!(
+        count, 1,
+        "identical targets should share one definition, got:\n{}",
+        result
+    );
+    assert!(
+        !result.contains("guide 2"),
+        "identical targets should not be renamed, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_duplicate_link_text_same_url_different_title_distinct_labels() {
+    // The title is part of the link target, so differing titles collide too.
+    let input = " -  Read [guide](https://example.com/ \"First\").\n \
+                 -  Read [guide](https://example.com/ \"Second\").\n";
+    let result = parse_and_serialize(input);
+    assert!(
+        result.contains("[guide]: https://example.com/ \"First\""),
+        "first title should be preserved, got:\n{}",
+        result
+    );
+    assert!(
+        result.contains("[guide 2]: https://example.com/ \"Second\""),
+        "second title should get a distinct label, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_duplicate_link_labels_idempotent() {
+    let input = " -  Read [guide](https://example.com/first).\n \
+                 -  Read [guide](https://example.com/second).\n \
+                 -  Read [guide](https://example.com/third).\n";
+    let result = parse_and_serialize_with_source(input);
+    let result2 = parse_and_serialize_with_source(&result);
+    assert_eq!(
+        result, result2,
+        "distinct reference labels should be idempotent.\nFirst pass:\n{}\nSecond pass:\n{}",
+        result, result2
+    );
+    assert!(
+        result.contains("[guide 3]: https://example.com/third"),
+        "third destination should be preserved, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_link_label_collision_across_sections() {
+    // Reference definitions are document-wide, so a label emitted in an
+    // earlier section must not be redefined with a different target later.
+    let input = "Intro\n\n\
+                 Section A\n---------\n\n\
+                 Read [guide](https://example.com/first).\n\n\
+                 Section B\n---------\n\n\
+                 Read [guide](https://example.com/second).\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("[guide]: https://example.com/first"),
+        "first section's destination should be preserved, got:\n{}",
+        result
+    );
+    assert!(
+        result.contains("[guide 2]: https://example.com/second"),
+        "second section's destination should not be dropped, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_link_label_collision_case_insensitive() {
+    // CommonMark matches reference labels case-insensitively, so labels
+    // differing only in case would collide in the output.
+    let input = "Read [Guide](https://example.com/first) and \
+                 [guide](https://example.com/second).\n";
+    let result = parse_and_serialize(input);
+    assert!(
+        result.contains("[Guide]: https://example.com/first"),
+        "first destination should be preserved, got:\n{}",
+        result
+    );
+    assert!(
+        result.contains("[guide 2]: https://example.com/second"),
+        "case-insensitive collision should get a distinct label, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_case_insensitive_label_same_url_reuses_definition() {
+    let input = "Read [Guide](https://example.com/) and \
+                 [guide](https://example.com/).\n";
+    let result = parse_and_serialize(input);
+    let count = result.matches("]: https://example.com/").count();
+    assert_eq!(
+        count, 1,
+        "labels differing only in case with the same target should share one \
+         definition, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_image_and_link_label_collision() {
+    // A generated link label must not clobber an image's reference definition.
+    let input = "See ![logo] and [logo](https://example.com/page).\n\n\
+                 [logo]: https://example.com/logo.png\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("[logo]: https://example.com/logo.png"),
+        "image destination should be preserved, got:\n{}",
+        result
+    );
+    assert!(
+        result.contains("[logo 2]: https://example.com/page"),
+        "link destination should get a distinct label, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_link_label_collision_inside_footnote() {
+    let input = "Text[^1] and more[^2].\n\n\
+                 [^1]: See [guide](https://example.com/first).\n\n\
+                 [^2]: See [guide](https://example.com/second).\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("[guide]: https://example.com/first"),
+        "first footnote's destination should be preserved, got:\n{}",
+        result
+    );
+    assert!(
+        result.contains("[guide 2]: https://example.com/second"),
+        "second footnote's destination should be preserved, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_link_label_collision_in_heading() {
+    let input = "[guide](https://example.com/first) heading\n\
+                 -----------------------------------------\n\n\
+                 Read [guide](https://example.com/second).\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("[guide]: https://example.com/first"),
+        "heading link's destination should be preserved, got:\n{}",
+        result
+    );
+    assert!(
+        result.contains("[guide 2]: https://example.com/second"),
+        "body link's destination should be preserved, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_numeric_link_label_collision() {
+    // A numbered label derived from a numeric one is no longer numeric, so it
+    // joins the regular references rather than the sorted numeric ones.
+    let input = "See [1](https://example.com/a), [1](https://example.com/b) \
+                 and [2](https://example.com/c).\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("[1]: https://example.com/a"),
+        "first destination should be preserved, got:\n{}",
+        result
+    );
+    assert!(
+        result.contains("[1 2]: https://example.com/b"),
+        "colliding numeric label should get a distinct label, got:\n{}",
+        result
+    );
+    assert!(
+        result.contains("[2]: https://example.com/c"),
+        "unrelated numeric label should be untouched, got:\n{}",
+        result
+    );
+    let result2 = parse_and_serialize_with_source(&result);
+    assert_eq!(
+        result, result2,
+        "numeric label collision should be idempotent.\nFirst pass:\n{}\nSecond pass:\n{}",
+        result, result2
+    );
+}
+
+#[test]
+fn test_link_label_collision_with_explicit_reference_label() {
+    // A hand-written label and a generated one that clash must each keep
+    // their own destination, whichever comes first in the document.
+    let input = "See [the guide][guide] and later \
+                 [guide](https://example.com/other).\n\n\
+                 [guide]: https://example.com/authored\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("[guide]: https://example.com/authored"),
+        "the hand-written label should keep its destination, got:\n{}",
+        result
+    );
+    assert!(
+        result.contains("[guide 2]: https://example.com/other"),
+        "the generated label should get a distinct label, got:\n{}",
+        result
+    );
+    let result2 = parse_and_serialize_with_source(&result);
+    assert_eq!(result, result2, "should be idempotent, got:\n{}", result2);
+}
+
+#[test]
+fn test_link_label_collision_unicode_case_folding() {
+    // CommonMark folds labels with Unicode default case folding, under which
+    // "Straße" and "STRASSE" are the same label; plain lowercasing is not
+    // enough to notice the collision.
+    let input = "See [Straße](https://example.com/a) and \
+                 [STRASSE](https://example.com/b).\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("[Straße]: https://example.com/a"),
+        "first destination should be preserved, got:\n{}",
+        result
+    );
+    assert!(
+        result.contains("[STRASSE 2]: https://example.com/b"),
+        "case-folded collision should get a distinct label, got:\n{}",
+        result
+    );
+    let result2 = parse_and_serialize_with_source(&result);
+    assert_eq!(result, result2, "should be idempotent, got:\n{}", result2);
+}
+
+#[test]
+fn test_link_label_collision_near_max_label_length() {
+    // A numbered label must stay within the parser's label length limit;
+    // an over-long one is rejected on the next pass, which would turn the
+    // link into literal text and lose its destination.
+    let text = "x".repeat(999);
+    let input =
+        format!("See [{text}](https://example.com/a) and [{text}](https://example.com/b).\n");
+    let result = parse_and_serialize_with_source(&input);
+    assert!(
+        result.contains("https://example.com/b"),
+        "second destination should be preserved, got:\n{}",
+        result
+    );
+    for line in result.lines() {
+        if let Some(label_len) = line.strip_prefix('[').and_then(|l| l.find("]: ")) {
+            assert!(
+                label_len <= 1000,
+                "reference label should stay within the parser's limit, got {} bytes",
+                label_len
+            );
+        }
+    }
+    let result2 = parse_and_serialize_with_source(&result);
+    assert_eq!(
+        result, result2,
+        "a label near the length limit should be idempotent"
+    );
+}
+
+#[test]
+fn test_repeated_target_reuses_its_numbered_label() {
+    // A target that already has a numbered label must reuse it rather than
+    // being handed a fresh one when it appears again.
+    let input = " -  [t](https://example.com/a)\n \
+                 -  [t](https://example.com/b)\n \
+                 -  [t](https://example.com/c)\n \
+                 -  [t](https://example.com/b)\n";
+    let result = parse_and_serialize_with_source(input);
+    let count = result.matches("]: https://example.com/b").count();
+    assert_eq!(
+        count, 1,
+        "the repeated target should keep a single definition, got:\n{}",
+        result
+    );
+    assert_eq!(
+        result.matches("[t][t 2]").count(),
+        2,
+        "both links to the repeated target should use the same label, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_near_limit_labels_sharing_a_prefix_stay_distinct() {
+    // Labels long enough to be shortened before numbering collapse to the
+    // same prefix, so their numbered variants live in one namespace and must
+    // still be allocated distinctly.
+    let prefix = "x".repeat(997);
+    let mut input = String::new();
+    for i in 0..8 {
+        let text = format!("{prefix}{i:03}");
+        input.push_str(&format!(
+            "L [{text}](https://example.com/a{i}) and [{text}](https://example.com/b{i}).\n\n"
+        ));
+    }
+    let result = parse_and_serialize_with_source(&input);
+    for i in 0..8 {
+        assert!(
+            result.contains(&format!("https://example.com/a{i}\n")),
+            "destination a{} should be preserved, got:\n{}",
+            i,
+            result
+        );
+        assert!(
+            result.contains(&format!("https://example.com/b{i}\n")),
+            "destination b{} should be preserved, got:\n{}",
+            i,
+            result
+        );
+    }
+    let result2 = parse_and_serialize_with_source(&result);
+    assert_eq!(
+        result, result2,
+        "shortened labels sharing a prefix should be idempotent"
+    );
+}
+
+#[test]
+fn test_numbered_variant_occupied_by_another_target_is_reused() {
+    // A numbered variant that is already occupied must still be found by a
+    // later link to the target it holds, rather than that target being given
+    // a second, redundant definition.
+    let input = "See [b][foo 2], [foo](https://example.com/y), \
+                 [foo](https://example.com/z) and [foo](https://example.com/x).\n\n\
+                 [foo 2]: https://example.com/x\n";
+    let result = parse_and_serialize_with_source(input);
+    let count = result.matches("]: https://example.com/x").count();
+    assert_eq!(
+        count, 1,
+        "the occupied variant's target should keep a single definition, got:\n{}",
+        result
+    );
+    assert!(
+        result.contains("[foo][foo 2]"),
+        "the later link should reuse the existing variant, got:\n{}",
+        result
+    );
+    let result2 = parse_and_serialize_with_source(&result);
+    assert_eq!(result, result2, "should be idempotent, got:\n{}", result2);
+}

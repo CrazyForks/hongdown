@@ -98,6 +98,57 @@ pub struct ReferenceLink {
     pub title: String,
 }
 
+/// The longest reference label a CommonMark parser accepts, in bytes.
+///
+/// Matches comrak's own `MAX_LINK_LABEL_LENGTH`; a longer label makes the
+/// parser reject the whole link, so a generated label must stay within it.
+const MAX_REFERENCE_LABEL_BYTES: usize = 1000;
+
+/// Normalize a reference label into the key used to look it up.
+///
+/// CommonMark matches reference labels after collapsing internal whitespace
+/// and applying Unicode default case folding, so labels that differ only in
+/// spacing or case refer to the same definition and must share a single key.
+/// This mirrors comrak's `normalize_label(_, Case::Fold)`, down to using the
+/// same case folding implementation: plain lowercasing would miss pairs such
+/// as `Straße` and `STRASSE`.  The internal SoftBreak marker is treated as
+/// the space it will be emitted as.
+pub fn normalize_reference_key(label: &str) -> String {
+    caseless::default_case_fold_str(&super::escape::normalize_whitespace(
+        &label.replace('\x00', " "),
+    ))
+}
+
+/// The longest suffix [`numbered_reference_label`] appends, in bytes: a space
+/// plus a `u32` in decimal.
+const MAX_REFERENCE_LABEL_SUFFIX_BYTES: usize = 11;
+
+/// Shorten a label, at a character boundary, so that any numbered suffix still
+/// fits within [`MAX_REFERENCE_LABEL_BYTES`].  Labels that are already short
+/// enough are returned unchanged.
+///
+/// An over-long label is rejected by the parser on the next pass, turning the
+/// link into literal text and losing its destination.  The amount removed does
+/// not depend on the number, so every numbered variant of a given label shares
+/// one namespace; a number-dependent cut would let labels that shorten to the
+/// same prefix allocate against each other unnoticed.
+fn truncate_reference_label_base(label: &str) -> &str {
+    let budget = MAX_REFERENCE_LABEL_BYTES - MAX_REFERENCE_LABEL_SUFFIX_BYTES;
+    if label.len() <= budget {
+        return label;
+    }
+    let mut end = budget;
+    while end > 0 && !label.is_char_boundary(end) {
+        end -= 1;
+    }
+    &label[..end]
+}
+
+/// Build the `n`th numbered variant of `label`, such as `guide 2`.
+fn numbered_reference_label(label: &str, n: u32) -> String {
+    format!("{} {n}", truncate_reference_label_base(label))
+}
+
 /// A footnote definition: name -> content
 #[derive(Debug, Clone)]
 pub struct FootnoteDefinition {
@@ -134,6 +185,7 @@ pub struct FootnoteSet {
     /// Used to associate references with their parent footnote's timing.
     pub current_reference_line: usize,
     /// Reference links collected from within footnote definitions.
+    /// Key: normalized label (see `normalize_reference_key`).
     /// Value is (ReferenceLink, footnote_reference_line) to track when to flush.
     pub pending_references: IndexMap<String, (ReferenceLink, usize)>,
 }
@@ -179,10 +231,11 @@ impl FootnoteSet {
         self.current_reference_line = 0;
     }
 
-    /// Add a reference link found within footnote content.
-    pub fn add_reference(&mut self, label: String, reference: ReferenceLink) {
+    /// Add a reference link found within footnote content, under its
+    /// normalized lookup key.
+    pub fn add_reference(&mut self, key: String, reference: ReferenceLink) {
         self.pending_references
-            .insert(label, (reference, self.current_reference_line));
+            .insert(key, (reference, self.current_reference_line));
     }
 }
 
@@ -248,10 +301,19 @@ pub struct Serializer<'a> {
     /// Accumulated blockquote prefix for nested blockquotes (e.g., "> " or "> > ")
     pub blockquote_prefix: String,
     /// Reference links collected for the current section
-    /// Key: label, Value: ReferenceLink (insertion order preserved)
+    /// Key: normalized label (see `normalize_reference_key`),
+    /// Value: ReferenceLink (insertion order preserved)
     pub pending_references: IndexMap<String, ReferenceLink>,
-    /// Reference labels that have already been emitted (to avoid duplicates)
-    pub emitted_references: std::collections::HashSet<String>,
+    /// Reference links that have already been emitted (to avoid duplicates)
+    /// Key: normalized label, Value: the target it was emitted with
+    pub emitted_references: std::collections::HashMap<String, ReferenceLink>,
+    /// The next numbered variant to try for a label whose earlier variants are
+    /// all taken.  Key: normalized label of the base.
+    pub reference_label_cursors: std::collections::HashMap<String, u32>,
+    /// Numbered variants already handed out, so that a target appearing again
+    /// reuses its variant instead of being given another one.
+    /// Key: (normalized label of the base, url, title)
+    pub numbered_reference_labels: std::collections::HashMap<(String, String, String), String>,
     /// Footnote definitions and their reference tracking
     pub footnotes: FootnoteSet,
     /// Current list nesting depth (0 = not in list, 1 = top-level, 2+ = nested)
@@ -306,7 +368,9 @@ impl<'a> Serializer<'a> {
             in_block_quote: false,
             blockquote_prefix: String::new(),
             pending_references: IndexMap::new(),
-            emitted_references: std::collections::HashSet::new(),
+            emitted_references: std::collections::HashMap::new(),
+            reference_label_cursors: std::collections::HashMap::new(),
+            numbered_reference_labels: std::collections::HashMap::new(),
             footnotes: FootnoteSet::new(),
             list_depth: 0,
             skip_mode: FormatSkipMode::None,
@@ -344,7 +408,9 @@ impl<'a> Serializer<'a> {
             in_block_quote: false,
             blockquote_prefix: String::new(),
             pending_references: IndexMap::new(),
-            emitted_references: std::collections::HashSet::new(),
+            emitted_references: std::collections::HashMap::new(),
+            reference_label_cursors: std::collections::HashMap::new(),
+            numbered_reference_labels: std::collections::HashMap::new(),
             footnotes: FootnoteSet::new(),
             list_depth: 0,
             skip_mode: FormatSkipMode::None,
@@ -447,19 +513,106 @@ impl<'a> Serializer<'a> {
         self.skip_mode != FormatSkipMode::None
     }
 
-    /// Add a reference link to the pending references.
-    /// If collecting_footnote_content is true, adds to pending_footnote_references instead,
-    /// along with the current footnote's reference line for proper flush timing.
-    pub fn add_reference(&mut self, label: String, url: String, title: String) {
+    /// Look up a reference that has already been registered under `key`,
+    /// whether it is still pending or has already been emitted.
+    fn find_reference(&self, key: &str) -> Option<&ReferenceLink> {
+        self.emitted_references
+            .get(key)
+            .or_else(|| self.pending_references.get(key))
+            .or_else(|| self.footnotes.pending_references.get(key).map(|(r, _)| r))
+    }
+
+    /// Register a reference link and return the label that must be used to
+    /// refer to it.
+    ///
+    /// A label may only be shared by links whose complete target (both URL and
+    /// title) is identical; sharing it otherwise would silently change one of
+    /// the links' destinations.  When the desired label is already taken by a
+    /// different target, a distinct label is derived from it by appending a
+    /// number, and the caller must fall back to full reference syntax.
+    ///
+    /// If collecting_footnote_content is true, the reference is added to
+    /// pending_footnote_references instead, along with the current footnote's
+    /// reference line for proper flush timing.
+    pub fn register_reference(&mut self, label: &str, url: &str, title: &str) -> String {
+        let key = normalize_reference_key(label);
+        match self.find_reference(&key) {
+            // Free label: take it.
+            None => {
+                self.insert_reference(key, label.to_string(), url, title);
+                label.to_string()
+            }
+            // Already registered with the same target: share it.  The existing
+            // entry is left untouched so that its spelling (and, once emitted,
+            // its definition) is not duplicated or altered.
+            Some(existing) if existing.url == url && existing.title == title => label.to_string(),
+            // Taken by a different target: derive a distinct label.
+            Some(_) => {
+                // The variants live in the namespace of the shortened base, so
+                // that is what both the cursor and the reuse map are keyed by:
+                // labels long enough to be shortened to the same prefix share
+                // one namespace and must not allocate against each other.
+                let cursor_key = normalize_reference_key(truncate_reference_label_base(label));
+                // Reuse the variant this target was already given, if any.
+                // Looking it up directly keeps a document full of same-text
+                // links from rescanning every variant it has handed out.
+                let target = (cursor_key.clone(), url.to_string(), title.to_string());
+                if let Some(label) = self.numbered_reference_labels.get(&target) {
+                    return label.clone();
+                }
+                // Every variant below the cursor is already taken, and taken
+                // labels are never released, so the search can resume there.
+                let start = self
+                    .reference_label_cursors
+                    .get(&cursor_key)
+                    .copied()
+                    .unwrap_or(2);
+                for n in start.. {
+                    let candidate = numbered_reference_label(label, n);
+                    let candidate_key = normalize_reference_key(&candidate);
+                    // Copy the occupant out of the borrow so the maps below can
+                    // be updated.
+                    let occupant = self
+                        .find_reference(&candidate_key)
+                        .map(|existing| (existing.url.clone(), existing.title.clone()));
+                    match occupant {
+                        // Occupied by something else.  Remember what, because
+                        // the cursor will not visit this variant again and a
+                        // later link to that same target must find it here
+                        // rather than allocating a duplicate for it.
+                        Some((occupied_url, occupied_title))
+                            if occupied_url != url || occupied_title != title =>
+                        {
+                            self.numbered_reference_labels
+                                .entry((cursor_key.clone(), occupied_url, occupied_title))
+                                .or_insert(candidate);
+                            continue;
+                        }
+                        // Already holds this very target: share it.
+                        Some(_) => {}
+                        None => self.insert_reference(candidate_key, candidate.clone(), url, title),
+                    }
+                    self.reference_label_cursors.insert(cursor_key, n + 1);
+                    self.numbered_reference_labels
+                        .insert(target, candidate.clone());
+                    return candidate;
+                }
+                unreachable!("the numbered label space is unbounded")
+            }
+        }
+    }
+
+    /// Store a new reference definition under an unused key.
+    fn insert_reference(&mut self, key: String, label: String, url: &str, title: &str) {
         let reference = ReferenceLink {
-            label: label.clone(),
-            url,
-            title,
+            label,
+            url: url.to_string(),
+            title: title.to_string(),
         };
         if self.footnotes.collecting_content {
-            self.footnotes.add_reference(label, reference);
+            self.footnotes.add_reference(key, reference);
         } else {
-            self.pending_references.insert(label, reference);
+            self.pending_references.insert(key, reference);
         }
     }
 

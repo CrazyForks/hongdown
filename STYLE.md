@@ -411,6 +411,31 @@ See [GitHub][][^1] for details.
 full reference link with label `^1`, which would break the intended link and
 footnote.
 
+### Distinct labels for distinct targets
+
+A reference label may be shared only by links that point at the very same
+target, meaning the same URL *and* the same title.  When the label a link
+would otherwise take is already used for a different target, the link gets a
+numbered label and full reference syntax:
+
+~~~~ markdown
+ -  Read [guide].
+ -  Read [guide][guide 2].
+
+[guide]: https://example.com/first
+[guide 2]: https://example.com/second
+~~~~
+
+Labels are compared the way CommonMark resolves them: with runs of whitespace
+collapsed and Unicode case folding applied.  So `[Guide]` and `[guide]` are
+the same label, as are `[Straße]` and `[STRASSE]`, and one of them is
+renumbered unless both point at the same target.
+
+*Rationale*: A reference definition is document-wide, and a duplicate
+definition is ignored by the parser rather than merged.  Sharing a label
+between different targets would therefore silently change where one of the
+links points, and formatting must never do that.
+
 
 Block quotes and alerts
 -----------------------
