@@ -1702,8 +1702,14 @@ fn test_directive_disable_reservation_precedes_a_setext_heading() {
     // start, but it precedes the heading, so it belongs above the section.
     let input = "<!-- hongdown-disable -->\n\nRaw [a].\n\n<!-- hongdown-enable -->\n\n[a]: https://example.com/first\nSection\n-------\n\nBody.\n";
     let result = parse_and_serialize_with_source(input);
+    let definition = result
+        .find("[a]: https://example.com/first")
+        .expect("the definition must be kept");
+    let section = result
+        .find("Section\n-------")
+        .expect("the section must be emitted");
     assert!(
-        result.find("[a]: https://example.com/first") < result.find("Section\n-------"),
+        definition < section,
         "the definition must come before the section it precedes, got:\n{}",
         result
     );
@@ -1722,8 +1728,12 @@ fn test_directive_disable_reservation_waits_for_its_section() {
     // pulling it up would mean one run never settles the file.
     let input = "<!-- hongdown-disable -->\n\nRaw [a].\n\n<!-- hongdown-enable -->\n\nSection\n-------\n\nLater [a](https://example.com/a).\n";
     let result = parse_and_serialize_with_source(input);
+    let definition = result
+        .find("[a]: https://example.com/a")
+        .expect("the definition must be kept");
+    let section = result.find("Section").expect("the section must be emitted");
     assert!(
-        result.find("[a]: https://example.com/a") > result.find("Section"),
+        definition > section,
         "the definition must stay in the section the source put it in, got:\n{}",
         result
     );
@@ -1755,8 +1765,14 @@ fn test_directive_disable_reservation_keeps_the_definition_order() {
     // settle the file.
     let input = "<!-- hongdown-disable -->\n\nRaw [a].\n\n<!-- hongdown-enable -->\n\nLater [b](https://example.com/b) and [a](https://example.com/a).\n";
     let result = parse_and_serialize_with_source(input);
+    let first = result
+        .find("[b]: https://example.com/b")
+        .expect("the first definition must be kept");
+    let second = result
+        .find("[a]: https://example.com/a")
+        .expect("the second definition must be kept");
     assert!(
-        result.find("[b]: https://example.com/b") < result.find("[a]: https://example.com/a"),
+        first < second,
         "the definitions must follow the order the document's own links set, got:\n{}",
         result
     );
@@ -1936,9 +1952,14 @@ fn test_directive_disable_next_line_reads_a_link_below_a_consumed_definition() {
     // has to come out above the copy that repeats its label.
     let input = "[b]: https://example.com/first\n\n<!-- hongdown-disable-next-line -->\n[b]: https://example.com/second\nRaw [b].\n";
     let result = parse_and_serialize_with_source(input);
+    let winner = result
+        .find("[b]: https://example.com/first")
+        .expect("the winning definition must be kept");
+    let duplicate = result
+        .find("[b]: https://example.com/second")
+        .expect("the region's copy must be preserved");
     assert!(
-        result.find("[b]: https://example.com/first")
-            < result.find("[b]: https://example.com/second"),
+        winner < duplicate,
         "the winning definition must come first, got:\n{}",
         result
     );
@@ -1951,9 +1972,14 @@ fn test_directive_disable_sees_a_definition_below_a_multiline_title() {
     // copy of its label look like the winner.
     let input = "[a]: https://example.com/a \"A title\nspanning lines\"\n[b]: https://example.com/first\nSome prose.\n\n<!-- hongdown-disable -->\n\nRaw [b].\n\n[b]: https://example.com/second\n";
     let result = parse_and_serialize_with_source(input);
+    let winner = result
+        .find("[b]: https://example.com/first")
+        .expect("the winning definition must be kept");
+    let duplicate = result
+        .find("[b]: https://example.com/second")
+        .expect("the region's copy must be preserved");
     assert!(
-        result.find("[b]: https://example.com/first")
-            < result.find("[b]: https://example.com/second"),
+        winner < duplicate,
         "the winning definition must come first, got:\n{}",
         result
     );
@@ -1966,9 +1992,14 @@ fn test_directive_disable_sees_a_definition_below_a_three_line_title() {
     // definition beneath from the scanner.
     let input = "[a]: https://example.com/a \"A title\nspanning three\nlines\"\n[b]: https://example.com/first\nSome prose.\n\n<!-- hongdown-disable -->\n\nRaw [b].\n\n[b]: https://example.com/second\n";
     let result = parse_and_serialize_with_source(input);
+    let winner = result
+        .find("[b]: https://example.com/first")
+        .expect("the winning definition must be kept");
+    let duplicate = result
+        .find("[b]: https://example.com/second")
+        .expect("the region's copy must be preserved");
     assert!(
-        result.find("[b]: https://example.com/first")
-            < result.find("[b]: https://example.com/second"),
+        winner < duplicate,
         "the winning definition must come first, got:\n{}",
         result
     );
@@ -2121,9 +2152,14 @@ fn test_directive_disable_sees_a_definition_below_a_title_of_its_own_line() {
     // allows.  The definition beneath it still has to be found.
     let input = "[a]: https://example.com/a\n  \"A title\"\n[b]: https://example.com/first\nSome prose.\n\n<!-- hongdown-disable -->\n\nRaw [b].\n\n[b]: https://example.com/second\n";
     let result = parse_and_serialize_with_source(input);
+    let winner = result
+        .find("[b]: https://example.com/first")
+        .expect("the winning definition must be kept");
+    let duplicate = result
+        .find("[b]: https://example.com/second")
+        .expect("the region's copy must be preserved");
     assert!(
-        result.find("[b]: https://example.com/first")
-            < result.find("[b]: https://example.com/second"),
+        winner < duplicate,
         "the winning definition must come first, got:\n{}",
         result
     );
@@ -2135,9 +2171,14 @@ fn test_directive_disable_sees_a_definition_below_a_title_running_on() {
     // further line before it closes.
     let input = "[a]: https://example.com/a\n  \"A title\nspanning lines\"\n[b]: https://example.com/first\nSome prose.\n\n<!-- hongdown-disable -->\n\nRaw [b].\n\n[b]: https://example.com/second\n";
     let result = parse_and_serialize_with_source(input);
+    let winner = result
+        .find("[b]: https://example.com/first")
+        .expect("the winning definition must be kept");
+    let duplicate = result
+        .find("[b]: https://example.com/second")
+        .expect("the region's copy must be preserved");
     assert!(
-        result.find("[b]: https://example.com/first")
-            < result.find("[b]: https://example.com/second"),
+        winner < duplicate,
         "the winning definition must come first, got:\n{}",
         result
     );
@@ -2149,9 +2190,14 @@ fn test_directive_disable_title_is_not_closed_by_an_escaped_quote() {
     // title still runs to the line below.
     let input = "[a]: https://example.com/a \"A \\\"quoted\\\" title\nspanning lines\"\n[b]: https://example.com/first\nSome prose.\n\n<!-- hongdown-disable -->\n\nRaw [b].\n\n[b]: https://example.com/second\n";
     let result = parse_and_serialize_with_source(input);
+    let winner = result
+        .find("[b]: https://example.com/first")
+        .expect("the winning definition must be kept");
+    let duplicate = result
+        .find("[b]: https://example.com/second")
+        .expect("the region's copy must be preserved");
     assert!(
-        result.find("[b]: https://example.com/first")
-            < result.find("[b]: https://example.com/second"),
+        winner < duplicate,
         "the winning definition must come first, got:\n{}",
         result
     );
