@@ -467,12 +467,27 @@ impl<'a> Serializer<'a> {
 
     /// Extract original source text for a node using its sourcepos.
     pub fn extract_source<'b>(&self, node: &'b AstNode<'b>) -> Option<String> {
+        self.extract_source_shifted(node, 0)
+    }
+
+    /// Extract original source text for a node whose reported lines sit
+    /// `line_offset` above its real ones.
+    ///
+    /// An inline inside a paragraph that swallowed a definition at its head is
+    /// reported against the paragraph's own start, so its lines are short by
+    /// however many lines that definition took.  Its columns are the ones its
+    /// real line has.
+    pub fn extract_source_shifted<'b>(
+        &self,
+        node: &'b AstNode<'b>,
+        line_offset: usize,
+    ) -> Option<String> {
         if self.source_lines.is_empty() {
             return None;
         }
         let sourcepos = node.data.borrow().sourcepos;
-        let start_line = sourcepos.start.line;
-        let end_line = sourcepos.end.line;
+        let start_line = sourcepos.start.line + line_offset;
+        let end_line = sourcepos.end.line + line_offset;
         let start_col = sourcepos.start.column;
         let end_col = sourcepos.end.column;
 

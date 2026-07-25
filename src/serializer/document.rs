@@ -71,7 +71,16 @@ impl<'a> Serializer<'a> {
                 }
                 self.reference_definition_lines.insert(label, winner);
             }
-            self.collect_verbatim_reference_claims(node, &copied_lines);
+            self.collect_verbatim_reference_claims(node, &copied_lines, 0);
+
+            // Keep alive the definitions those links depend on.  Each falls due
+            // where the source puts it, so reserving them all here rather than
+            // as each copy is emitted changes nothing about where they land —
+            // except that one due before a copy can no longer miss the flush
+            // that belongs above it.
+            let mut references = Vec::new();
+            self.collect_verbatim_references(node, &copied_lines, &mut references, 0);
+            self.reserve_verbatim_references(references.iter());
         }
 
         // Check for undefined reference links using AST
@@ -125,14 +134,6 @@ impl<'a> Serializer<'a> {
             {
                 match directive {
                     Directive::DisableFile => {
-                        // The rest of the file keeps its source text, so its
-                        // links cannot register the definitions they use.  A
-                        // definition placed before the directive has nowhere
-                        // else to go, so reserve it ahead of the flush below.
-                        for skipped in &children[i + 1..] {
-                            self.reserve_references_of(skipped);
-                        }
-
                         // Flush pending footnotes and references BEFORE the disable-file directive.
                         // Definitions that appear before the directive should stay before it.
                         let directive_line = child.data.borrow().sourcepos.start.line;
@@ -213,25 +214,6 @@ impl<'a> Serializer<'a> {
                             .map(|source| Self::trim_blank_lines(&source))
                             .unwrap_or_default();
 
-                        // Definitions the region's links depend on but that sit
-                        // outside it have to be kept from being dropped.
-                        let mut region_references = Vec::new();
-                        if !region.is_empty() {
-                            for skipped in &children[i + 1..region_last] {
-                                self.collect_verbatim_references(skipped, &mut region_references);
-                            }
-                        }
-                        // A label the copy redefines has to be reserved before
-                        // the flush below, so that its winning definition still
-                        // comes first in the output; the copy would otherwise
-                        // shadow it and retarget the links.
-                        let (shadowed, rest): (Vec<_>, Vec<_>) =
-                            region_references.iter().partition(|reference| {
-                                self.shadowed_reference_labels
-                                    .contains(&normalize_reference_key(&reference.label))
-                            });
-                        self.reserve_verbatim_references(shadowed.into_iter());
-
                         // Flush pending footnotes and references BEFORE the disable directive.
                         // Definitions that appear before the directive should stay before it.
                         let directive_line = child.data.borrow().sourcepos.start.line;
@@ -252,10 +234,6 @@ impl<'a> Serializer<'a> {
                             // back to emitting its blocks one by one.
                             self.skip_mode = FormatSkipMode::Disabled;
                         } else {
-                            // The rest are reserved after the flush, so they are
-                            // emitted where definitions normally go rather than
-                            // above the directive.
-                            self.reserve_verbatim_references(rest.into_iter());
                             self.output.push('\n');
                             self.output.push_str(&region);
                             self.output.push('\n');
@@ -355,10 +333,6 @@ impl<'a> Serializer<'a> {
                     self.serialize_node(child);
                     continue;
                 }
-
-                // The block keeps its source text, so its links never register
-                // the definitions they use; reserve them here instead.
-                self.reserve_references_of(child);
 
                 // Output the original source
                 if let Some(source) = self.extract_source(child) {
@@ -549,16 +523,140 @@ impl<'a> Serializer<'a> {
                 break;
             };
             by_definitions += 1;
-            // A label with nothing after its colon takes its destination from
-            // the line below, which the definitions after it sit beneath.  A
-            // title carried onto further lines is not followed this way, and
-            // leaves them counted as content.
-            if line[matched.end()..].trim().is_empty() && by_definitions < end_line {
+            // A definition may be written over several lines: its destination
+            // on the line below the label, and a title after the destination or
+            // on a line of its own below it, running on further still.  The
+            // definitions after it sit beneath all of that, so the head reaches
+            // over it to find them.
+            let mut rest = &line[matched.end()..];
+            if rest.trim().is_empty() && by_definitions < end_line {
+                rest = source_lines.get(by_definitions - 1).copied().unwrap_or("");
                 by_definitions += 1;
+            }
+            let Some(title) = Self::title_after_destination(rest) else {
+                // The destination is malformed, so nothing here is a definition
+                // to reach over.
+                break;
+            };
+            let mut closing = Self::unclosed_delimiter_in(title);
+            if title.trim().is_empty()
+                && by_definitions < end_line
+                && let Some(below) = source_lines.get(by_definitions - 1)
+                && Self::starts_title(below)
+            {
+                by_definitions += 1;
+                closing = Self::unclosed_delimiter_in(below);
+            }
+            if let Some(closing) = closing {
+                // The delimiter that opened the title is what closes it, however
+                // many lines later, and one the source escapes closes nothing.
+                while by_definitions < end_line {
+                    let line = source_lines.get(by_definitions - 1).copied().unwrap_or("");
+                    by_definitions += 1;
+                    if Self::contains_unescaped(line, closing) {
+                        break;
+                    }
+                }
             }
         }
 
         by_breaks.min(by_definitions)
+    }
+
+    /// How far a block's reported start sits above its own content, which is
+    /// how far the lines reported for anything inside it sit above their real
+    /// ones.
+    ///
+    /// Only the blocks that swallow a consumed head have such a gap; `None`
+    /// says the node is not one of them and whatever gap encloses it still
+    /// applies.
+    fn consumed_head_offset<'b>(&self, node: &'b AstNode<'b>) -> Option<usize> {
+        let (underline_lines, sourcepos) = {
+            let data = node.data.borrow();
+            let underline_lines = match &data.value {
+                NodeValue::Paragraph => 0,
+                NodeValue::Heading(heading) if heading.setext => 1,
+                _ => return None,
+            };
+            (underline_lines, data.sourcepos)
+        };
+        let content_start = Self::leaf_content_start(
+            node,
+            &self.source_lines,
+            sourcepos.start.line,
+            sourcepos.end.line,
+            underline_lines,
+        );
+        Some(content_start.saturating_sub(sourcepos.start.line))
+    }
+
+    /// Whether a line holds `delimiter` with no backslash escaping it.
+    fn contains_unescaped(text: &str, delimiter: char) -> bool {
+        Self::find_unescaped(text, delimiter).is_some()
+    }
+
+    /// The byte offset of `delimiter` in a line, skipping any the source
+    /// escapes with a backslash.
+    fn find_unescaped(text: &str, delimiter: char) -> Option<usize> {
+        let mut escaped = false;
+        for (offset, character) in text.char_indices() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            match character {
+                '\\' => escaped = true,
+                _ if character == delimiter => return Some(offset),
+                _ => {}
+            }
+        }
+        None
+    }
+
+    /// The part of a definition's text that follows its destination, which is
+    /// where a title may be written.  `None` where the destination is malformed
+    /// and the text is therefore no definition's.
+    ///
+    /// The destination comes first and may hold a quote or a parenthesis of its
+    /// own, so only what follows it can open a title.
+    fn title_after_destination(text: &str) -> Option<&str> {
+        let trimmed = text.trim_start();
+        match trimmed.strip_prefix('<') {
+            // An unterminated `<…>` is no destination at all.
+            Some(pointy) => Some(&pointy[Self::find_unescaped(pointy, '>')? + 1..]),
+            None => Some(match trimmed.split_once(char::is_whitespace) {
+                Some((_, title)) => title,
+                None => "",
+            }),
+        }
+    }
+
+    /// Whether a line of its own begins a title, as one below a definition's
+    /// destination may.
+    fn starts_title(line: &str) -> bool {
+        line.trim_start().starts_with(['"', '\'', '('])
+    }
+
+    /// What a stretch of title text leaves for a later line to close.
+    fn unclosed_delimiter_in(title: &str) -> Option<char> {
+        let mut escaped = false;
+        let mut quote = None;
+        let mut depth = 0usize;
+        for character in title.chars() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            match character {
+                '\\' => escaped = true,
+                '"' | '\'' if quote == Some(character) => quote = None,
+                '"' | '\'' if quote.is_none() && depth == 0 => quote = Some(character),
+                '(' if quote.is_none() => depth += 1,
+                ')' if quote.is_none() => depth = depth.saturating_sub(1),
+                _ => {}
+            }
+        }
+        quote.or(if depth > 0 { Some(')') } else { None })
     }
 
     /// Count the line breaks within an inline subtree, which is one fewer than
@@ -724,9 +822,11 @@ impl<'a> Serializer<'a> {
         &mut self,
         node: &'b AstNode<'b>,
         copied_lines: &[bool],
+        line_offset: usize,
     ) {
+        let child_offset = self.consumed_head_offset(node).unwrap_or(line_offset);
         for child in node.children() {
-            self.collect_verbatim_reference_claims(child, copied_lines);
+            self.collect_verbatim_reference_claims(child, copied_lines, child_offset);
         }
 
         let (target, line) = {
@@ -737,12 +837,12 @@ impl<'a> Serializer<'a> {
                 }
                 _ => None,
             };
-            (target, data.sourcepos.start.line)
+            (target, data.sourcepos.start.line + line_offset)
         };
 
         if let Some((url, title)) = target
             && Self::is_line_marked(line, copied_lines)
-            && let Some(label) = self.verbatim_reference_label(node)
+            && let Some(label) = self.verbatim_reference_label(node, line_offset)
         {
             self.verbatim_reference_claims
                 .entry(normalize_reference_key(&label))
@@ -753,8 +853,12 @@ impl<'a> Serializer<'a> {
     /// The label a reference-style link or image is written with in the source,
     /// with the collapsed-reference marker stripped.  `None` for links that are
     /// not reference style, and for the empty label, which cannot be defined.
-    fn verbatim_reference_label<'b>(&self, node: &'b AstNode<'b>) -> Option<String> {
-        let (_, label) = self.get_reference_style_info(node)?;
+    fn verbatim_reference_label<'b>(
+        &self,
+        node: &'b AstNode<'b>,
+        line_offset: usize,
+    ) -> Option<String> {
+        let (_, label) = self.get_reference_style_info_shifted(node, line_offset)?;
         let label = label.strip_prefix('\x01').unwrap_or(&label);
         (!label.is_empty()).then(|| label.to_string())
     }
@@ -768,12 +872,15 @@ impl<'a> Serializer<'a> {
     fn collect_verbatim_references<'b>(
         &self,
         node: &'b AstNode<'b>,
+        copied_lines: &[bool],
         collected: &mut Vec<VerbatimReference>,
+        line_offset: usize,
     ) {
+        let child_offset = self.consumed_head_offset(node).unwrap_or(line_offset);
         // Children first, so that a badge's image comes before the link
         // wrapping it, the order the formatted path would register them in.
         for child in node.children() {
-            self.collect_verbatim_references(child, collected);
+            self.collect_verbatim_references(child, copied_lines, collected, child_offset);
         }
 
         let (target, line) = {
@@ -784,11 +891,12 @@ impl<'a> Serializer<'a> {
                 }
                 _ => None,
             };
-            (target, data.sourcepos.start.line)
+            (target, data.sourcepos.start.line + line_offset)
         };
 
         if let Some((url, title)) = target
-            && let Some(label) = self.verbatim_reference_label(node)
+            && Self::is_line_marked(line, copied_lines)
+            && let Some(label) = self.verbatim_reference_label(node, line_offset)
         {
             collected.push(VerbatimReference {
                 label,
@@ -822,13 +930,6 @@ impl<'a> Serializer<'a> {
                 );
             }
         }
-    }
-
-    /// Collect and reserve in one step, for a single block emitted verbatim.
-    fn reserve_references_of<'b>(&mut self, node: &'b AstNode<'b>) {
-        let mut references = Vec::new();
-        self.collect_verbatim_references(node, &mut references);
-        self.reserve_verbatim_references(references.iter());
     }
 
     /// Drop the leading and trailing blank lines of a verbatim source chunk,
@@ -1594,5 +1695,39 @@ impl<'a> Serializer<'a> {
 
         self.output.push_str(style);
         self.output.push('\n');
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Serializer;
+
+    /// The text a reference definition carries after its label's colon, and
+    /// what of a title it leaves open for the lines below to close.
+    #[test]
+    fn test_unclosed_title_delimiter() {
+        let open = |text: &str| {
+            Serializer::title_after_destination(text).and_then(Serializer::unclosed_delimiter_in)
+        };
+
+        // Nothing but a destination opens nothing.
+        assert_eq!(open(" https://example.com/a"), None);
+        assert_eq!(open(" <https://example.com/a>"), None);
+        // A destination may hold what a title would open with.
+        assert_eq!(open(" <https://example.com/foo\"bar>"), None);
+        assert_eq!(open(" <https://example.com/foo(bar>"), None);
+        assert_eq!(open(" <https://example.com/foo'bar>"), None);
+        // A title closed on the same line needs no continuation.
+        assert_eq!(open(" https://example.com/a \"A title\""), None);
+        assert_eq!(open(" https://example.com/a (A title)"), None);
+        // One left open names the delimiter that will close it.
+        assert_eq!(open(" https://example.com/a \"A title"), Some('"'));
+        assert_eq!(open(" <https://example.com/a> \"A title"), Some('"'));
+        assert_eq!(open(" https://example.com/a 'A title"), Some('\''));
+        assert_eq!(open(" https://example.com/a (A title"), Some(')'));
+        // An escaped delimiter closes nothing.
+        assert_eq!(open(" https://example.com/a \"A \\\"title"), Some('"'));
+        // An unterminated `<…>` is no destination at all.
+        assert_eq!(open(" <https://example.com/a \"A title"), None);
     }
 }

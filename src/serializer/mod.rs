@@ -123,7 +123,17 @@ impl<'a> Serializer<'a> {
     /// Returns Some((text, label)) if reference style, None if inline style.
     /// The returned text has newlines normalized to spaces for consistent output.
     fn get_reference_style_info<'b>(&self, node: &'b AstNode<'b>) -> Option<(String, String)> {
-        let source = self.extract_source(node)?;
+        self.get_reference_style_info_shifted(node, 0)
+    }
+
+    /// As [`Self::get_reference_style_info`], for a node whose reported lines
+    /// sit `line_offset` above its real ones.
+    fn get_reference_style_info_shifted<'b>(
+        &self,
+        node: &'b AstNode<'b>,
+        line_offset: usize,
+    ) -> Option<(String, String)> {
+        let source = self.extract_source_shifted(node, line_offset)?;
 
         // Reference style patterns:
         // [text][label] or ![text][label] - full reference

@@ -1917,6 +1917,106 @@ fn test_reference_label_keeps_an_escaped_bracket() {
 }
 
 #[test]
+fn test_directive_disable_reads_a_link_below_a_consumed_definition() {
+    // The copied paragraph opens with a definition, so the parser reports the
+    // link inside it against the paragraph's own start, a line above where it
+    // really sits.  Reading the link there would find no label, the winning
+    // definition would go unreserved, and the copy's own would take over.
+    let input = "[b]: https://example.com/first\n\n<!-- hongdown-disable -->\n\n[b]: https://example.com/second\nRaw [b].\n\n<!-- hongdown-enable -->\n\nEnd.\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(
+        result, input,
+        "the winning definition must survive, ahead of the copy"
+    );
+}
+
+#[test]
+fn test_directive_disable_next_line_reads_a_link_below_a_consumed_definition() {
+    // Same block, copied by a different directive: the winning definition still
+    // has to come out above the copy that repeats its label.
+    let input = "[b]: https://example.com/first\n\n<!-- hongdown-disable-next-line -->\n[b]: https://example.com/second\nRaw [b].\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.find("[b]: https://example.com/first")
+            < result.find("[b]: https://example.com/second"),
+        "the winning definition must come first, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_sees_a_definition_below_a_multiline_title() {
+    // The first definition's title runs onto a second line, and the next
+    // definition sits beneath it.  Missing that one would make the region's
+    // copy of its label look like the winner.
+    let input = "[a]: https://example.com/a \"A title\nspanning lines\"\n[b]: https://example.com/first\nSome prose.\n\n<!-- hongdown-disable -->\n\nRaw [b].\n\n[b]: https://example.com/second\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.find("[b]: https://example.com/first")
+            < result.find("[b]: https://example.com/second"),
+        "the winning definition must come first, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_sees_a_definition_below_a_three_line_title() {
+    // The title runs over two continuation lines, and only the delimiter that
+    // opened it closes it.  Stopping at the first continuation would hide the
+    // definition beneath from the scanner.
+    let input = "[a]: https://example.com/a \"A title\nspanning three\nlines\"\n[b]: https://example.com/first\nSome prose.\n\n<!-- hongdown-disable -->\n\nRaw [b].\n\n[b]: https://example.com/second\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.find("[b]: https://example.com/first")
+            < result.find("[b]: https://example.com/second"),
+        "the winning definition must come first, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_sees_a_definition_below_a_title_of_its_own_line() {
+    // The title begins on the line below a complete destination, as CommonMark
+    // allows.  The definition beneath it still has to be found.
+    let input = "[a]: https://example.com/a\n  \"A title\"\n[b]: https://example.com/first\nSome prose.\n\n<!-- hongdown-disable -->\n\nRaw [b].\n\n[b]: https://example.com/second\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.find("[b]: https://example.com/first")
+            < result.find("[b]: https://example.com/second"),
+        "the winning definition must come first, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_sees_a_definition_below_a_title_running_on() {
+    // Same, with the title beginning below the destination and running on to a
+    // further line before it closes.
+    let input = "[a]: https://example.com/a\n  \"A title\nspanning lines\"\n[b]: https://example.com/first\nSome prose.\n\n<!-- hongdown-disable -->\n\nRaw [b].\n\n[b]: https://example.com/second\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.find("[b]: https://example.com/first")
+            < result.find("[b]: https://example.com/second"),
+        "the winning definition must come first, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_title_is_not_closed_by_an_escaped_quote() {
+    // The quotes inside the title are escaped, so they close nothing and the
+    // title still runs to the line below.
+    let input = "[a]: https://example.com/a \"A \\\"quoted\\\" title\nspanning lines\"\n[b]: https://example.com/first\nSome prose.\n\n<!-- hongdown-disable -->\n\nRaw [b].\n\n[b]: https://example.com/second\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.find("[b]: https://example.com/first")
+            < result.find("[b]: https://example.com/second"),
+        "the winning definition must come first, got:\n{}",
+        result
+    );
+}
+
+#[test]
 fn test_directive_disable_copy_carries_an_escaped_bracket_label() {
     // The region carries both the link and its definition, so nothing is left
     // for the reservation to emit — least of all a definition under a label cut
