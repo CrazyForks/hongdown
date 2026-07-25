@@ -197,8 +197,18 @@ impl<'a> Serializer<'a> {
         }
     }
 
-    /// Output pending reference definitions and clear them
+    /// Output all pending reference definitions and clear them.
     fn flush_references(&mut self) {
+        self.flush_references_before(None);
+    }
+
+    /// Output the pending reference definitions, along with the queued
+    /// definitions of copied links that the source places before `before_line`.
+    fn flush_references_before(&mut self, before_line: Option<usize>) {
+        // Definitions that copied links depend on join the pending ones here,
+        // behind whatever the document's own links registered before them.
+        self.take_deferred_references(before_line);
+
         if self.pending_references.is_empty() {
             return;
         }

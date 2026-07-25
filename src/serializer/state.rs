@@ -331,6 +331,12 @@ pub struct Serializer<'a> {
     /// definition lies outside it, so it has to be emitted ahead of the copy or
     /// the copy would shadow it.
     pub shadowed_reference_labels: std::collections::HashSet<String>,
+    /// Definitions that copied links depend on, each with the line its
+    /// definition sits on in the source, which is when it falls due.
+    pub deferred_references: Vec<(ReferenceLink, usize)>,
+    /// Normalized keys of the reference definitions the source carries, mapped
+    /// to the line of the one the parser resolves.
+    pub reference_definition_lines: std::collections::HashMap<String, usize>,
     /// Current list nesting depth (0 = not in list, 1 = top-level, 2+ = nested)
     pub list_depth: usize,
     /// Current formatting skip mode
@@ -390,6 +396,8 @@ impl<'a> Serializer<'a> {
             verbatim_reference_labels: std::collections::HashSet::new(),
             verbatim_reference_claims: std::collections::HashMap::new(),
             shadowed_reference_labels: std::collections::HashSet::new(),
+            deferred_references: Vec::new(),
+            reference_definition_lines: std::collections::HashMap::new(),
             list_depth: 0,
             skip_mode: FormatSkipMode::None,
             in_description_details: false,
@@ -433,6 +441,8 @@ impl<'a> Serializer<'a> {
             verbatim_reference_labels: std::collections::HashSet::new(),
             verbatim_reference_claims: std::collections::HashMap::new(),
             shadowed_reference_labels: std::collections::HashSet::new(),
+            deferred_references: Vec::new(),
+            reference_definition_lines: std::collections::HashMap::new(),
             list_depth: 0,
             skip_mode: FormatSkipMode::None,
             in_description_details: false,
@@ -697,15 +707,63 @@ impl<'a> Serializer<'a> {
     /// a renamed definition would leave the verbatim link pointing at nothing.
     /// Returns `false` when the label is already taken by a different target,
     /// which the caller reports as a warning since the link cannot be saved.
+    ///
+    /// The definition is queued rather than registered at once, and falls due
+    /// where the source put it, the way a footnote's references follow their
+    /// footnote.  A copied link is not the reason its definition sits where it
+    /// does, so letting it claim a place among the pending definitions would
+    /// move that definition around — and where it would land depends on whether
+    /// the parser could resolve the copied link, which is to say on whether an
+    /// earlier run had already written the very definition being reserved.
+    /// Following the source keeps every run agreeing on the placement.
     pub fn reserve_reference(&mut self, label: &str, url: &str, title: &str) -> bool {
         let key = normalize_reference_key(label);
-        match self.find_reference(&key) {
-            None => {
-                self.insert_reference(key, label.to_string(), url, title);
-                true
-            }
-            Some(existing) => existing.url == url && existing.title == title,
+        if let Some(existing) = self.find_reference(&key)
+            && (existing.url != url || existing.title != title)
+        {
+            return false;
         }
+        // A definition the scanner did not find falls due at the end, which is
+        // the one placement that cannot come out ahead of something.
+        let due = self
+            .reference_definition_lines
+            .get(&key)
+            .copied()
+            .unwrap_or(usize::MAX);
+        self.deferred_references.push((
+            ReferenceLink {
+                label: label.to_string(),
+                url: url.to_string(),
+                title: title.to_string(),
+            },
+            due,
+        ));
+        true
+    }
+
+    /// Move the queued definitions that are due before `before_line` into the
+    /// pending ones, behind everything the document's own links registered.
+    /// `None` takes them all, for the flush that ends the document.
+    ///
+    /// A definition already emitted or already pending needs nothing: the first
+    /// is written, and the second is about to be.  One held only by a footnote's
+    /// collection does need this, though, since that collection is flushed on
+    /// the footnote's schedule rather than here.
+    pub fn take_deferred_references(&mut self, before_line: Option<usize>) {
+        let mut deferred = std::mem::take(&mut self.deferred_references);
+        deferred.retain(|(reference, due)| {
+            if before_line.is_some_and(|line| *due >= line) {
+                return true;
+            }
+            let key = normalize_reference_key(&reference.label);
+            if !self.emitted_references.contains_key(&key)
+                && !self.pending_references.contains_key(&key)
+            {
+                self.pending_references.insert(key, reference.clone());
+            }
+            false
+        });
+        self.deferred_references = deferred;
     }
 
     /// Store a new reference definition under an unused key.

@@ -37,14 +37,19 @@ impl<'a> Serializer<'a> {
         // definitions, comments — travels with the copy and must not be
         // emitted a second time from elsewhere.
         let verbatim_ranges = self.collect_verbatim_line_ranges(&children);
-        // Every range whose content keeps its source text, which is the wider
-        // set: it also covers the blocks the skip modes emit one by one.
-        let disabled_ranges = Self::collect_disabled_line_ranges(node);
+        // Everything copied from the source, whether as a whole region or a
+        // block at a time.  A block's span reaches back over any definition
+        // consumed at its head, so those copies carry definitions of their own.
+        // A document is largely copied blocks where it is copied at all, so
+        // this is a line-indexed table rather than a list of spans to walk.
+        let mut copied_lines = vec![false; self.source_lines.len()];
+        Self::mark_lines(&verbatim_ranges, &mut copied_lines);
+        Self::mark_copied_block_lines(&children, &mut copied_lines);
 
-        // Both analyses below cost a pass over the document and only say
+        // The analysis below costs a pass over the document and only says
         // something about content that keeps its source text, so a document
-        // without the directives that produce such content skips them.
-        if !verbatim_ranges.is_empty() {
+        // that copies none skips it.
+        if copied_lines.contains(&true) {
             let mut in_leaf_block = vec![false; self.source_lines.len()];
             Self::mark_leaf_block_lines(node, &self.source_lines, &mut in_leaf_block);
             for (label, lines) in
@@ -58,18 +63,18 @@ impl<'a> Serializer<'a> {
                 // after it.
                 let mut lines = lines.into_iter();
                 let winner = lines.next().unwrap_or_default();
-                if Self::is_line_in_ranges(winner, &verbatim_ranges) {
-                    self.verbatim_reference_labels.insert(label);
-                } else if lines.any(|line| Self::is_line_in_ranges(line, &verbatim_ranges)) {
-                    self.shadowed_reference_labels.insert(label);
+                if Self::is_line_marked(winner, &copied_lines) {
+                    self.verbatim_reference_labels.insert(label.clone());
+                } else if lines.any(|line| Self::is_line_marked(line, &copied_lines)) {
+                    self.shadowed_reference_labels.insert(label.clone());
                 }
+                self.reference_definition_lines.insert(label, winner);
             }
-        }
-        if !disabled_ranges.is_empty() {
-            self.collect_verbatim_reference_claims(node, &disabled_ranges);
+            self.collect_verbatim_reference_claims(node, &copied_lines);
         }
 
         // Check for undefined reference links using AST
+        let disabled_ranges = Self::collect_disabled_line_ranges(node);
         self.check_undefined_references_ast(node, &disabled_ranges);
 
         // First pass: collect all footnote reference lines
@@ -131,7 +136,7 @@ impl<'a> Serializer<'a> {
                         // Definitions that appear before the directive should stay before it.
                         let directive_line = child.data.borrow().sourcepos.start.line;
                         self.flush_footnotes_before(Some(directive_line));
-                        self.flush_references();
+                        self.flush_references_before(Some(directive_line));
                         self.flush_footnote_references_before(Some(directive_line));
 
                         // Output the directive comment, then output remaining content as-is.
@@ -156,7 +161,7 @@ impl<'a> Serializer<'a> {
                         // Definitions that appear before the directive should stay before it.
                         let directive_line = child.data.borrow().sourcepos.start.line;
                         self.flush_footnotes_before(Some(directive_line));
-                        self.flush_references();
+                        self.flush_references_before(Some(directive_line));
                         self.flush_footnote_references_before(Some(directive_line));
 
                         self.skip_mode = FormatSkipMode::NextBlock;
@@ -172,7 +177,7 @@ impl<'a> Serializer<'a> {
                         // Definitions that appear before the directive should stay before it.
                         let directive_line = child.data.borrow().sourcepos.start.line;
                         self.flush_footnotes_before(Some(directive_line));
-                        self.flush_references();
+                        self.flush_references_before(Some(directive_line));
                         self.flush_footnote_references_before(Some(directive_line));
 
                         self.skip_mode = FormatSkipMode::UntilSection;
@@ -230,7 +235,7 @@ impl<'a> Serializer<'a> {
                         // Definitions that appear before the directive should stay before it.
                         let directive_line = child.data.borrow().sourcepos.start.line;
                         self.flush_footnotes_before(Some(directive_line));
-                        self.flush_references();
+                        self.flush_references_before(Some(directive_line));
                         self.flush_footnote_references_before(Some(directive_line));
 
                         // Output the directive comment.  A definition flushed
@@ -300,10 +305,10 @@ impl<'a> Serializer<'a> {
 
             if is_h2_or_h3 && i > 0 {
                 // Get the source line of the heading to flush only earlier footnotes
-                let heading_line = child.data.borrow().sourcepos.start.line;
+                let heading_line = self.section_boundary_line(child);
                 // Footnotes come before link reference definitions
                 self.flush_footnotes_before(Some(heading_line));
-                self.flush_references();
+                self.flush_references_before(Some(heading_line));
                 self.flush_footnote_references_before(Some(heading_line));
             }
 
@@ -474,13 +479,22 @@ impl<'a> Serializer<'a> {
         );
         if !holds_blocks {
             let sourcepos = data.sourcepos;
-            let start = if let NodeValue::Paragraph = &data.value {
+            // A setext heading is built from a paragraph and swallows a
+            // consumed head the same way, with its underline as one more line
+            // of content below the text.
+            let underline_lines = match &data.value {
+                NodeValue::Paragraph => Some(0),
+                NodeValue::Heading(heading) if heading.setext => Some(1),
+                _ => None,
+            };
+            let start = if let Some(underline_lines) = underline_lines {
                 drop(data);
-                Self::paragraph_content_start(
+                Self::leaf_content_start(
                     node,
                     source_lines,
                     sourcepos.start.line,
                     sourcepos.end.line,
+                    underline_lines,
                 )
             } else {
                 sourcepos.start.line
@@ -499,28 +513,30 @@ impl<'a> Serializer<'a> {
         }
     }
 
-    /// The first line of a paragraph's own content.
+    /// The first line of a block's own content, for the blocks that swallow a
+    /// consumed head: a paragraph, and the setext heading built from one.
     ///
-    /// Definitions are consumed from the head of a paragraph, and the node
+    /// Definitions are consumed from the head of such a block, and the node
     /// keeps the lines they occupied, so those lines have to stay visible to
-    /// the definition scanner while the paragraph's own lines do not.
+    /// the definition scanner while the block's own lines do not.
     ///
     /// Two readings bound where the content starts, and a line is left visible
     /// only where they agree.  The content sits at the end of the span, one
-    /// line per break it contains, which misjudges a paragraph whose inline
-    /// spans lines without a break node, such as a code span or display math
-    /// holding a newline.  A consumed head is also made of definitions, so the
-    /// first line that does not begin one ends it, which instead misjudges a
-    /// paragraph opening with something that merely resembles a definition.
-    /// Neither mistake survives the other.
-    fn paragraph_content_start<'b>(
+    /// line per break it contains plus any `underline_lines` below it, which
+    /// misjudges a block whose inline spans lines without a break node, such as
+    /// a code span or display math holding a newline.  A consumed head is also
+    /// made of definitions, so the first line that does not begin one ends it,
+    /// which instead misjudges a block opening with something that merely
+    /// resembles a definition.  Neither mistake survives the other.
+    fn leaf_content_start<'b>(
         node: &'b AstNode<'b>,
         source_lines: &[&str],
         start_line: usize,
         end_line: usize,
+        underline_lines: usize,
     ) -> usize {
         let by_breaks = end_line
-            .saturating_sub(Self::count_line_breaks(node))
+            .saturating_sub(Self::count_line_breaks(node) + underline_lines)
             .max(start_line);
 
         let mut by_definitions = start_line;
@@ -552,6 +568,111 @@ impl<'a> Serializer<'a> {
             _ => 0,
         };
         own + node.children().map(Self::count_line_breaks).sum::<usize>()
+    }
+
+    /// The line at which a heading opens its section, for deciding what came
+    /// before it.
+    ///
+    /// A setext heading reports the lines of any definition consumed at its
+    /// head as its own, so its reported start sits on top of content that in
+    /// fact precedes it.  Its content start is where the section really begins.
+    fn section_boundary_line<'b>(&self, node: &'b AstNode<'b>) -> usize {
+        let (setext, sourcepos) = {
+            let data = node.data.borrow();
+            let setext = matches!(&data.value, NodeValue::Heading(heading) if heading.setext);
+            (setext, data.sourcepos)
+        };
+        if !setext {
+            return sourcepos.start.line;
+        }
+        Self::leaf_content_start(
+            node,
+            &self.source_lines,
+            sourcepos.start.line,
+            sourcepos.end.line,
+            1,
+        )
+    }
+
+    /// Mark every line of the given ranges in a line-indexed table.
+    fn mark_lines(ranges: &[(usize, usize)], lines: &mut [bool]) {
+        for (start, end) in ranges {
+            for line in (*start).max(1)..=*end {
+                if let Some(marked) = lines.get_mut(line - 1) {
+                    *marked = true;
+                }
+            }
+        }
+    }
+
+    /// Whether a line is marked in a line-indexed table.
+    fn is_line_marked(line: usize, lines: &[bool]) -> bool {
+        line > 0 && lines.get(line - 1).copied().unwrap_or(false)
+    }
+
+    /// Mark the source lines of the blocks the skip modes copy one at a time,
+    /// as opposed to the regions copied whole by
+    /// [`Self::collect_verbatim_line_ranges`], whose lines `copied_lines`
+    /// already carries.
+    ///
+    /// A block is copied by its span, which reaches back over any definition
+    /// consumed at its head, so such a definition is carried by the copy even
+    /// though nothing else in the block refers to it.
+    ///
+    /// The modes are followed the way serialization follows them, since only
+    /// the blocks it actually copies carry anything: a footnote definition is
+    /// emitted by the footnote machinery and leaves the mode untouched, a
+    /// directive naming nouns leaves it untouched as well, and `Enable` ends a
+    /// section-wide skip just as the next section's heading does.
+    fn mark_copied_block_lines<'b>(children: &[&'b AstNode<'b>], copied_lines: &mut [bool]) {
+        let mut skip_mode = FormatSkipMode::None;
+
+        for child in children {
+            let data = child.data.borrow();
+            let sourcepos = data.sourcepos;
+
+            // What a region copies whole is already marked, and its blocks
+            // never run through the modes at all.
+            if Self::is_line_marked(sourcepos.start.line, copied_lines) {
+                continue;
+            }
+            if let NodeValue::FootnoteDefinition(_) = &data.value {
+                continue;
+            }
+            if let NodeValue::HtmlBlock(html_block) = &data.value
+                && let Some(directive) = Directive::parse(&html_block.literal)
+            {
+                match directive {
+                    Directive::DisableNextLine => skip_mode = FormatSkipMode::NextBlock,
+                    Directive::DisableNextSection => skip_mode = FormatSkipMode::UntilSection,
+                    Directive::DisableFile => break,
+                    Directive::Disable | Directive::Enable => skip_mode = FormatSkipMode::None,
+                    Directive::ProperNouns(_) | Directive::CommonNouns(_) => {}
+                }
+                continue;
+            }
+
+            let copied = match skip_mode {
+                FormatSkipMode::NextBlock => {
+                    skip_mode = FormatSkipMode::None;
+                    true
+                }
+                FormatSkipMode::UntilSection => {
+                    // The heading that opens the next section is formatted like
+                    // any other, and ends the skip.
+                    if matches!(&data.value, NodeValue::Heading(heading) if heading.level <= 2) {
+                        skip_mode = FormatSkipMode::None;
+                        false
+                    } else {
+                        true
+                    }
+                }
+                FormatSkipMode::None | FormatSkipMode::Disabled => false,
+            };
+            if copied {
+                Self::mark_lines(&[(sourcepos.start.line, sourcepos.end.line)], copied_lines);
+            }
+        }
     }
 
     /// Collect the normalized labels of the reference definitions the source
@@ -601,10 +722,10 @@ impl<'a> Serializer<'a> {
     fn collect_verbatim_reference_claims<'b>(
         &mut self,
         node: &'b AstNode<'b>,
-        disabled_ranges: &[(usize, usize)],
+        copied_lines: &[bool],
     ) {
         for child in node.children() {
-            self.collect_verbatim_reference_claims(child, disabled_ranges);
+            self.collect_verbatim_reference_claims(child, copied_lines);
         }
 
         let (target, line) = {
@@ -619,7 +740,7 @@ impl<'a> Serializer<'a> {
         };
 
         if let Some((url, title)) = target
-            && Self::is_line_in_ranges(line, disabled_ranges)
+            && Self::is_line_marked(line, copied_lines)
             && let Some(label) = self.verbatim_reference_label(node)
         {
             self.verbatim_reference_claims
