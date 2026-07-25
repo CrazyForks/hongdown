@@ -6,15 +6,53 @@ use unicode_width::UnicodeWidthStr;
 
 use super::Serializer;
 use super::escape;
-use super::state::{Directive, FormatSkipMode};
+use super::state::{Directive, FormatSkipMode, ReferenceLink, normalize_reference_key};
 use super::wrap;
+
+/// A reference definition that a link preserved verbatim depends on.
+struct VerbatimReference {
+    label: String,
+    url: String,
+    title: String,
+    /// Line of the link that needs it, for reporting.
+    line: usize,
+}
 
 impl<'a> Serializer<'a> {
     pub(super) fn serialize_document<'b>(&mut self, node: &'b AstNode<'b>) {
         let children: Vec<_> = node.children().collect();
 
+        // Source ranges that are copied verbatim rather than rebuilt from the
+        // AST.  Whatever they contain — reference definitions, footnote
+        // definitions, comments — travels with the copy and must not be
+        // emitted a second time from elsewhere.
+        let verbatim_ranges = self.collect_verbatim_line_ranges(&children);
+        // Every range whose content keeps its source text, which is the wider
+        // set: it also covers the blocks the skip modes emit one by one.
+        let disabled_ranges = Self::collect_disabled_line_ranges(node);
+
+        let mut literal_block_ranges = Vec::new();
+        Self::collect_literal_block_line_ranges(node, &mut literal_block_ranges);
+        for (label, lines) in
+            Self::collect_reference_definition_lines(&self.source_lines, &literal_block_ranges)
+        {
+            // Only the first definition of a label counts, the way CommonMark
+            // resolves it.  When it is the one the copy carries, the copy also
+            // defines it; when a *later* one is, the copy merely repeats a
+            // definition that has no effect where it stands but would take
+            // effect if the winning one were emitted after it.
+            let mut lines = lines.into_iter();
+            let winner = lines.next().unwrap_or_default();
+            if Self::is_line_in_ranges(winner, &verbatim_ranges) {
+                self.verbatim_reference_labels.insert(label);
+            } else if lines.any(|line| Self::is_line_in_ranges(line, &verbatim_ranges)) {
+                self.shadowed_reference_labels.insert(label);
+            }
+        }
+        self.collect_verbatim_reference_claims(node, &disabled_ranges);
+
         // Check for undefined reference links using AST
-        self.check_undefined_references_ast(node);
+        self.check_undefined_references_ast(node, &disabled_ranges);
 
         // First pass: collect all footnote reference lines
         // This is needed because FootnoteDefinition nodes come at the end of the AST,
@@ -25,15 +63,28 @@ impl<'a> Serializer<'a> {
         // This ensures pending_footnotes is populated before we flush at section boundaries
         for child in &children {
             if let NodeValue::FootnoteDefinition(_) = &child.data.borrow().value {
+                // A footnote definition inside a verbatim range is copied with
+                // the range, so collecting it here would emit it twice.
+                let line = child.data.borrow().sourcepos.start.line;
+                if Self::is_line_in_ranges(line, &verbatim_ranges) {
+                    continue;
+                }
                 self.serialize_node(child);
             }
         }
 
         // Identify trailing HTML blocks (non-directive comments at the end of document)
         // These should be output after reference definitions to maintain their position
-        let trailing_html_start = self.find_trailing_html_blocks(&children);
+        let trailing_html_start = self.find_trailing_html_blocks(&children, &verbatim_ranges);
+
+        // Index before which children have already been emitted as part of a
+        // verbatim region.
+        let mut skip_until = 0usize;
 
         for (i, child) in children.iter().enumerate() {
+            if i < skip_until {
+                continue;
+            }
             // Skip trailing HTML blocks for now - they'll be output after references
             if i >= trailing_html_start
                 && let NodeValue::HtmlBlock(_) = &child.data.borrow().value
@@ -50,6 +101,14 @@ impl<'a> Serializer<'a> {
             {
                 match directive {
                     Directive::DisableFile => {
+                        // The rest of the file keeps its source text, so its
+                        // links cannot register the definitions they use.  A
+                        // definition placed before the directive has nowhere
+                        // else to go, so reserve it ahead of the flush below.
+                        for skipped in &children[i + 1..] {
+                            self.reserve_references_of(skipped);
+                        }
+
                         // Flush pending footnotes and references BEFORE the disable-file directive.
                         // Definitions that appear before the directive should stay before it.
                         let directive_line = child.data.borrow().sourcepos.start.line;
@@ -57,7 +116,11 @@ impl<'a> Serializer<'a> {
                         self.flush_references();
                         self.flush_footnote_references_before(Some(directive_line));
 
-                        // Output the directive comment, then output remaining content as-is
+                        // Output the directive comment, then output remaining content as-is.
+                        // A definition flushed just above would otherwise run
+                        // straight into the comment, and it has no node of its
+                        // own for the child index to account for.
+                        self.ensure_blank_line();
                         self.output.push_str(html_block.literal.trim_end());
                         // Get the line after the directive block ends
                         let directive_end_line = child.data.borrow().sourcepos.end.line;
@@ -79,10 +142,10 @@ impl<'a> Serializer<'a> {
                         self.flush_footnote_references_before(Some(directive_line));
 
                         self.skip_mode = FormatSkipMode::NextBlock;
-                        // Output the directive comment
-                        if i > 0 {
-                            self.output.push('\n');
-                        }
+                        // Output the directive comment.  A definition flushed
+                        // just above has no node of its own for the child index
+                        // to account for, so the separator goes by the output.
+                        self.ensure_blank_line();
                         self.output.push_str(&html_block.literal);
                         continue;
                     }
@@ -95,14 +158,56 @@ impl<'a> Serializer<'a> {
                         self.flush_footnote_references_before(Some(directive_line));
 
                         self.skip_mode = FormatSkipMode::UntilSection;
-                        // Output the directive comment
-                        if i > 0 {
-                            self.output.push('\n');
-                        }
+                        // Output the directive comment.  A definition flushed
+                        // just above has no node of its own for the child index
+                        // to account for, so the separator goes by the output.
+                        self.ensure_blank_line();
                         self.output.push_str(&html_block.literal);
                         continue;
                     }
                     Directive::Disable => {
+                        // The region is copied from the source instead of being
+                        // rebuilt block by block: a reference definition is
+                        // consumed by the parser and has no node of its own, so
+                        // a node-by-node copy would leave the region's links
+                        // pointing at nothing.
+                        let enable_index = Self::find_enable_directive(&children, i);
+                        let region_last = enable_index.unwrap_or(children.len());
+                        let region_start = child.data.borrow().sourcepos.end.line + 1;
+                        let region_end = match enable_index {
+                            Some(j) => children[j]
+                                .data
+                                .borrow()
+                                .sourcepos
+                                .start
+                                .line
+                                .saturating_sub(1),
+                            None => self.source_lines.len(),
+                        };
+                        let region = self
+                            .extract_source_lines(region_start, region_end)
+                            .map(|source| Self::trim_blank_lines(&source))
+                            .unwrap_or_default();
+
+                        // Definitions the region's links depend on but that sit
+                        // outside it have to be kept from being dropped.
+                        let mut region_references = Vec::new();
+                        if !region.is_empty() {
+                            for skipped in &children[i + 1..region_last] {
+                                self.collect_verbatim_references(skipped, &mut region_references);
+                            }
+                        }
+                        // A label the copy redefines has to be reserved before
+                        // the flush below, so that its winning definition still
+                        // comes first in the output; the copy would otherwise
+                        // shadow it and retarget the links.
+                        let (shadowed, rest): (Vec<_>, Vec<_>) =
+                            region_references.iter().partition(|reference| {
+                                self.shadowed_reference_labels
+                                    .contains(&normalize_reference_key(&reference.label))
+                            });
+                        self.reserve_verbatim_references(shadowed.into_iter());
+
                         // Flush pending footnotes and references BEFORE the disable directive.
                         // Definitions that appear before the directive should stay before it.
                         let directive_line = child.data.borrow().sourcepos.start.line;
@@ -110,40 +215,56 @@ impl<'a> Serializer<'a> {
                         self.flush_references();
                         self.flush_footnote_references_before(Some(directive_line));
 
-                        self.skip_mode = FormatSkipMode::Disabled;
-                        // Output the directive comment
-                        if i > 0 {
+                        // Output the directive comment.  A definition flushed
+                        // just above has no node of its own for the child index
+                        // to account for, so the separator goes by the output.
+                        self.ensure_blank_line();
+                        self.output.push_str(html_block.literal.trim_end());
+                        self.output.push('\n');
+
+                        if region.is_empty() {
+                            // Nothing to copy, either because the region is
+                            // empty or because the source is unavailable; fall
+                            // back to emitting its blocks one by one.
+                            self.skip_mode = FormatSkipMode::Disabled;
+                        } else {
+                            // The rest are reserved after the flush, so they are
+                            // emitted where definitions normally go rather than
+                            // above the directive.
+                            self.reserve_verbatim_references(rest.into_iter());
                             self.output.push('\n');
+                            self.output.push_str(&region);
+                            self.output.push('\n');
+                            skip_until = region_last;
                         }
-                        self.output.push_str(&html_block.literal);
                         continue;
                     }
                     Directive::Enable => {
                         self.skip_mode = FormatSkipMode::None;
-                        // Output the directive comment
-                        if i > 0 {
-                            self.output.push('\n');
-                        }
+                        // Output the directive comment.  A definition flushed
+                        // just above has no node of its own for the child index
+                        // to account for, so the separator goes by the output.
+                        self.ensure_blank_line();
                         self.output.push_str(&html_block.literal);
                         continue;
                     }
                     Directive::ProperNouns(nouns) => {
                         // Add to directive proper nouns list
                         self.directive_proper_nouns.extend(nouns);
-                        // Output the directive comment
-                        if i > 0 {
-                            self.output.push('\n');
-                        }
+                        // Output the directive comment.  A definition flushed
+                        // just above has no node of its own for the child index
+                        // to account for, so the separator goes by the output.
+                        self.ensure_blank_line();
                         self.output.push_str(&html_block.literal);
                         continue;
                     }
                     Directive::CommonNouns(nouns) => {
                         // Add to directive common nouns list
                         self.directive_common_nouns.extend(nouns);
-                        // Output the directive comment
-                        if i > 0 {
-                            self.output.push('\n');
-                        }
+                        // Output the directive comment.  A definition flushed
+                        // just above has no node of its own for the child index
+                        // to account for, so the separator goes by the output.
+                        self.ensure_blank_line();
                         self.output.push_str(&html_block.literal);
                         continue;
                     }
@@ -211,6 +332,10 @@ impl<'a> Serializer<'a> {
                     continue;
                 }
 
+                // The block keeps its source text, so its links never register
+                // the definitions they use; reserve them here instead.
+                self.reserve_references_of(child);
+
                 // Output the original source
                 if let Some(source) = self.extract_source(child) {
                     self.output.push_str(&source);
@@ -233,9 +358,335 @@ impl<'a> Serializer<'a> {
         self.output_trailing_html_blocks(&children, trailing_html_start);
     }
 
+    /// Find the index of the `hongdown-enable` directive that closes the
+    /// `hongdown-disable` directive at `from`, if the document has one.
+    fn find_enable_directive<'b>(children: &[&'b AstNode<'b>], from: usize) -> Option<usize> {
+        children
+            .iter()
+            .enumerate()
+            .skip(from + 1)
+            .find(|(_, child)| {
+                matches!(
+                    &child.data.borrow().value,
+                    NodeValue::HtmlBlock(html_block)
+                        if Directive::parse(&html_block.literal) == Some(Directive::Enable)
+                )
+            })
+            .map(|(i, _)| i)
+    }
+
+    /// Collect the source line ranges that are copied verbatim instead of being
+    /// rebuilt from the AST: every `hongdown-disable` region and the tail that
+    /// follows a `hongdown-disable-file` directive.
+    fn collect_verbatim_line_ranges<'b>(
+        &self,
+        children: &[&'b AstNode<'b>],
+    ) -> Vec<(usize, usize)> {
+        let mut ranges = Vec::new();
+        let last_line = self.source_lines.len();
+        let mut i = 0;
+
+        while i < children.len() {
+            let directive = match &children[i].data.borrow().value {
+                NodeValue::HtmlBlock(html_block) => Directive::parse(&html_block.literal),
+                _ => None,
+            };
+            let start_line = children[i].data.borrow().sourcepos.end.line + 1;
+            match directive {
+                Some(Directive::DisableFile) => {
+                    ranges.push((start_line, last_line));
+                    break;
+                }
+                Some(Directive::Disable) => {
+                    let enable_index = Self::find_enable_directive(children, i);
+                    let end_line = match enable_index {
+                        Some(j) => children[j]
+                            .data
+                            .borrow()
+                            .sourcepos
+                            .start
+                            .line
+                            .saturating_sub(1),
+                        None => last_line,
+                    };
+                    ranges.push((start_line, end_line));
+                    // Nested directives inside the region are part of the copy.
+                    i = enable_index.unwrap_or(children.len());
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+
+        ranges
+    }
+
+    /// Collect the source line ranges covered by code blocks and raw HTML
+    /// blocks, whose contents are not Markdown and so may not be mistaken for
+    /// reference definitions.
+    fn collect_literal_block_line_ranges<'b>(
+        node: &'b AstNode<'b>,
+        ranges: &mut Vec<(usize, usize)>,
+    ) {
+        let data = node.data.borrow();
+        if let NodeValue::CodeBlock(_) | NodeValue::HtmlBlock(_) = &data.value {
+            ranges.push((data.sourcepos.start.line, data.sourcepos.end.line));
+            return;
+        }
+        drop(data);
+
+        for child in node.children() {
+            Self::collect_literal_block_line_ranges(child, ranges);
+        }
+    }
+
+    /// Collect the normalized labels of the reference definitions the source
+    /// carries, each mapped to the lines defining it, in order.
+    ///
+    /// Missing a definition would make a later duplicate look like the winning
+    /// one, so the destination is allowed to sit on the following line, as
+    /// CommonMark permits, and a blockquote prefix is allowed to precede the
+    /// label.  A list marker is not: `- [x]: done` is a task list item, and
+    /// mistaking one for a definition is worse than overlooking a definition
+    /// written inside a list.
+    ///
+    /// The parser resolves references through a map it does not expose, so this
+    /// recognizes definitions by inspecting the source instead.  It stays on
+    /// the conservative side of the grammar rather than reimplementing it.
+    fn collect_reference_definition_lines(
+        source_lines: &[&str],
+        literal_block_ranges: &[(usize, usize)],
+    ) -> std::collections::HashMap<String, Vec<usize>> {
+        let mut definitions: std::collections::HashMap<String, Vec<usize>> =
+            std::collections::HashMap::new();
+        let ref_def_pattern = Regex::new(r"^[\s>]*\[([^\]]+)\]:(\s*\S.*)?$").unwrap();
+
+        for (i, line) in source_lines.iter().enumerate() {
+            let line_number = i + 1;
+            if Self::is_line_in_ranges(line_number, literal_block_ranges) {
+                continue;
+            }
+            if let Some(caps) = ref_def_pattern.captures(line)
+                && let Some(label) = caps.get(1)
+                // Footnote definitions are not reference definitions.
+                && !label.as_str().starts_with('^')
+                // The destination follows the colon, or, when nothing does, it
+                // is on the next line.  Either way it has to be one.
+                && match caps.get(2) {
+                    Some(same_line) => Self::is_reference_destination(same_line.as_str()),
+                    None => source_lines
+                        .get(i + 1)
+                        .is_some_and(|next| Self::is_reference_destination(next)),
+                }
+            {
+                definitions
+                    .entry(normalize_reference_key(label.as_str()))
+                    .or_default()
+                    .push(line_number);
+            }
+        }
+
+        definitions
+    }
+
+    /// Whether the text following a reference label's colon can be what a
+    /// definition needs: a destination, optionally followed by a title.
+    ///
+    /// The destination is checked closely, since that is what tells a
+    /// definition apart from ordinary prose.  The title is only checked for its
+    /// opening delimiter, because a title may run on to further lines.
+    fn is_reference_destination(text: &str) -> bool {
+        let trimmed = text.trim();
+        let rest = if let Some(pointy) = trimmed.strip_prefix('<') {
+            // A `<…>` destination may contain spaces, but an unterminated one
+            // is not a destination at all.
+            match pointy.find('>') {
+                Some(end) => pointy[end + 1..].trim(),
+                None => return false,
+            }
+        } else {
+            let (destination, rest) = trimmed
+                .split_once(char::is_whitespace)
+                .unwrap_or((trimmed, ""));
+            // A bare destination has to be non-empty and its parentheses
+            // balanced.  One that opens a bracket is read as the next
+            // definition's label rather than this one's target: `[a]:` followed
+            // by `[b]: …` defines nothing, which is a far more common shape
+            // than a destination that genuinely starts with `[`.
+            if destination.is_empty()
+                || destination.starts_with('[')
+                || !Self::has_balanced_parentheses(destination)
+            {
+                return false;
+            }
+            rest.trim()
+        };
+
+        rest.is_empty() || rest.starts_with(['"', '\'', '('])
+    }
+
+    /// Whether a bare link destination's parentheses pair up, as CommonMark
+    /// requires of one that is not wrapped in `<…>`.
+    fn has_balanced_parentheses(destination: &str) -> bool {
+        let mut depth = 0usize;
+        let mut escaped = false;
+        for character in destination.chars() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            match character {
+                '\\' => escaped = true,
+                '(' => depth += 1,
+                ')' => match depth.checked_sub(1) {
+                    Some(remaining) => depth = remaining,
+                    None => return false,
+                },
+                _ => {}
+            }
+        }
+        depth == 0
+    }
+
+    /// Record the labels that links preserved verbatim depend on, before any
+    /// link is serialized.
+    ///
+    /// A link that is copied from the source keeps the label the source gave
+    /// it, whereas a formatted link can be given a derived label such as
+    /// `[guide][guide 2]`.  Claiming the labels up front is therefore what lets
+    /// the two coexist: the formatted link is the one that yields.
+    fn collect_verbatim_reference_claims<'b>(
+        &mut self,
+        node: &'b AstNode<'b>,
+        disabled_ranges: &[(usize, usize)],
+    ) {
+        for child in node.children() {
+            self.collect_verbatim_reference_claims(child, disabled_ranges);
+        }
+
+        let (target, line) = {
+            let data = node.data.borrow();
+            let target = match &data.value {
+                NodeValue::Link(link) | NodeValue::Image(link) => {
+                    Some((link.url.clone(), link.title.clone()))
+                }
+                _ => None,
+            };
+            (target, data.sourcepos.start.line)
+        };
+
+        if let Some((url, title)) = target
+            && Self::is_line_in_ranges(line, disabled_ranges)
+            && let Some(label) = self.verbatim_reference_label(node)
+        {
+            self.verbatim_reference_claims
+                .entry(normalize_reference_key(&label))
+                .or_insert(ReferenceLink { label, url, title });
+        }
+    }
+
+    /// The label a reference-style link or image is written with in the source,
+    /// with the collapsed-reference marker stripped.  `None` for links that are
+    /// not reference style, and for the empty label, which cannot be defined.
+    fn verbatim_reference_label<'b>(&self, node: &'b AstNode<'b>) -> Option<String> {
+        let (_, label) = self.get_reference_style_info(node)?;
+        let label = label.strip_prefix('\x01').unwrap_or(&label);
+        (!label.is_empty()).then(|| label.to_string())
+    }
+
+    /// Collect the reference definitions a verbatim block's links depend on.
+    ///
+    /// Such a link is copied from the source and so never registers the
+    /// definition it uses; without [`Self::reserve_verbatim_references`] the
+    /// definition would be dropped as unused, leaving the copy pointing at
+    /// nothing.
+    fn collect_verbatim_references<'b>(
+        &self,
+        node: &'b AstNode<'b>,
+        collected: &mut Vec<VerbatimReference>,
+    ) {
+        // Children first, so that a badge's image comes before the link
+        // wrapping it, the order the formatted path would register them in.
+        for child in node.children() {
+            self.collect_verbatim_references(child, collected);
+        }
+
+        let (target, line) = {
+            let data = node.data.borrow();
+            let target = match &data.value {
+                NodeValue::Link(link) | NodeValue::Image(link) => {
+                    Some((link.url.clone(), link.title.clone()))
+                }
+                _ => None,
+            };
+            (target, data.sourcepos.start.line)
+        };
+
+        if let Some((url, title)) = target
+            && let Some(label) = self.verbatim_reference_label(node)
+        {
+            collected.push(VerbatimReference {
+                label,
+                url,
+                title,
+                line,
+            });
+        }
+    }
+
+    /// Keep the given definitions from being dropped as unused, reporting the
+    /// ones whose label is already spoken for by a different destination.
+    fn reserve_verbatim_references<'r>(
+        &mut self,
+        references: impl Iterator<Item = &'r VerbatimReference>,
+    ) {
+        for reference in references {
+            // A definition inside a verbatim range travels with its own copy.
+            let key = normalize_reference_key(&reference.label);
+            if self.verbatim_reference_labels.contains(&key) {
+                continue;
+            }
+            if !self.reserve_reference(&reference.label, &reference.url, &reference.title) {
+                self.add_warning(
+                    reference.line,
+                    format!(
+                        "reference definition [{}] cannot be kept: the label is \
+                         already used for a different destination",
+                        reference.label
+                    ),
+                );
+            }
+        }
+    }
+
+    /// Collect and reserve in one step, for a single block emitted verbatim.
+    fn reserve_references_of<'b>(&mut self, node: &'b AstNode<'b>) {
+        let mut references = Vec::new();
+        self.collect_verbatim_references(node, &mut references);
+        self.reserve_verbatim_references(references.iter());
+    }
+
+    /// Drop the leading and trailing blank lines of a verbatim source chunk,
+    /// leaving the indentation of the remaining lines untouched.
+    fn trim_blank_lines(source: &str) -> String {
+        let lines: Vec<&str> = source.lines().collect();
+        let Some(start) = lines.iter().position(|line| !line.trim().is_empty()) else {
+            return String::new();
+        };
+        let end = lines
+            .iter()
+            .rposition(|line| !line.trim().is_empty())
+            .unwrap_or(start);
+        lines[start..=end].join("\n")
+    }
+
     /// Find the index where trailing HTML blocks start.
     /// Returns `children.len()` if there are no trailing HTML blocks.
-    fn find_trailing_html_blocks<'b>(&self, children: &[&'b AstNode<'b>]) -> usize {
+    fn find_trailing_html_blocks<'b>(
+        &self,
+        children: &[&'b AstNode<'b>],
+        verbatim_ranges: &[(usize, usize)],
+    ) -> usize {
         let mut trailing_start = children.len();
 
         // Walk backwards from the end, looking for consecutive HTML blocks
@@ -245,6 +696,12 @@ impl<'a> Serializer<'a> {
                 NodeValue::HtmlBlock(html_block) => {
                     // Skip formatting directives - they should stay where they are
                     if Directive::parse(&html_block.literal).is_some() {
+                        break;
+                    }
+                    // A block inside a verbatim range is emitted with that
+                    // range; moving it here would emit it twice.
+                    let start_line = child.data.borrow().sourcepos.start.line;
+                    if Self::is_line_in_ranges(start_line, verbatim_ranges) {
                         break;
                     }
                     // This is a regular HTML block (e.g., comment) - mark as trailing
@@ -656,7 +1113,11 @@ impl<'a> Serializer<'a> {
     ///
     /// We also check the original source to ensure the bracket wasn't
     /// intentionally escaped (e.g., `\[label]`).
-    fn check_undefined_references_ast<'b>(&mut self, node: &'b AstNode<'b>) {
+    fn check_undefined_references_ast<'b>(
+        &mut self,
+        node: &'b AstNode<'b>,
+        disabled_ranges: &[(usize, usize)],
+    ) {
         if self.source_lines.is_empty() {
             return;
         }
@@ -668,9 +1129,6 @@ impl<'a> Serializer<'a> {
         // (e.g., when they follow abbreviation definitions without a blank line)
         let source_ref_defs = Self::collect_source_reference_definitions(&self.source_lines);
 
-        // Collect disabled line ranges based on formatting directives
-        let disabled_ranges = Self::collect_disabled_line_ranges(node);
-
         // Collect warnings first to avoid borrow issues
         let warnings = Self::find_undefined_references_in_ast(
             node,
@@ -681,7 +1139,7 @@ impl<'a> Serializer<'a> {
 
         // Filter out warnings that fall within disabled regions
         for (line, msg) in warnings {
-            if !Self::is_line_in_disabled_ranges(line, &disabled_ranges) {
+            if !Self::is_line_in_ranges(line, disabled_ranges) {
                 self.add_warning(line, msg);
             }
         }
@@ -766,8 +1224,8 @@ impl<'a> Serializer<'a> {
         ranges
     }
 
-    /// Check if a line number falls within any of the disabled ranges.
-    fn is_line_in_disabled_ranges(line: usize, ranges: &[(usize, usize)]) -> bool {
+    /// Check if a line number falls within any of the given inclusive ranges.
+    fn is_line_in_ranges(line: usize, ranges: &[(usize, usize)]) -> bool {
         ranges
             .iter()
             .any(|(start, end)| line >= *start && line <= *end)

@@ -181,7 +181,13 @@ impl<'a> Serializer<'a> {
 
     /// Ensure output ends with a blank line (two newlines).
     /// Used before emitting reference definitions and footnotes.
+    ///
+    /// Empty output needs no separator: a document must not start with blank
+    /// lines just because its first emitted thing is a definition.
     fn ensure_blank_line(&mut self) {
+        if self.output.is_empty() {
+            return;
+        }
         if !self.output.ends_with("\n\n") {
             if self.output.ends_with('\n') {
                 self.output.push('\n');

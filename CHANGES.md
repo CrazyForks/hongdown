@@ -27,8 +27,39 @@ To be released.
     folding applied, the same way the underlying parser resolves them.
     [[#26], [#29]]
 
+ -  Fixed a bug where a reference definition placed inside a
+    `<!-- hongdown-disable -->` region was dropped, leaving the region's links
+    pointing at nothing.  Since the loss was stable across runs, `--check`
+    never reported the damaged file afterwards.  The region between the two
+    directives is now copied from the source in one piece instead of being
+    rebuilt block by block, so its reference definitions survive, as do its
+    footnote definitions, interior blank lines, and indentation.  (The blank
+    line separating the region from the directives around it is still
+    normalized to exactly one.)  [[#27], [#32]]
+
+ -  Fixed a bug where a reference definition was dropped when the only links
+    using it sat in a region that skips formatting.  Those links are copied
+    from the source and never registered the definition they depend on, which
+    silently broke reference-style badges under `<!-- hongdown-disable -->`,
+    `<!-- hongdown-disable-next-line -->`,
+    `<!-- hongdown-disable-next-section -->`, and
+    `<!-- hongdown-disable-file -->`.  [[#27], [#32]]
+
+ -  Fixed a bug where a link inside a region that skips formatting could have
+    its destination changed by a link outside it.  A copied link keeps the
+    label the source gave it, so when both wanted the same label for different
+    destinations the copied one silently lost its target.  The formatted link,
+    which can be given a derived label such as `[guide][guide 2]`, now yields
+    instead.  [[#27], [#32]]
+
+ -  Fixed a bug where a directive comment gained an extra blank line above it
+    when it directly followed front matter, and lost the blank line entirely
+    when the only thing above it was a reference definition.  [[#27], [#32]]
+
 [#26]: https://github.com/dahlia/hongdown/issues/26
+[#27]: https://github.com/dahlia/hongdown/issues/27
 [#29]: https://github.com/dahlia/hongdown/pull/29
+[#32]: https://github.com/dahlia/hongdown/pull/32
 
 
 Version 0.5.1

@@ -23,6 +23,9 @@ pub enum FormatSkipMode {
     UntilSection,
     /// Formatting is disabled (by `hongdown-disable` directive).
     /// Remains active until `hongdown-enable` directive is encountered.
+    ///
+    /// Only used when the original source is unavailable: with a source the
+    /// whole region is copied from it in one piece instead.
     Disabled,
 }
 
@@ -316,6 +319,18 @@ pub struct Serializer<'a> {
     pub numbered_reference_labels: std::collections::HashMap<(String, String, String), String>,
     /// Footnote definitions and their reference tracking
     pub footnotes: FootnoteSet,
+    /// Normalized keys (see `normalize_reference_key`) of the definitions that
+    /// are copied verbatim along with a disabled region, and so must not be
+    /// reserved and emitted a second time.
+    pub verbatim_reference_labels: std::collections::HashSet<String>,
+    /// Labels claimed by links that are preserved verbatim, keyed by their
+    /// normalized key.  Such a link cannot be relabelled, so it holds its label
+    /// against formatted links, which can be given a derived one instead.
+    pub verbatim_reference_claims: std::collections::HashMap<String, ReferenceLink>,
+    /// Normalized keys of the labels a verbatim copy redefines: their winning
+    /// definition lies outside it, so it has to be emitted ahead of the copy or
+    /// the copy would shadow it.
+    pub shadowed_reference_labels: std::collections::HashSet<String>,
     /// Current list nesting depth (0 = not in list, 1 = top-level, 2+ = nested)
     pub list_depth: usize,
     /// Current formatting skip mode
@@ -372,6 +387,9 @@ impl<'a> Serializer<'a> {
             reference_label_cursors: std::collections::HashMap::new(),
             numbered_reference_labels: std::collections::HashMap::new(),
             footnotes: FootnoteSet::new(),
+            verbatim_reference_labels: std::collections::HashSet::new(),
+            verbatim_reference_claims: std::collections::HashMap::new(),
+            shadowed_reference_labels: std::collections::HashSet::new(),
             list_depth: 0,
             skip_mode: FormatSkipMode::None,
             in_description_details: false,
@@ -412,6 +430,9 @@ impl<'a> Serializer<'a> {
             reference_label_cursors: std::collections::HashMap::new(),
             numbered_reference_labels: std::collections::HashMap::new(),
             footnotes: FootnoteSet::new(),
+            verbatim_reference_labels: std::collections::HashSet::new(),
+            verbatim_reference_claims: std::collections::HashMap::new(),
+            shadowed_reference_labels: std::collections::HashSet::new(),
             list_depth: 0,
             skip_mode: FormatSkipMode::None,
             in_description_details: false,
@@ -484,6 +505,21 @@ impl<'a> Serializer<'a> {
         Some(result)
     }
 
+    /// Extract original source text for an inclusive range of lines.
+    /// Line numbers are 1-indexed; `end_line` is clamped to the last line.
+    /// Returns `None` when there is no source or the range is empty.
+    pub fn extract_source_lines(&self, start_line: usize, end_line: usize) -> Option<String> {
+        if self.source_lines.is_empty() || start_line == 0 || end_line < start_line {
+            return None;
+        }
+        let start_idx = start_line - 1;
+        if start_idx >= self.source_lines.len() {
+            return None;
+        }
+        let end_idx = (end_line - 1).min(self.source_lines.len() - 1);
+        Some(self.source_lines[start_idx..=end_idx].join("\n"))
+    }
+
     /// Extract original source text from a given line to the end of the file.
     /// Line numbers are 1-indexed.
     pub fn extract_source_from_line(&self, start_line: usize) -> Option<String> {
@@ -522,6 +558,15 @@ impl<'a> Serializer<'a> {
             .or_else(|| self.footnotes.pending_references.get(key).map(|(r, _)| r))
     }
 
+    /// Look up whatever holds `key`, including a label merely claimed by a link
+    /// that is preserved verbatim.  A claim counts as occupying the label even
+    /// before the definition is reserved, because the claiming link cannot be
+    /// relabelled and so must not have its label taken from under it.
+    fn find_occupant(&self, key: &str) -> Option<&ReferenceLink> {
+        self.find_reference(key)
+            .or_else(|| self.verbatim_reference_claims.get(key))
+    }
+
     /// Register a reference link and return the label that must be used to
     /// refer to it.
     ///
@@ -536,7 +581,11 @@ impl<'a> Serializer<'a> {
     /// reference line for proper flush timing.
     pub fn register_reference(&mut self, label: &str, url: &str, title: &str) -> String {
         let key = normalize_reference_key(label);
-        match self.find_reference(&key) {
+        // Copy the occupant out of the borrow so the maps below can be updated.
+        let occupant = self
+            .find_occupant(&key)
+            .map(|existing| (existing.url.clone(), existing.title.clone()));
+        match occupant {
             // Free label: take it.
             None => {
                 self.insert_reference(key, label.to_string(), url, title);
@@ -545,7 +594,12 @@ impl<'a> Serializer<'a> {
             // Already registered with the same target: share it.  The existing
             // entry is left untouched so that its spelling (and, once emitted,
             // its definition) is not duplicated or altered.
-            Some(existing) if existing.url == url && existing.title == title => label.to_string(),
+            Some((occupied_url, occupied_title))
+                if occupied_url == url && occupied_title == title =>
+            {
+                self.satisfy_claimed_label(key, label, url, title);
+                label.to_string()
+            }
             // Taken by a different target: derive a distinct label.
             Some(_) => {
                 // The variants live in the namespace of the shortened base, so
@@ -573,7 +627,7 @@ impl<'a> Serializer<'a> {
                     // Copy the occupant out of the borrow so the maps below can
                     // be updated.
                     let occupant = self
-                        .find_reference(&candidate_key)
+                        .find_occupant(&candidate_key)
                         .map(|existing| (existing.url.clone(), existing.title.clone()));
                     match occupant {
                         // Occupied by something else.  Remember what, because
@@ -589,7 +643,9 @@ impl<'a> Serializer<'a> {
                             continue;
                         }
                         // Already holds this very target: share it.
-                        Some(_) => {}
+                        Some(_) => {
+                            self.satisfy_claimed_label(candidate_key, &candidate, url, title)
+                        }
                         None => self.insert_reference(candidate_key, candidate.clone(), url, title),
                     }
                     self.reference_label_cursors.insert(cursor_key, n + 1);
@@ -599,6 +655,37 @@ impl<'a> Serializer<'a> {
                 }
                 unreachable!("the numbered label space is unbounded")
             }
+        }
+    }
+
+    /// Register a definition for a label that so far is only *claimed*.
+    ///
+    /// A claim marks the label as spoken for by a link preserved verbatim, but
+    /// emits no definition of its own, so a formatted link sharing that label
+    /// still has to supply one.  The exception is a label whose definition is
+    /// preserved verbatim too: that copy already defines it, and adding another
+    /// would merely repeat it.
+    fn satisfy_claimed_label(&mut self, key: String, label: &str, url: &str, title: &str) {
+        if self.find_reference(&key).is_none() && !self.verbatim_reference_labels.contains(&key) {
+            self.insert_reference(key, label.to_string(), url, title);
+        }
+    }
+
+    /// Keep a reference definition alive for a link that is emitted verbatim.
+    ///
+    /// Such a link keeps whatever label the source gave it, so unlike
+    /// [`Self::register_reference`] this never falls back to a derived label:
+    /// a renamed definition would leave the verbatim link pointing at nothing.
+    /// Returns `false` when the label is already taken by a different target,
+    /// which the caller reports as a warning since the link cannot be saved.
+    pub fn reserve_reference(&mut self, label: &str, url: &str, title: &str) -> bool {
+        let key = normalize_reference_key(label);
+        match self.find_reference(&key) {
+            None => {
+                self.insert_reference(key, label.to_string(), url, title);
+                true
+            }
+            Some(existing) => existing.url == url && existing.title == title,
         }
     }
 
