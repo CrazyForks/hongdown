@@ -1716,3 +1716,29 @@ fn test_duplicate_link_text_preserves_each_destination() {
         "Distinct reference labels should be idempotent"
     );
 }
+
+#[test]
+fn test_noun_directive_inside_disabled_region_still_applies() {
+    let input = r#"<!-- hongdown-disable -->
+
+<!-- hongdown-proper-nouns: Swift -->
+
+Raw   text.
+
+<!-- hongdown-enable -->
+
+# Using Swift Later
+"#;
+
+    let options = Options {
+        heading_sentence_case: true,
+        ..Options::default()
+    };
+    let result = format(input, &options).unwrap();
+
+    assert!(
+        result.contains("Using Swift later"),
+        "the noun directive must still apply after the region, got:\n{}",
+        result
+    );
+}

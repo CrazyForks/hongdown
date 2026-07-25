@@ -249,6 +249,15 @@ impl<'a> Serializer<'a> {
                             // back to emitting its blocks one by one.
                             self.skip_mode = FormatSkipMode::Disabled;
                         } else {
+                            // A directive naming nouns names them for the
+                            // headings after the region as much as for the ones
+                            // before it, which is what it did when the region
+                            // was emitted a node at a time.  Its comment is
+                            // part of the copy; only its effect is left to
+                            // carry out.
+                            for skipped in &children[i + 1..region_last] {
+                                self.apply_noun_directive(skipped);
+                            }
                             self.output.push('\n');
                             self.output.push_str(&region);
                             self.output.push('\n');
@@ -383,6 +392,21 @@ impl<'a> Serializer<'a> {
 
         // Output trailing HTML blocks after references and footnotes
         self.output_trailing_html_blocks(&children, trailing_html_start);
+    }
+
+    /// Take up the nouns a node names, where the node is a directive naming
+    /// any.  Whether the node's own text is formatted or copied has no bearing
+    /// on the headings it speaks for.
+    fn apply_noun_directive<'b>(&mut self, node: &'b AstNode<'b>) {
+        let directive = match &node.data.borrow().value {
+            NodeValue::HtmlBlock(html_block) => Directive::parse(&html_block.literal),
+            _ => None,
+        };
+        match directive {
+            Some(Directive::ProperNouns(nouns)) => self.directive_proper_nouns.extend(nouns),
+            Some(Directive::CommonNouns(nouns)) => self.directive_common_nouns.extend(nouns),
+            _ => {}
+        }
     }
 
     /// Find the index of the `hongdown-enable` directive that closes the
