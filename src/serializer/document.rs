@@ -527,11 +527,7 @@ impl<'a> Serializer<'a> {
             } else {
                 sourcepos.start.line
             };
-            for line in start..=sourcepos.end.line {
-                if let Some(marked) = in_leaf_block.get_mut(line - 1) {
-                    *marked = true;
-                }
-            }
+            Self::mark_lines(&[(start, sourcepos.end.line)], in_leaf_block);
             return;
         }
         drop(data);
