@@ -11,14 +11,29 @@ use super::escape;
 use super::state::{Directive, FormatSkipMode, ReferenceLink, normalize_reference_key};
 use super::wrap;
 
-/// Matches a line that begins a reference definition, capturing its label.
+/// Matches whatever container markers open the line a reference definition
+/// starts on.
 ///
-/// A blockquote prefix may precede the label, since a definition written inside
-/// a blockquote still defines a document-wide label.  A list marker may not:
-/// `- [x]: done` is a task list item.  The label runs to the first `]` that a
-/// backslash does not escape, so that `[a\]b]` is read whole.
-static REFERENCE_DEFINITION: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[\s>]*\[((?:[^\]\\]|\\.)+)\]:").unwrap());
+/// A definition keeps defining a document-wide label wherever it is written, so
+/// a blockquote marker or a list marker may stand before it.  `- [x]: done` is
+/// no task list item — the colon rules that out — and its label is as
+/// document-wide as any other.
+static DEFINITION_PREFIX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(?:[ \t>]|(?:[-*+]|\d{1,9}[.)])[ \t]+)*").unwrap());
+
+/// Matches the container markers a definition's later lines carry.
+///
+/// Only a blockquote marks each of its lines; a list marks the first and
+/// indents the rest.  So a list marker below a definition's first line opens an
+/// item of its own, which ends the definition rather than continuing it.
+static CONTINUATION_PREFIX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[ \t>]*").unwrap());
+
+/// Matches a list marker that opens a block in the middle of one.
+///
+/// A bullet does so wherever it stands, but an ordered marker only where it
+/// numbers the list from one: `2.` below a line goes on reading as part of it.
+static LIST_MARKER: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(?:[-*+]|1[.)])[ \t]").unwrap());
 
 /// A reference definition that a link preserved verbatim depends on.
 struct VerbatimReference {
@@ -515,51 +530,13 @@ impl<'a> Serializer<'a> {
             .max(start_line);
 
         let mut by_definitions = start_line;
-        while by_definitions < end_line {
-            let Some(line) = source_lines.get(by_definitions - 1) else {
-                break;
-            };
-            let Some(matched) = REFERENCE_DEFINITION.find(line) else {
-                break;
-            };
-            by_definitions += 1;
-            // A definition may be written over several lines: its destination
-            // on the line below the label, and a title after the destination or
-            // on a line of its own below it, running on further still.  The
-            // definitions after it sit beneath all of that, so the head reaches
-            // over it to find them.
-            let mut rest = &line[matched.end()..];
-            if rest.trim().is_empty() && by_definitions < end_line {
-                rest = source_lines.get(by_definitions - 1).copied().unwrap_or("");
-                by_definitions += 1;
-            }
-            let Some(title) = Self::title_after_destination(rest) else {
-                // The destination is malformed, so nothing here is a definition
-                // to reach over.
-                break;
-            };
-            let mut closing = Self::unclosed_delimiter_in(title);
-            if title.trim().is_empty()
-                && by_definitions < end_line
-                && let Some(below) = source_lines.get(by_definitions - 1)
-                && Self::starts_title(below)
-            {
-                by_definitions += 1;
-                closing = Self::unclosed_delimiter_in(below);
-            }
-            if let Some(closing) = closing {
-                // The delimiter that opened the title is what closes it, however
-                // many lines later, and one the source escapes closes nothing.
-                while by_definitions < end_line {
-                    let line = source_lines.get(by_definitions - 1).copied().unwrap_or("");
-                    by_definitions += 1;
-                    if Self::contains_unescaped(line, closing) {
-                        break;
-                    }
-                }
-            }
+        // A consumed head is made of definitions, each of which may take
+        // several lines; the head ends where one no longer begins.
+        while let Some((_, next)) =
+            Self::read_reference_definition(source_lines, by_definitions, end_line)
+        {
+            by_definitions = next;
         }
-
         by_breaks.min(by_definitions)
     }
 
@@ -629,6 +606,110 @@ impl<'a> Serializer<'a> {
                 None => "",
             }),
         }
+    }
+
+    /// Read the reference definition that begins on line `start`, returning its
+    /// label and the line after the last one it occupies.  Lines are 1-indexed,
+    /// and the definition may not reach `limit`.
+    ///
+    /// A definition can be written over several lines in every part of it: the
+    /// label may break across lines, the destination may sit below the label,
+    /// and a title may follow the destination or begin on a line of its own and
+    /// run on until its delimiter closes.  Reading all of that in one place is
+    /// what keeps the two callers agreeing on where a definition ends: one
+    /// walks the definitions a paragraph swallowed at its head, the other the
+    /// definitions a document carries between its blocks.
+    fn read_reference_definition(
+        source_lines: &[&str],
+        start: usize,
+        limit: usize,
+    ) -> Option<(String, usize)> {
+        if start >= limit {
+            return None;
+        }
+        let mut rest =
+            Self::strip_definition_prefix(source_lines.get(start - 1)?).strip_prefix('[')?;
+        let mut line = start;
+
+        // The label, which runs to the first `]` a backslash does not escape,
+        // however many lines below that is.
+        let mut label = String::new();
+        let after_label = loop {
+            match Self::find_unescaped(rest, ']') {
+                Some(end) => {
+                    label.push_str(&rest[..end]);
+                    break &rest[end + 1..];
+                }
+                None => {
+                    label.push_str(rest);
+                    label.push(' ');
+                    line += 1;
+                    if line >= limit {
+                        return None;
+                    }
+                    rest = Self::strip_continuation_prefix(source_lines.get(line - 1)?)?;
+                    if rest.trim().is_empty() {
+                        return None;
+                    }
+                }
+            }
+        };
+        let mut rest = after_label.strip_prefix(':')?;
+
+        // The destination, on the label's last line or the one below it.
+        if rest.trim().is_empty() {
+            if line + 1 >= limit {
+                return Some((label, line + 1));
+            }
+            line += 1;
+            rest = Self::strip_continuation_prefix(source_lines.get(line - 1)?)?;
+        }
+
+        // The title, after the destination or on a line of its own below it.
+        let title = Self::title_after_destination(rest)?;
+        let mut closing = Self::unclosed_delimiter_in(title);
+        if title.trim().is_empty()
+            && line + 1 < limit
+            && let Some(below) = source_lines
+                .get(line)
+                .and_then(|line| Self::strip_continuation_prefix(line))
+            && Self::starts_title(below)
+        {
+            line += 1;
+            closing = Self::unclosed_delimiter_in(below);
+        }
+        if let Some(closing) = closing {
+            // The delimiter that opened the title is what closes it, however
+            // many lines later, and one the source escapes closes nothing.
+            while line + 1 < limit {
+                line += 1;
+                if Self::contains_unescaped(source_lines.get(line - 1)?, closing) {
+                    break;
+                }
+            }
+        }
+
+        Some((label, line + 1))
+    }
+
+    /// The content of a definition's first line, past the container markers
+    /// that open it.
+    fn strip_definition_prefix(line: &str) -> &str {
+        match DEFINITION_PREFIX.find(line) {
+            Some(prefix) => &line[prefix.end()..],
+            None => line,
+        }
+    }
+
+    /// The content of a line continuing a definition, past the markers of the
+    /// container it sits in.  `None` where the line opens a block of its own
+    /// instead, which ends the definition rather than continuing it.
+    fn strip_continuation_prefix(line: &str) -> Option<&str> {
+        let content = match CONTINUATION_PREFIX.find(line) {
+            Some(prefix) => &line[prefix.end()..],
+            None => line,
+        };
+        (!LIST_MARKER.is_match(content)).then_some(content)
     }
 
     /// Whether a line of its own begins a title, as one below a definition's
@@ -791,23 +872,40 @@ impl<'a> Serializer<'a> {
         let mut definitions: std::collections::HashMap<String, Vec<usize>> =
             std::collections::HashMap::new();
 
-        for (i, line) in source_lines.iter().enumerate() {
-            let line_number = i + 1;
-            if in_leaf_block.get(i).copied().unwrap_or(false) {
-                continue;
-            }
-            if let Some(caps) = REFERENCE_DEFINITION.captures(line)
-                && let Some(label) = caps.get(1)
-                // Footnote definitions are not reference definitions.
-                && !label.as_str().starts_with('^')
-            {
-                definitions
-                    .entry(normalize_reference_key(label.as_str()))
-                    .or_default()
-                    .push(line_number);
-            }
+        // A definition cannot reach into a block, so the first line of the next
+        // one is as far as it could possibly go.  Taken in one pass from the
+        // end, since a document may hold a long run of lines between blocks.
+        let end = source_lines.len() + 1;
+        let mut next_block = vec![end; source_lines.len() + 2];
+        for line in (1..=source_lines.len()).rev() {
+            next_block[line] = if in_leaf_block.get(line - 1).copied().unwrap_or(false) {
+                line
+            } else {
+                next_block[line + 1]
+            };
         }
 
+        let mut line_number = 1;
+        while line_number <= source_lines.len() {
+            if in_leaf_block.get(line_number - 1).copied().unwrap_or(false) {
+                line_number += 1;
+                continue;
+            }
+            let limit = next_block[line_number];
+            match Self::read_reference_definition(source_lines, line_number, limit) {
+                // Footnote definitions are not reference definitions.
+                Some((label, next)) => {
+                    if !label.starts_with('^') {
+                        definitions
+                            .entry(normalize_reference_key(&label))
+                            .or_default()
+                            .push(line_number);
+                    }
+                    line_number = next.max(line_number + 1);
+                }
+                None => line_number += 1,
+            }
+        }
         definitions
     }
 

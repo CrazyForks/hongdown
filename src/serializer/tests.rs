@@ -1975,6 +1975,108 @@ fn test_directive_disable_sees_a_definition_below_a_three_line_title() {
 }
 
 #[test]
+fn test_directive_disable_sees_a_definition_under_a_list_marker() {
+    // A definition keeps defining a document-wide label wherever it is written,
+    // and a list marker does not make one a task item — the colon rules that
+    // out.  The copy therefore holds the label against a later link.
+    let input = "<!-- hongdown-disable -->\n\n- [foo]: https://example.com/first\n\n<!-- hongdown-enable -->\n\nLater [foo](https://example.com/second).\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("Later [foo][foo 2].")
+            && result.contains("[foo 2]: https://example.com/second"),
+        "the later link must keep its own destination, got:\n{}",
+        result
+    );
+    assert_eq!(
+        parse_and_serialize_with_source(&result),
+        result,
+        "formatting must be idempotent"
+    );
+}
+
+#[test]
+fn test_directive_disable_sees_a_definition_with_a_broken_label() {
+    // The label breaks across two lines, which names `foo bar` all the same, so
+    // the copy holds that label too.
+    let input = "<!-- hongdown-disable -->\n\n[foo\nbar]: https://example.com/first\n\n<!-- hongdown-enable -->\n\nLater [foo bar](https://example.com/second).\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("Later [foo bar][foo bar 2].")
+            && result.contains("[foo bar 2]: https://example.com/second"),
+        "the later link must keep its own destination, got:\n{}",
+        result
+    );
+    assert_eq!(
+        parse_and_serialize_with_source(&result),
+        result,
+        "formatting must be idempotent"
+    );
+}
+
+#[test]
+fn test_directive_disable_sees_a_broken_label_inside_a_blockquote() {
+    // The label breaks across two lines of a blockquote, so both carry its
+    // marker.  A marker is no more part of the label on the second line than on
+    // the first, and the label is `foo bar` either way.
+    let input = "<!-- hongdown-disable -->\n\n> [foo\n> bar]: https://example.com/first\n\n<!-- hongdown-enable -->\n\nLater [foo bar](https://example.com/second).\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("Later [foo bar][foo bar 2].")
+            && result.contains("[foo bar 2]: https://example.com/second"),
+        "the later link must keep its own destination, got:\n{}",
+        result
+    );
+    assert_eq!(
+        parse_and_serialize_with_source(&result),
+        result,
+        "formatting must be idempotent"
+    );
+}
+
+#[test]
+fn test_directive_disable_sees_a_broken_label_inside_a_list_item() {
+    // A list marks only the line it opens and indents the rest, so the label's
+    // second line carries no marker and reads as part of `foo bar`.
+    let input = "<!-- hongdown-disable -->\n\n- [foo\n  bar]: https://example.com/first\n\n<!-- hongdown-enable -->\n\nLater [foo bar](https://example.com/second).\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("Later [foo bar][foo bar 2].")
+            && result.contains("[foo bar 2]: https://example.com/second"),
+        "the later link must keep its own destination, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_reads_an_ordered_marker_below_a_label_as_label() {
+    // An ordered marker only opens a block in the middle of one where it
+    // numbers from one, so `2.` goes on reading as part of the label above it.
+    let input = "<!-- hongdown-disable -->\n\n[foo\n2. bar]: https://example.com/first\n\n<!-- hongdown-enable -->\n\nLater [foo 2. bar](https://example.com/second).\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("Later [foo 2. bar][foo 2. bar 2].")
+            && result.contains("[foo 2. bar 2]: https://example.com/second"),
+        "the copied label must be held, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_list_marker_below_a_label_ends_the_definition() {
+    // A list marker opens a block wherever it stands, so it interrupts rather
+    // than continuing the label above it.  The parser defines nothing here, and
+    // neither does the copy, leaving the label free for the later link.
+    let input = "<!-- hongdown-disable -->\n\n[foo\n- bar]: https://example.com/phantom\n\n<!-- hongdown-enable -->\n\nLater [foo bar](https://example.com/second).\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("Later [foo bar].")
+            && result.contains("[foo bar]: https://example.com/second"),
+        "the label is free, so the later link keeps it, got:\n{}",
+        result
+    );
+}
+
+#[test]
 fn test_directive_disable_sees_a_definition_below_a_title_of_its_own_line() {
     // The title begins on the line below a complete destination, as CommonMark
     // allows.  The definition beneath it still has to be found.
