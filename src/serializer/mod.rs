@@ -40,11 +40,13 @@ fn strip_math_sentinels(mut output: String) -> String {
     output
 }
 
-/// The byte offset of the first `]` that closes a link label, which is to say
-/// the first one a backslash does not escape.  A label may hold either bracket
-/// escaped, as in `[a\]b]`, and cutting it at that bracket would leave a label
-/// that no longer names the same definition.
-fn find_unescaped_close_bracket(text: &str) -> Option<usize> {
+/// The byte offset of the first `delimiter` a backslash does not escape.
+///
+/// A link label may hold either bracket escaped, as in `[a\]b]`, and cutting it
+/// at that bracket would leave a label that no longer names the same
+/// definition.  The same rule decides where a definition's label ends, so both
+/// readings share this one.
+pub(super) fn find_unescaped(text: &str, delimiter: char) -> Option<usize> {
     let mut escaped = false;
     for (offset, character) in text.char_indices() {
         if escaped {
@@ -53,7 +55,7 @@ fn find_unescaped_close_bracket(text: &str) -> Option<usize> {
         }
         match character {
             '\\' => escaped = true,
-            ']' => return Some(offset),
+            _ if character == delimiter => return Some(offset),
             _ => {}
         }
     }
@@ -194,7 +196,7 @@ impl<'a> Serializer<'a> {
         // If followed by "[", it's full or collapsed reference style
         if let Some(label_content) = after_close.strip_prefix('[') {
             // Find the label between [ and ], again past any escaped bracket
-            if let Some(label_end) = find_unescaped_close_bracket(label_content) {
+            if let Some(label_end) = find_unescaped(label_content, ']') {
                 let label = label_content[..label_end].to_string();
                 // Normalize label too
                 let label = escape::normalize_whitespace(&label);

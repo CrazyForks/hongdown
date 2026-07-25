@@ -603,25 +603,7 @@ impl<'a> Serializer<'a> {
 
     /// Whether a line holds `delimiter` with no backslash escaping it.
     fn contains_unescaped(text: &str, delimiter: char) -> bool {
-        Self::find_unescaped(text, delimiter).is_some()
-    }
-
-    /// The byte offset of `delimiter` in a line, skipping any the source
-    /// escapes with a backslash.
-    fn find_unescaped(text: &str, delimiter: char) -> Option<usize> {
-        let mut escaped = false;
-        for (offset, character) in text.char_indices() {
-            if escaped {
-                escaped = false;
-                continue;
-            }
-            match character {
-                '\\' => escaped = true,
-                _ if character == delimiter => return Some(offset),
-                _ => {}
-            }
-        }
-        None
+        super::find_unescaped(text, delimiter).is_some()
     }
 
     /// The part of a definition's text that follows its destination, which is
@@ -634,7 +616,7 @@ impl<'a> Serializer<'a> {
         let trimmed = text.trim_start();
         match trimmed.strip_prefix('<') {
             // An unterminated `<…>` is no destination at all.
-            Some(pointy) => Some(&pointy[Self::find_unescaped(pointy, '>')? + 1..]),
+            Some(pointy) => Some(&pointy[super::find_unescaped(pointy, '>')? + 1..]),
             None => Some(match trimmed.split_once(char::is_whitespace) {
                 Some((_, title)) => title,
                 None => "",
@@ -669,7 +651,7 @@ impl<'a> Serializer<'a> {
         // however many lines below that is.
         let mut label = String::new();
         let after_label = loop {
-            match Self::find_unescaped(rest, ']') {
+            match super::find_unescaped(rest, ']') {
                 Some(end) => {
                     label.push_str(&rest[..end]);
                     break &rest[end + 1..];
