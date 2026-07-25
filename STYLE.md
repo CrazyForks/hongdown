@@ -704,6 +704,63 @@ The HTML specification defines this behavior.
 ~~~~
 
 
+Disabled regions
+----------------
+
+Formatting can be turned off for part of a document with the HTML comment
+directives listed in the *[README](./README.md)*.  What follows describes what
+is preserved where they apply.
+
+### Verbatim content
+
+Content whose formatting is disabled is copied from the source as it stands,
+including its indentation, the blank lines within it, and any reference or
+footnote definition written inside it:
+
+~~~~ markdown
+<!-- hongdown-disable -->
+
+Kept    exactly   as written, [guide] and all.
+
+[guide]: https://example.com/guide
+
+<!-- hongdown-enable -->
+~~~~
+
+The blank line between a directive comment and the content beside it is
+normalized to one.  Everything between them is left alone.
+
+*Rationale*: A reference definition is not a node of its own in the parsed
+document, so a region rebuilt element by element loses one.  Copying the
+region's source keeps whatever it holds.
+
+### Definitions a disabled region needs
+
+A link that is copied keeps the label the source gave it, so a definition it
+depends on is kept even where nothing else refers to it, and stays where the
+source put it:
+
+~~~~ markdown
+<!-- hongdown-disable -->
+
+[![Build status][badge]][ci]
+
+<!-- hongdown-enable -->
+
+[badge]: https://example.com/badge.svg
+[ci]: https://example.com/ci
+~~~~
+
+A label a disabled region defines belongs to that region.  Where a formatted
+link would otherwise take it for a different target, that link is given a
+numbered label instead, as in *[Distinct labels for distinct
+targets](#distinct-labels-for-distinct-targets)*.
+
+*Rationale*: A copied link cannot be relabelled without changing text that is
+meant to be preserved, and a definition inside the region defines its label for
+the whole document.
+
+
 MDX
 ---
 
