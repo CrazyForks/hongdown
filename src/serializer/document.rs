@@ -349,8 +349,22 @@ impl<'a> Serializer<'a> {
                     continue;
                 }
 
-                // Output the original source
-                if let Some(source) = self.extract_source(child) {
+                // Output the original source, by whole lines.  A block's span
+                // begins at its content, past the indentation and the markers
+                // of whatever holds it, and a copy that started there would
+                // lose them — including a reference definition the parser took
+                // out of a list item, which the span then leaves behind.  It is
+                // also what the copy is taken to be everywhere else: the lines
+                // it occupies, which is what marks them as copied.
+                let sourcepos = child.data.borrow().sourcepos;
+                let source = self
+                    .extract_source_lines(sourcepos.start.line, sourcepos.end.line)
+                    // A block's span may reach over the blank lines below it,
+                    // which the separator between blocks supplies again; keeping
+                    // both would add one more on every run.
+                    .map(|source| Self::trim_blank_lines(&source))
+                    .filter(|source| !source.is_empty());
+                if let Some(source) = source {
                     self.output.push_str(&source);
                     self.output.push('\n');
                 } else {

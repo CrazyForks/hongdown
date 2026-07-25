@@ -1975,6 +1975,45 @@ fn test_directive_disable_sees_a_definition_below_a_three_line_title() {
 }
 
 #[test]
+fn test_directive_disable_next_line_copies_whole_lines() {
+    // A block's span begins at its content, past the indentation and the
+    // markers of whatever holds it.  Copying from there would lose them, and
+    // with them a definition the parser took out of the list item, which the
+    // span leaves behind — while the lines it sits on count as copied.
+    let input = "<!-- hongdown-disable-next-line -->\n\n  - [a]: https://example.com\n\nSee [x][a 2].\n\n[a 2]: https://example.com\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("  - [a]: https://example.com"),
+        "the copy must keep the whole line, got:\n{}",
+        result
+    );
+    assert_eq!(result, input, "and formatting must be a fixed point");
+}
+
+#[test]
+fn test_directive_disable_next_section_copies_indented_code() {
+    // The indentation is what makes this a code block, and the span reaching
+    // over the blank line below it must not add one to the separator that
+    // follows.
+    let input = "<!-- hongdown-disable-next-section -->\n\n    indented code\n\nAfter.\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(result, input, "the copy must keep the block as it stands");
+}
+
+#[test]
+fn test_directive_disable_next_section_copies_whole_lines() {
+    // Same, for the section-wide skip, where the definition the list item held
+    // is what the copied link resolves through.
+    let input =
+        "<!-- hongdown-disable-next-section -->\n\n[x][a]\n\n  - [a]: https://example.com\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(
+        result, input,
+        "the copy must keep the definition the link needs"
+    );
+}
+
+#[test]
 fn test_directive_disable_sees_a_definition_under_a_list_marker() {
     // A definition keeps defining a document-wide label wherever it is written,
     // and a list marker does not make one a task item — the colon rules that
