@@ -201,9 +201,9 @@ impl<'a> Serializer<'a> {
         // Filter out references that have already been emitted
         let refs: Vec<ReferenceLink> = self
             .pending_references
-            .values()
-            .filter(|r| !self.emitted_references.contains(&r.label))
-            .cloned()
+            .iter()
+            .filter(|(key, _)| !self.emitted_references.contains_key(*key))
+            .map(|(_, r)| r.clone())
             .collect();
         self.pending_references.clear();
 
@@ -223,7 +223,7 @@ impl<'a> Serializer<'a> {
             // Less than 2 numeric refs: output all in insertion order
             for reference in &refs {
                 Self::write_reference(&mut self.output, reference);
-                self.emitted_references.insert(reference.label.clone());
+                self.mark_reference_emitted(reference);
             }
         } else {
             // 2+ numeric refs: separate, sort numeric ones, output regular first
@@ -244,15 +244,24 @@ impl<'a> Serializer<'a> {
             // Output regular references first (in insertion order)
             for reference in regular_refs {
                 Self::write_reference(&mut self.output, reference);
-                self.emitted_references.insert(reference.label.clone());
+                self.mark_reference_emitted(reference);
             }
 
             // Output numeric references (sorted by number)
             for (_, reference) in numeric_refs {
                 Self::write_reference(&mut self.output, reference);
-                self.emitted_references.insert(reference.label.clone());
+                self.mark_reference_emitted(reference);
             }
         }
+    }
+
+    /// Record that a reference definition has been written out, so that later
+    /// sections neither repeat it nor reuse its label for a different target.
+    fn mark_reference_emitted(&mut self, reference: &ReferenceLink) {
+        self.emitted_references.insert(
+            state::normalize_reference_key(&reference.label),
+            reference.clone(),
+        );
     }
 
     /// Extract numeric value from a reference label like "123" or "#123"
@@ -377,8 +386,8 @@ impl<'a> Serializer<'a> {
         let mut to_emit: Vec<ReferenceLink> = Vec::new();
         let mut to_keep: Vec<(String, (ReferenceLink, usize))> = Vec::new();
 
-        for (label, (reference, footnote_ref_line)) in self.footnotes.pending_references.drain(..) {
-            if self.emitted_references.contains(&label) {
+        for (key, (reference, footnote_ref_line)) in self.footnotes.pending_references.drain(..) {
+            if self.emitted_references.contains_key(&key) {
                 continue;
             }
             let should_emit = match before_line {
@@ -388,7 +397,7 @@ impl<'a> Serializer<'a> {
             if should_emit {
                 to_emit.push(reference);
             } else {
-                to_keep.push((label, (reference, footnote_ref_line)));
+                to_keep.push((key, (reference, footnote_ref_line)));
             }
         }
 
@@ -406,7 +415,7 @@ impl<'a> Serializer<'a> {
         // Output references in insertion order
         for reference in &to_emit {
             Self::write_reference(&mut self.output, reference);
-            self.emitted_references.insert(reference.label.clone());
+            self.mark_reference_emitted(reference);
         }
     }
 

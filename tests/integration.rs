@@ -1685,3 +1685,34 @@ anchor_align = 0
         assert_eq!(result, "Title {#t}\n==========\n");
     }
 }
+
+/// Test that links sharing the same text but different destinations keep
+/// their own destinations.
+///
+/// See also <https://github.com/dahlia/hongdown/issues/26>.
+#[test]
+fn test_duplicate_link_text_preserves_each_destination() {
+    let input = r#" -  Read [guide](https://example.com/first).
+ -  Read [guide](https://example.com/second).
+"#;
+
+    let options = Options::default();
+    let result = format(input, &options).unwrap();
+
+    assert!(
+        result.contains("[guide]: https://example.com/first"),
+        "First destination should be preserved, got:\n{}",
+        result
+    );
+    assert!(
+        result.contains("[guide 2]: https://example.com/second"),
+        "Second destination should be preserved, got:\n{}",
+        result
+    );
+
+    let second_pass = format(&result, &options).unwrap();
+    assert_eq!(
+        result, second_pass,
+        "Distinct reference labels should be idempotent"
+    );
+}
