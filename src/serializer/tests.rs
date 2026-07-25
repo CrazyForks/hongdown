@@ -1447,14 +1447,33 @@ fn test_directive_disable_ignores_definitions_inside_html_blocks() {
 
 #[test]
 fn test_directive_disable_ignores_a_bare_label_that_defines_nothing() {
-    // `[foo]:` only defines something when the next line supplies a
-    // destination.  Here it does not, so the real definition must still be kept.
+    // `[foo]:` here is a continuation line of a paragraph, not a definition, so
+    // the real definition must still be kept.
     let input = "Intro.\n\n<!-- hongdown-disable -->\n\nSee [foo] here.\n\nA line\n[foo]:\nnot a destination at all\n\n<!-- hongdown-enable -->\n\n[foo]: https://example.com/real\n";
     let result = parse_and_serialize_with_source(input);
     assert!(
         result.contains("[foo]: https://example.com/real"),
         "a label that defines nothing must not stand in for the definition, got:\n{}",
         result
+    );
+}
+
+#[test]
+fn test_directive_disable_ignores_a_definition_lookalike_in_a_paragraph() {
+    // The line inside the region continues a paragraph, so it defines nothing.
+    // Taking it for the winning definition would suppress the real one and
+    // leave both links pointing at nothing.
+    let input = "Formatted [g] link.\n\n<!-- hongdown-disable -->\n\nThis is prose\n[g]: https://example.com/not-a-definition\n\n<!-- hongdown-enable -->\n\nEnd.\n\n[g]: https://example.com/real\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("[g]: https://example.com/real"),
+        "the real definition must survive, got:\n{}",
+        result
+    );
+    assert_eq!(
+        parse_and_serialize_with_source(&result),
+        result,
+        "formatting must be idempotent"
     );
 }
 
@@ -1474,10 +1493,11 @@ fn test_directive_disable_sees_a_blockquoted_definition_in_the_region() {
 }
 
 #[test]
-fn test_directive_disable_rejects_an_unterminated_pointy_destination() {
-    // `<unterminated` cannot be a destination, so the bare label above it
-    // defines nothing and the real definition must survive.
-    let input = "Intro.\n\n<!-- hongdown-disable -->\n\nSee [g].\n\nline\n[g]:\n<unterminated\n\n<!-- hongdown-enable -->\n\n[g]: https://example.com/real\n";
+fn test_directive_disable_ignores_a_definition_lookalike_in_a_code_span() {
+    // A code span holding a newline spans lines without a break node, so the
+    // line count alone would expose the line above it.  It is paragraph content
+    // all the same, and the real definition must survive.
+    let input = "Formatted [g] link.\n\n<!-- hongdown-disable -->\n\nSee [g] and `code\n[g]: not-a-definition\nspan`\n\n<!-- hongdown-enable -->\n\nEnd.\n\n[g]: https://example.com/real\n";
     let result = parse_and_serialize_with_source(input);
     assert!(
         result.contains("[g]: https://example.com/real"),
@@ -1487,10 +1507,50 @@ fn test_directive_disable_rejects_an_unterminated_pointy_destination() {
 }
 
 #[test]
-fn test_directive_disable_rejects_a_malformed_same_line_destination() {
-    // The destination on the label's own line is checked just as closely:
-    // unbalanced parentheses make it no destination at all.
-    let input = "Intro.\n\n<!-- hongdown-disable -->\n\nSee [g].\n\nprose\n[g]: foo(bar\n\n<!-- hongdown-enable -->\n\n[g]: https://example.com/real\n";
+fn test_directive_disable_sees_a_definition_at_a_paragraph_head() {
+    // The parser consumes a definition written at the head of a paragraph but
+    // leaves its line inside the paragraph's span.  Overlooking it would make
+    // the region's duplicate look like the winner and retarget the links.
+    let input = "Intro.\n\n[g]: https://example.com/first\nSome text right after.\n\n<!-- hongdown-disable -->\n\nRaw [g].\n\n[g]: https://example.com/second\n";
+    let result = parse_and_serialize_with_source(input);
+    let winner = result
+        .find("[g]: https://example.com/first")
+        .expect("the winning definition must be kept");
+    let duplicate = result
+        .find("[g]: https://example.com/second")
+        .expect("the region's copy must be preserved");
+    assert!(
+        winner < duplicate,
+        "the winning definition must come first, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_sees_definitions_after_a_multiline_one() {
+    // The first definition takes its destination from the line below it, and
+    // the second sits beneath that.  Overlooking the second would make the
+    // region's duplicate of it the apparent winner and retarget the links.
+    let input = "Intro.\n\n[a]:\n    https://example.com/a\n[b]: https://example.com/b\nSome text right after.\n\n<!-- hongdown-disable -->\n\nRaw [a] and [b].\n\n[b]: https://example.com/wrong\n";
+    let result = parse_and_serialize_with_source(input);
+    let winner = result
+        .find("[b]: https://example.com/b")
+        .expect("the winning definition must be kept");
+    let duplicate = result
+        .find("[b]: https://example.com/wrong")
+        .expect("the region's copy must be preserved");
+    assert!(
+        winner < duplicate,
+        "the winning definition must come first, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_rejects_a_malformed_definition_lookalike() {
+    // Neither line is a definition — the parser leaves both inside a paragraph
+    // — so the real definition must survive.
+    let input = "Intro.\n\n<!-- hongdown-disable -->\n\nSee [g].\n\nprose\n[g]: foo(bar\n[g]: <unterminated\n\n<!-- hongdown-enable -->\n\n[g]: https://example.com/real\n";
     let result = parse_and_serialize_with_source(input);
     assert!(
         result.contains("[g]: https://example.com/real"),
@@ -1501,8 +1561,8 @@ fn test_directive_disable_rejects_a_malformed_same_line_destination() {
 
 #[test]
 fn test_directive_disable_accepts_a_destination_with_balanced_parentheses() {
-    // Balanced parentheses are ordinary in URLs, so the definition is real and
-    // is copied with the region rather than emitted a second time outside it.
+    // Parentheses are ordinary in URLs, so the definition is real and is copied
+    // with the region rather than emitted a second time outside it.
     let input = "Intro.\n\n<!-- hongdown-disable -->\n\nSee [w].\n\n[w]: https://en.wikipedia.org/wiki/Foo_(bar)\n\n<!-- hongdown-enable -->\n\nEnd.\n";
     let result = parse_and_serialize_with_source(input);
     assert_eq!(

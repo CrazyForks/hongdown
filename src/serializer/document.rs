@@ -1,5 +1,7 @@
 //! Document-level serialization logic.
 
+use std::sync::LazyLock;
+
 use comrak::nodes::{AstNode, NodeValue};
 use regex::Regex;
 use unicode_width::UnicodeWidthStr;
@@ -8,6 +10,14 @@ use super::Serializer;
 use super::escape;
 use super::state::{Directive, FormatSkipMode, ReferenceLink, normalize_reference_key};
 use super::wrap;
+
+/// Matches a line that begins a reference definition, capturing its label.
+///
+/// A blockquote prefix may precede the label, since a definition written inside
+/// a blockquote still defines a document-wide label.  A list marker may not:
+/// `- [x]: done` is a task list item.
+static REFERENCE_DEFINITION: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[\s>]*\[([^\]]+)\]:").unwrap());
 
 /// A reference definition that a link preserved verbatim depends on.
 struct VerbatimReference {
@@ -31,10 +41,10 @@ impl<'a> Serializer<'a> {
         // set: it also covers the blocks the skip modes emit one by one.
         let disabled_ranges = Self::collect_disabled_line_ranges(node);
 
-        let mut literal_block_ranges = Vec::new();
-        Self::collect_literal_block_line_ranges(node, &mut literal_block_ranges);
+        let mut leaf_block_ranges = Vec::new();
+        Self::collect_leaf_block_line_ranges(node, &self.source_lines, &mut leaf_block_ranges);
         for (label, lines) in
-            Self::collect_reference_definition_lines(&self.source_lines, &literal_block_ranges)
+            Self::collect_reference_definition_lines(&self.source_lines, &leaf_block_ranges)
         {
             // Only the first definition of a label counts, the way CommonMark
             // resolves it.  When it is the one the copy carries, the copy also
@@ -421,63 +431,139 @@ impl<'a> Serializer<'a> {
         ranges
     }
 
-    /// Collect the source line ranges covered by code blocks and raw HTML
-    /// blocks, whose contents are not Markdown and so may not be mistaken for
-    /// reference definitions.
-    fn collect_literal_block_line_ranges<'b>(
+    /// Collect the source line ranges the document's leaf blocks occupy.
+    ///
+    /// A reference definition is consumed by the parser and belongs to no node,
+    /// so it can only live in the gaps these ranges leave: a line inside a leaf
+    /// block is that block's content, however much it may resemble one.  Only
+    /// blocks that can hold other blocks are descended into, since a definition
+    /// may well sit between the children of a blockquote or a list item.
+    fn collect_leaf_block_line_ranges<'b>(
         node: &'b AstNode<'b>,
+        source_lines: &[&str],
         ranges: &mut Vec<(usize, usize)>,
     ) {
         let data = node.data.borrow();
-        if let NodeValue::CodeBlock(_) | NodeValue::HtmlBlock(_) = &data.value {
-            ranges.push((data.sourcepos.start.line, data.sourcepos.end.line));
+        let holds_blocks = matches!(
+            &data.value,
+            NodeValue::Document
+                | NodeValue::BlockQuote
+                | NodeValue::MultilineBlockQuote(_)
+                | NodeValue::Alert(_)
+                | NodeValue::List(_)
+                | NodeValue::Item(_)
+                | NodeValue::TaskItem(_)
+                | NodeValue::DescriptionList
+                | NodeValue::DescriptionItem(_)
+                | NodeValue::DescriptionTerm
+                | NodeValue::DescriptionDetails
+                | NodeValue::FootnoteDefinition(_)
+        );
+        if !holds_blocks {
+            let sourcepos = data.sourcepos;
+            let start = if let NodeValue::Paragraph = &data.value {
+                drop(data);
+                Self::paragraph_content_start(
+                    node,
+                    source_lines,
+                    sourcepos.start.line,
+                    sourcepos.end.line,
+                )
+            } else {
+                sourcepos.start.line
+            };
+            ranges.push((start, sourcepos.end.line));
             return;
         }
         drop(data);
 
         for child in node.children() {
-            Self::collect_literal_block_line_ranges(child, ranges);
+            Self::collect_leaf_block_line_ranges(child, source_lines, ranges);
         }
+    }
+
+    /// The first line of a paragraph's own content.
+    ///
+    /// Definitions are consumed from the head of a paragraph, and the node
+    /// keeps the lines they occupied, so those lines have to stay visible to
+    /// the definition scanner while the paragraph's own lines do not.
+    ///
+    /// Two readings bound where the content starts, and a line is left visible
+    /// only where they agree.  The content sits at the end of the span, one
+    /// line per break it contains, which misjudges a paragraph whose inline
+    /// spans lines without a break node, such as a code span or display math
+    /// holding a newline.  A consumed head is also made of definitions, so the
+    /// first line that does not begin one ends it, which instead misjudges a
+    /// paragraph opening with something that merely resembles a definition.
+    /// Neither mistake survives the other.
+    fn paragraph_content_start<'b>(
+        node: &'b AstNode<'b>,
+        source_lines: &[&str],
+        start_line: usize,
+        end_line: usize,
+    ) -> usize {
+        let by_breaks = end_line
+            .saturating_sub(Self::count_line_breaks(node))
+            .max(start_line);
+
+        let mut by_definitions = start_line;
+        while by_definitions < end_line {
+            let Some(line) = source_lines.get(by_definitions - 1) else {
+                break;
+            };
+            let Some(matched) = REFERENCE_DEFINITION.find(line) else {
+                break;
+            };
+            by_definitions += 1;
+            // A label with nothing after its colon takes its destination from
+            // the line below, which the definitions after it sit beneath.  A
+            // title carried onto further lines is not followed this way, and
+            // leaves them counted as content.
+            if line[matched.end()..].trim().is_empty() && by_definitions < end_line {
+                by_definitions += 1;
+            }
+        }
+
+        by_breaks.min(by_definitions)
+    }
+
+    /// Count the line breaks within an inline subtree, which is one fewer than
+    /// the number of source lines its content occupies.
+    fn count_line_breaks<'b>(node: &'b AstNode<'b>) -> usize {
+        let own = match &node.data.borrow().value {
+            NodeValue::SoftBreak | NodeValue::LineBreak => 1,
+            _ => 0,
+        };
+        own + node.children().map(Self::count_line_breaks).sum::<usize>()
     }
 
     /// Collect the normalized labels of the reference definitions the source
     /// carries, each mapped to the lines defining it, in order.
     ///
-    /// Missing a definition would make a later duplicate look like the winning
-    /// one, so the destination is allowed to sit on the following line, as
-    /// CommonMark permits, and a blockquote prefix is allowed to precede the
-    /// label.  A list marker is not: `- [x]: done` is a task list item, and
-    /// mistaking one for a definition is worse than overlooking a definition
-    /// written inside a list.
+    /// The parser resolves references through a map it does not expose, so the
+    /// definitions have to be recognized from the source.  What makes that
+    /// reliable is `leaf_block_ranges`: everything the parser did turn into a
+    /// block is excluded, and a line the parser kept out of every block while
+    /// it looks like a definition is one.  Prose that merely resembles a
+    /// definition, in a paragraph, a code block, raw HTML or a heading, is part
+    /// of its block and never reaches this test.
     ///
-    /// The parser resolves references through a map it does not expose, so this
-    /// recognizes definitions by inspecting the source instead.  It stays on
-    /// the conservative side of the grammar rather than reimplementing it.
     fn collect_reference_definition_lines(
         source_lines: &[&str],
-        literal_block_ranges: &[(usize, usize)],
+        leaf_block_ranges: &[(usize, usize)],
     ) -> std::collections::HashMap<String, Vec<usize>> {
         let mut definitions: std::collections::HashMap<String, Vec<usize>> =
             std::collections::HashMap::new();
-        let ref_def_pattern = Regex::new(r"^[\s>]*\[([^\]]+)\]:(\s*\S.*)?$").unwrap();
 
         for (i, line) in source_lines.iter().enumerate() {
             let line_number = i + 1;
-            if Self::is_line_in_ranges(line_number, literal_block_ranges) {
+            if Self::is_line_in_ranges(line_number, leaf_block_ranges) {
                 continue;
             }
-            if let Some(caps) = ref_def_pattern.captures(line)
+            if let Some(caps) = REFERENCE_DEFINITION.captures(line)
                 && let Some(label) = caps.get(1)
                 // Footnote definitions are not reference definitions.
                 && !label.as_str().starts_with('^')
-                // The destination follows the colon, or, when nothing does, it
-                // is on the next line.  Either way it has to be one.
-                && match caps.get(2) {
-                    Some(same_line) => Self::is_reference_destination(same_line.as_str()),
-                    None => source_lines
-                        .get(i + 1)
-                        .is_some_and(|next| Self::is_reference_destination(next)),
-                }
             {
                 definitions
                     .entry(normalize_reference_key(label.as_str()))
@@ -487,65 +573,6 @@ impl<'a> Serializer<'a> {
         }
 
         definitions
-    }
-
-    /// Whether the text following a reference label's colon can be what a
-    /// definition needs: a destination, optionally followed by a title.
-    ///
-    /// The destination is checked closely, since that is what tells a
-    /// definition apart from ordinary prose.  The title is only checked for its
-    /// opening delimiter, because a title may run on to further lines.
-    fn is_reference_destination(text: &str) -> bool {
-        let trimmed = text.trim();
-        let rest = if let Some(pointy) = trimmed.strip_prefix('<') {
-            // A `<…>` destination may contain spaces, but an unterminated one
-            // is not a destination at all.
-            match pointy.find('>') {
-                Some(end) => pointy[end + 1..].trim(),
-                None => return false,
-            }
-        } else {
-            let (destination, rest) = trimmed
-                .split_once(char::is_whitespace)
-                .unwrap_or((trimmed, ""));
-            // A bare destination has to be non-empty and its parentheses
-            // balanced.  One that opens a bracket is read as the next
-            // definition's label rather than this one's target: `[a]:` followed
-            // by `[b]: …` defines nothing, which is a far more common shape
-            // than a destination that genuinely starts with `[`.
-            if destination.is_empty()
-                || destination.starts_with('[')
-                || !Self::has_balanced_parentheses(destination)
-            {
-                return false;
-            }
-            rest.trim()
-        };
-
-        rest.is_empty() || rest.starts_with(['"', '\'', '('])
-    }
-
-    /// Whether a bare link destination's parentheses pair up, as CommonMark
-    /// requires of one that is not wrapped in `<…>`.
-    fn has_balanced_parentheses(destination: &str) -> bool {
-        let mut depth = 0usize;
-        let mut escaped = false;
-        for character in destination.chars() {
-            if escaped {
-                escaped = false;
-                continue;
-            }
-            match character {
-                '\\' => escaped = true,
-                '(' => depth += 1,
-                ')' => match depth.checked_sub(1) {
-                    Some(remaining) => depth = remaining,
-                    None => return false,
-                },
-                _ => {}
-            }
-        }
-        depth == 0
     }
 
     /// Record the labels that links preserved verbatim depend on, before any
