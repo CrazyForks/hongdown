@@ -567,6 +567,18 @@ impl<'a> Serializer<'a> {
             .or_else(|| self.verbatim_reference_claims.get(key))
     }
 
+    /// Whether a verbatim copy carries a definition for `key`.
+    ///
+    /// Such a definition holds the label in the output whether or not anything
+    /// resolves through it, and whether it is the definition the parser
+    /// resolved or a duplicate the copy repeats.  So the label is spoken for
+    /// even when nothing reveals what it points at, and a link that took it
+    /// would find its own definition placed after the copy, where CommonMark's
+    /// first-wins rule would hand it the copy's destination instead.
+    fn is_label_carried_verbatim(&self, key: &str) -> bool {
+        self.verbatim_reference_labels.contains(key) || self.shadowed_reference_labels.contains(key)
+    }
+
     /// Register a reference link and return the label that must be used to
     /// refer to it.
     ///
@@ -586,11 +598,6 @@ impl<'a> Serializer<'a> {
             .find_occupant(&key)
             .map(|existing| (existing.url.clone(), existing.title.clone()));
         match occupant {
-            // Free label: take it.
-            None => {
-                self.insert_reference(key, label.to_string(), url, title);
-                label.to_string()
-            }
             // Already registered with the same target: share it.  The existing
             // entry is left untouched so that its spelling (and, once emitted,
             // its definition) is not duplicated or altered.
@@ -600,8 +607,16 @@ impl<'a> Serializer<'a> {
                 self.satisfy_claimed_label(key, label, url, title);
                 label.to_string()
             }
-            // Taken by a different target: derive a distinct label.
-            Some(_) => {
+            // Free label: take it.
+            None if !self.is_label_carried_verbatim(&key) => {
+                self.insert_reference(key, label.to_string(), url, title);
+                label.to_string()
+            }
+            // Taken: by a different target, or by a definition that a verbatim
+            // copy carries.  A carried definition holds its label document-wide
+            // whether or not a link resolves through it, and its target is
+            // unknown when none does, so its label cannot be shared either.
+            _ => {
                 // The variants live in the namespace of the shortened base, so
                 // that is what both the cursor and the reuse map are keyed by:
                 // labels long enough to be shortened to the same prefix share
@@ -642,6 +657,10 @@ impl<'a> Serializer<'a> {
                                 .or_insert(candidate);
                             continue;
                         }
+                        // Held by a definition a verbatim copy carries, whose
+                        // target is unknown; nothing to remember it by, so the
+                        // search simply moves on.
+                        None if self.is_label_carried_verbatim(&candidate_key) => continue,
                         // Already holds this very target: share it.
                         Some(_) => {
                             self.satisfy_claimed_label(candidate_key, &candidate, url, title)

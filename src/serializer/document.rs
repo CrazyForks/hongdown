@@ -41,25 +41,33 @@ impl<'a> Serializer<'a> {
         // set: it also covers the blocks the skip modes emit one by one.
         let disabled_ranges = Self::collect_disabled_line_ranges(node);
 
-        let mut leaf_block_ranges = Vec::new();
-        Self::collect_leaf_block_line_ranges(node, &self.source_lines, &mut leaf_block_ranges);
-        for (label, lines) in
-            Self::collect_reference_definition_lines(&self.source_lines, &leaf_block_ranges)
-        {
-            // Only the first definition of a label counts, the way CommonMark
-            // resolves it.  When it is the one the copy carries, the copy also
-            // defines it; when a *later* one is, the copy merely repeats a
-            // definition that has no effect where it stands but would take
-            // effect if the winning one were emitted after it.
-            let mut lines = lines.into_iter();
-            let winner = lines.next().unwrap_or_default();
-            if Self::is_line_in_ranges(winner, &verbatim_ranges) {
-                self.verbatim_reference_labels.insert(label);
-            } else if lines.any(|line| Self::is_line_in_ranges(line, &verbatim_ranges)) {
-                self.shadowed_reference_labels.insert(label);
+        // Both analyses below cost a pass over the document and only say
+        // something about content that keeps its source text, so a document
+        // without the directives that produce such content skips them.
+        if !verbatim_ranges.is_empty() {
+            let mut in_leaf_block = vec![false; self.source_lines.len()];
+            Self::mark_leaf_block_lines(node, &self.source_lines, &mut in_leaf_block);
+            for (label, lines) in
+                Self::collect_reference_definition_lines(&self.source_lines, &in_leaf_block)
+            {
+                // Only the first definition of a label counts, the way
+                // CommonMark resolves it.  When it is the one the copy carries,
+                // the copy also defines it; when a *later* one is, the copy
+                // merely repeats a definition that has no effect where it
+                // stands but would take effect if the winning one were emitted
+                // after it.
+                let mut lines = lines.into_iter();
+                let winner = lines.next().unwrap_or_default();
+                if Self::is_line_in_ranges(winner, &verbatim_ranges) {
+                    self.verbatim_reference_labels.insert(label);
+                } else if lines.any(|line| Self::is_line_in_ranges(line, &verbatim_ranges)) {
+                    self.shadowed_reference_labels.insert(label);
+                }
             }
         }
-        self.collect_verbatim_reference_claims(node, &disabled_ranges);
+        if !disabled_ranges.is_empty() {
+            self.collect_verbatim_reference_claims(node, &disabled_ranges);
+        }
 
         // Check for undefined reference links using AST
         self.check_undefined_references_ast(node, &disabled_ranges);
@@ -431,17 +439,22 @@ impl<'a> Serializer<'a> {
         ranges
     }
 
-    /// Collect the source line ranges the document's leaf blocks occupy.
+    /// Mark, in a line-indexed table, the source lines the document's leaf
+    /// blocks occupy.
     ///
     /// A reference definition is consumed by the parser and belongs to no node,
-    /// so it can only live in the gaps these ranges leave: a line inside a leaf
-    /// block is that block's content, however much it may resemble one.  Only
-    /// blocks that can hold other blocks are descended into, since a definition
-    /// may well sit between the children of a blockquote or a list item.
-    fn collect_leaf_block_line_ranges<'b>(
+    /// so it can only live in the gaps this leaves: a line inside a leaf block
+    /// is that block's content, however much it may resemble one.  Only blocks
+    /// that can hold other blocks are descended into, since a definition may
+    /// well sit between the children of a blockquote or a list item.
+    ///
+    /// A table rather than a list of ranges keeps the lookup constant-time; a
+    /// document is mostly leaf blocks, so scanning a range list per line would
+    /// cost time quadratic in the number of blocks.
+    fn mark_leaf_block_lines<'b>(
         node: &'b AstNode<'b>,
         source_lines: &[&str],
-        ranges: &mut Vec<(usize, usize)>,
+        in_leaf_block: &mut [bool],
     ) {
         let data = node.data.borrow();
         let holds_blocks = matches!(
@@ -472,13 +485,17 @@ impl<'a> Serializer<'a> {
             } else {
                 sourcepos.start.line
             };
-            ranges.push((start, sourcepos.end.line));
+            for line in start..=sourcepos.end.line {
+                if let Some(marked) = in_leaf_block.get_mut(line - 1) {
+                    *marked = true;
+                }
+            }
             return;
         }
         drop(data);
 
         for child in node.children() {
-            Self::collect_leaf_block_line_ranges(child, source_lines, ranges);
+            Self::mark_leaf_block_lines(child, source_lines, in_leaf_block);
         }
     }
 
@@ -542,22 +559,21 @@ impl<'a> Serializer<'a> {
     ///
     /// The parser resolves references through a map it does not expose, so the
     /// definitions have to be recognized from the source.  What makes that
-    /// reliable is `leaf_block_ranges`: everything the parser did turn into a
-    /// block is excluded, and a line the parser kept out of every block while
-    /// it looks like a definition is one.  Prose that merely resembles a
+    /// reliable is `in_leaf_block`: everything the parser did turn into a block
+    /// is excluded, and a line the parser kept out of every block while it
+    /// looks like a definition is one.  Prose that merely resembles a
     /// definition, in a paragraph, a code block, raw HTML or a heading, is part
     /// of its block and never reaches this test.
-    ///
     fn collect_reference_definition_lines(
         source_lines: &[&str],
-        leaf_block_ranges: &[(usize, usize)],
+        in_leaf_block: &[bool],
     ) -> std::collections::HashMap<String, Vec<usize>> {
         let mut definitions: std::collections::HashMap<String, Vec<usize>> =
             std::collections::HashMap::new();
 
         for (i, line) in source_lines.iter().enumerate() {
             let line_number = i + 1;
-            if Self::is_line_in_ranges(line_number, leaf_block_ranges) {
+            if in_leaf_block.get(i).copied().unwrap_or(false) {
                 continue;
             }
             if let Some(caps) = REFERENCE_DEFINITION.captures(line)

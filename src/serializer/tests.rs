@@ -1333,6 +1333,47 @@ fn test_directive_disable_without_source_still_skips_formatting() {
 }
 
 #[test]
+fn test_directive_disable_copied_definition_holds_its_label() {
+    // No link resolves through the copied definition, so nothing reveals its
+    // target, but it still defines the label document-wide.  Letting a later
+    // link take that label would put a second definition after it, and since
+    // CommonMark keeps the first, the later link would point at the copy.
+    let input = "<!-- hongdown-disable -->\n\nRaw text.\n\n[guide]: https://example.com/copied\n\n<!-- hongdown-enable -->\n\nLater [guide](https://example.com/other) link.\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(
+        result,
+        "<!-- hongdown-disable -->\n\nRaw text.\n\n[guide]: https://example.com/copied\n\n<!-- hongdown-enable -->\n\nLater [guide][guide 2] link.\n\n[guide 2]: https://example.com/other\n",
+        "the later link must keep its own destination"
+    );
+    assert_eq!(
+        parse_and_serialize_with_source(&result),
+        result,
+        "formatting must be idempotent"
+    );
+}
+
+#[test]
+fn test_directive_disable_copied_duplicate_holds_its_label() {
+    // The copy repeats a label defined above it, and nothing resolves through
+    // the definition above, so that one is dropped as unused.  The copy is
+    // still a definition, and a later link taking its label would resolve
+    // through the copy rather than through its own destination.
+    let input = "[g]: https://example.com/first\n\n<!-- hongdown-disable -->\n\nRaw text.\n\n[g]: https://example.com/second\n\n<!-- hongdown-enable -->\n\nLater [g](https://example.com/other) link.\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("Later [g][g 2] link.")
+            && result.contains("[g 2]: https://example.com/other"),
+        "the later link must keep its own destination, got:\n{}",
+        result
+    );
+    assert_eq!(
+        parse_and_serialize_with_source(&result),
+        result,
+        "formatting must be idempotent"
+    );
+}
+
+#[test]
 fn test_directive_disable_link_keeps_its_label_against_a_formatted_one() {
     // Both links want the label `guide` for different destinations.  The one
     // inside the region is copied verbatim and cannot be relabelled, so the
