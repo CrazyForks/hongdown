@@ -40,6 +40,26 @@ fn strip_math_sentinels(mut output: String) -> String {
     output
 }
 
+/// The byte offset of the first `]` that closes a link label, which is to say
+/// the first one a backslash does not escape.  A label may hold either bracket
+/// escaped, as in `[a\]b]`, and cutting it at that bracket would leave a label
+/// that no longer names the same definition.
+fn find_unescaped_close_bracket(text: &str) -> Option<usize> {
+    let mut escaped = false;
+    for (offset, character) in text.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match character {
+            '\\' => escaped = true,
+            ']' => return Some(offset),
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Result of serialization including output and any warnings.
 pub struct SerializeResult {
     /// The formatted Markdown output.
@@ -123,11 +143,18 @@ impl<'a> Serializer<'a> {
         let first_bracket = source.find('[')?;
         let chars: Vec<char> = source.chars().collect();
 
-        // Find the closing bracket at depth 0 (the one that closes the text/content part)
+        // Find the closing bracket at depth 0 (the one that closes the text/content part).
+        // A backslash-escaped bracket is part of the text, not a delimiter.
         let mut depth = 0;
+        let mut escaped = false;
         let mut text_end_pos = None;
         for (i, &ch) in chars.iter().enumerate().skip(first_bracket) {
+            if escaped {
+                escaped = false;
+                continue;
+            }
             match ch {
+                '\\' => escaped = true,
                 '[' => depth += 1,
                 ']' => {
                     depth -= 1;
@@ -156,8 +183,8 @@ impl<'a> Serializer<'a> {
 
         // If followed by "[", it's full or collapsed reference style
         if let Some(label_content) = after_close.strip_prefix('[') {
-            // Find the label between [ and ]
-            if let Some(label_end) = label_content.find(']') {
+            // Find the label between [ and ], again past any escaped bracket
+            if let Some(label_end) = find_unescaped_close_bracket(label_content) {
                 let label = label_content[..label_end].to_string();
                 // Normalize label too
                 let label = escape::normalize_whitespace(&label);

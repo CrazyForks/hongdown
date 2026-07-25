@@ -15,9 +15,10 @@ use super::wrap;
 ///
 /// A blockquote prefix may precede the label, since a definition written inside
 /// a blockquote still defines a document-wide label.  A list marker may not:
-/// `- [x]: done` is a task list item.
+/// `- [x]: done` is a task list item.  The label runs to the first `]` that a
+/// backslash does not escape, so that `[a\]b]` is read whole.
 static REFERENCE_DEFINITION: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[\s>]*\[([^\]]+)\]:").unwrap());
+    LazyLock::new(|| Regex::new(r"^[\s>]*\[((?:[^\]\\]|\\.)+)\]:").unwrap());
 
 /// A reference definition that a link preserved verbatim depends on.
 struct VerbatimReference {

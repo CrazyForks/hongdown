@@ -1907,6 +1907,29 @@ fn test_directive_disable_definition_used_on_both_sides() {
 }
 
 #[test]
+fn test_reference_label_keeps_an_escaped_bracket() {
+    // A label may hold a bracket the backslash escapes.  Cutting the label
+    // there would name a different definition, and the output would no longer
+    // parse as one.
+    let input = "See [x][a\\]b] here.\n\n[a\\]b]: https://example.com/x\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(result, input, "the label must be read whole");
+}
+
+#[test]
+fn test_directive_disable_copy_carries_an_escaped_bracket_label() {
+    // The region carries both the link and its definition, so nothing is left
+    // for the reservation to emit — least of all a definition under a label cut
+    // short at the escaped bracket.
+    let input = "<!-- hongdown-disable -->\n\nSee [x][a\\]b] here.\n\n[a\\]b]: https://example.com/x\n\n<!-- hongdown-enable -->\n\nEnd.\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(
+        result, input,
+        "the region must be preserved with nothing added after it"
+    );
+}
+
+#[test]
 fn test_preserve_reference_style_badge() {
     // Reference-style badge links should be preserved as reference style
     let input = "[![JSR][JSR badge]][JSR]\n\n[JSR]: https://jsr.io/@optique\n[JSR badge]: https://jsr.io/badges/@optique/core";

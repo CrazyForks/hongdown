@@ -56,6 +56,12 @@ To be released.
     when it directly followed front matter, and lost the blank line entirely
     when the only thing above it was a reference definition.  [[#27], [#32]]
 
+ -  Fixed a bug where a reference label holding a bracket escaped with a
+    backslash, as in `[a\]b]`, was cut short at that bracket.  The link was
+    given a label naming no definition, and the definition itself was written
+    out cut short too, so the next run no longer read it as a definition at
+    all.  [[#32]]
+
 [#26]: https://github.com/dahlia/hongdown/issues/26
 [#27]: https://github.com/dahlia/hongdown/issues/27
 [#29]: https://github.com/dahlia/hongdown/pull/29
