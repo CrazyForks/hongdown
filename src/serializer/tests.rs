@@ -3306,6 +3306,18 @@ fn test_abbreviation_with_undefined_reference() {
 }
 
 #[test]
+fn test_abbreviation_exemption_is_case_sensitive() {
+    let input = "*[HTML]: Hyper Text Markup Language\n\nSee [html].";
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(result.warnings[0].line, 3);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [html]"
+    );
+}
+
+#[test]
 fn test_reference_after_abbreviation_no_warning() {
     // Reference definitions that follow abbreviation definitions (without a blank line)
     // may not be parsed by comrak as reference definitions. We should still detect

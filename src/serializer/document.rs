@@ -1729,7 +1729,7 @@ impl<'a> Serializer<'a> {
             if let Some(caps) = abbr_pattern.captures(line)
                 && let Some(abbr) = caps.get(1)
             {
-                abbreviations.insert(normalize_reference_key(abbr.as_str()));
+                abbreviations.insert(abbr.as_str().to_string());
             }
         }
 
@@ -2280,7 +2280,7 @@ impl<'a> Serializer<'a> {
             let line = Self::inline_source_line(inline, start);
             let raw_key = normalize_reference_key(raw_label);
             let warning_exempt =
-                abbreviations.contains(&raw_key) || source_ref_defs.contains(&raw_key);
+                abbreviations.contains(raw_label) || source_ref_defs.contains(&raw_key);
             let verbatim =
                 warning_exempt && self.is_verbatim_reference_definition(inline, start, match_end);
             references.push((
