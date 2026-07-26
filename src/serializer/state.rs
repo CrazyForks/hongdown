@@ -6,6 +6,12 @@ use comrak::nodes::{AstNode, ListType, NodeValue};
 
 use crate::Options;
 
+#[cfg(test)]
+std::thread_local! {
+    static REFERENCE_LABEL_REPLACEMENT_SCANS: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
+}
+
 /// The current formatting skip mode.
 ///
 /// Controls whether and how formatting should be skipped for content.
@@ -107,6 +113,9 @@ pub struct ReferenceLink {
 /// parser reject the whole link, so a generated label must stay within it.
 const MAX_REFERENCE_LABEL_BYTES: usize = 1000;
 
+/// Prefix shared by the collision-free placeholders produced in MDX mode.
+const MDX_REFERENCE_LABEL_TOKEN_PREFIX: &str = "<!--hongdown-mdx:";
+
 /// Normalize a reference label into the key used to look it up.
 ///
 /// CommonMark matches reference labels after collapsing internal whitespace
@@ -114,12 +123,15 @@ const MAX_REFERENCE_LABEL_BYTES: usize = 1000;
 /// spacing or case refer to the same definition and must share a single key.
 /// This mirrors comrak's `normalize_label(_, Case::Fold)`, down to using the
 /// same case folding implementation: plain lowercasing would miss pairs such
-/// as `Straße` and `STRASSE`.  The internal SoftBreak marker is treated as
-/// the space it will be emitted as.
+/// as `Straße` and `STRASSE`.  Internal wrapping markers are normalized to
+/// their emitted form: a SoftBreak becomes a space, while math sentinels
+/// disappear.  Backslashes remain significant because comrak keeps them in
+/// reference-label lookup keys.
 pub fn normalize_reference_key(label: &str) -> String {
-    caseless::default_case_fold_str(&super::escape::normalize_whitespace(
-        &label.replace('\x00', " "),
-    ))
+    let emitted = label
+        .replace('\x00', " ")
+        .replace([super::MATH_TOKEN_OPEN, super::MATH_TOKEN_CLOSE], "");
+    caseless::default_case_fold_str(&super::escape::normalize_whitespace(&emitted))
 }
 
 /// The longest suffix [`numbered_reference_label`] appends, in bytes: a space
@@ -327,6 +339,9 @@ pub struct Serializer<'a> {
     /// normalized key.  Such a link cannot be relabelled, so it holds its label
     /// against formatted links, which can be given a derived one instead.
     pub verbatim_reference_claims: std::collections::HashMap<String, ReferenceLink>,
+    /// Normalized labels used by unresolved reference syntax.  Numbered label
+    /// allocation must skip them instead of defining them incidentally.
+    pub unresolved_reference_labels: std::collections::HashSet<String>,
     /// Normalized keys of the labels a verbatim copy redefines: their winning
     /// definition lies outside it, so it has to be emitted ahead of the copy or
     /// the copy would shadow it.
@@ -368,6 +383,8 @@ pub struct Serializer<'a> {
     pub directive_proper_nouns: Vec<String>,
     /// Common nouns defined via directives for sentence case (merged with config)
     pub directive_common_nouns: Vec<String>,
+    /// Protected-source tokens and their final output spellings.
+    reference_label_replacements: std::collections::HashMap<String, String>,
     /// Code formatter callback for WASM builds.
     #[cfg(feature = "wasm")]
     pub code_formatter_callback: CodeFormatterCallback,
@@ -395,6 +412,7 @@ impl<'a> Serializer<'a> {
             footnotes: FootnoteSet::new(),
             verbatim_reference_labels: std::collections::HashSet::new(),
             verbatim_reference_claims: std::collections::HashMap::new(),
+            unresolved_reference_labels: std::collections::HashSet::new(),
             shadowed_reference_labels: std::collections::HashSet::new(),
             deferred_references: Vec::new(),
             reference_definition_lines: std::collections::HashMap::new(),
@@ -411,6 +429,7 @@ impl<'a> Serializer<'a> {
             paragraph_first_line_prefix_width: 0,
             directive_proper_nouns: Vec::new(),
             directive_common_nouns: Vec::new(),
+            reference_label_replacements: std::collections::HashMap::new(),
             #[cfg(feature = "wasm")]
             code_formatter_callback: None,
         }
@@ -440,6 +459,7 @@ impl<'a> Serializer<'a> {
             footnotes: FootnoteSet::new(),
             verbatim_reference_labels: std::collections::HashSet::new(),
             verbatim_reference_claims: std::collections::HashMap::new(),
+            unresolved_reference_labels: std::collections::HashSet::new(),
             shadowed_reference_labels: std::collections::HashSet::new(),
             deferred_references: Vec::new(),
             reference_definition_lines: std::collections::HashMap::new(),
@@ -456,8 +476,52 @@ impl<'a> Serializer<'a> {
             paragraph_first_line_prefix_width: 0,
             directive_proper_nouns: Vec::new(),
             directive_common_nouns: Vec::new(),
+            reference_label_replacements: std::collections::HashMap::new(),
             code_formatter_callback: callback,
         }
+    }
+
+    pub(super) fn with_reference_label_replacements(
+        mut self,
+        replacements: Vec<(String, String)>,
+    ) -> Self {
+        self.reference_label_replacements = replacements.into_iter().collect();
+        self
+    }
+
+    pub(super) fn restore_reference_label(&self, label: &str) -> String {
+        if self.reference_label_replacements.is_empty()
+            || !label.contains(MDX_REFERENCE_LABEL_TOKEN_PREFIX)
+        {
+            return label.to_string();
+        }
+
+        let mut restored = String::with_capacity(label.len());
+        let mut remaining = label;
+        while let Some(start) = remaining.find(MDX_REFERENCE_LABEL_TOKEN_PREFIX) {
+            restored.push_str(&remaining[..start]);
+            let candidate = &remaining[start..];
+            let Some(end) = candidate.find("-->") else {
+                restored.push_str(candidate);
+                return restored;
+            };
+            let token_end = end + 3;
+            let token = &candidate[..token_end];
+            #[cfg(test)]
+            REFERENCE_LABEL_REPLACEMENT_SCANS.with(|scans| scans.set(scans.get() + 1));
+            if let Some(original) = self.reference_label_replacements.get(token) {
+                restored.push_str(original);
+            } else {
+                restored.push_str(token);
+            }
+            remaining = &candidate[token_end..];
+        }
+        restored.push_str(remaining);
+        restored
+    }
+
+    pub(super) fn reference_key(&self, label: &str) -> String {
+        normalize_reference_key(&self.restore_reference_label(label))
     }
 
     /// Add a warning.
@@ -482,16 +546,30 @@ impl<'a> Serializer<'a> {
         node: &'b AstNode<'b>,
         line_offset: usize,
     ) -> Option<String> {
-        if self.source_lines.is_empty() {
-            return None;
-        }
         let sourcepos = node.data.borrow().sourcepos;
         let start_line = sourcepos.start.line + line_offset;
         let end_line = sourcepos.end.line + line_offset;
-        let start_col = sourcepos.start.column;
-        let end_col = sourcepos.end.column;
+        self.extract_source_range(
+            start_line,
+            sourcepos.start.column,
+            end_line,
+            sourcepos.end.column,
+        )
+    }
 
-        if start_line == 0 || end_line == 0 {
+    /// Extract original source text between two inclusive source positions.
+    pub(super) fn extract_source_range(
+        &self,
+        start_line: usize,
+        start_col: usize,
+        end_line: usize,
+        end_col: usize,
+    ) -> Option<String> {
+        if self.source_lines.is_empty() {
+            return None;
+        }
+
+        if start_line == 0 || end_line == 0 || end_line < start_line {
             return None;
         }
 
@@ -583,10 +661,11 @@ impl<'a> Serializer<'a> {
             .or_else(|| self.footnotes.pending_references.get(key).map(|(r, _)| r))
     }
 
-    /// Look up whatever holds `key`, including a label merely claimed by a link
-    /// that is preserved verbatim.  A claim counts as occupying the label even
-    /// before the definition is reserved, because the claiming link cannot be
-    /// relabelled and so must not have its label taken from under it.
+    /// Look up the target-bearing occupant of `key`, including a label merely
+    /// claimed by a link that is preserved verbatim.  A claim counts as
+    /// occupying the label even before the definition is reserved, because the
+    /// claiming link cannot be relabelled and so must not have its label taken
+    /// from under it.
     fn find_occupant(&self, key: &str) -> Option<&ReferenceLink> {
         self.find_reference(key)
             .or_else(|| self.verbatim_reference_claims.get(key))
@@ -604,6 +683,16 @@ impl<'a> Serializer<'a> {
         self.verbatim_reference_labels.contains(key) || self.shadowed_reference_labels.contains(key)
     }
 
+    /// Whether a numbered variant at `key` is unavailable without a target a
+    /// formatted link can share.
+    ///
+    /// Besides definitions copied verbatim, unresolved reference syntax holds
+    /// its label against incidental allocation: emitting a definition for it
+    /// would turn ordinary bracketed text into a link.
+    fn is_numbered_label_unavailable(&self, key: &str) -> bool {
+        self.is_label_carried_verbatim(key) || self.unresolved_reference_labels.contains(key)
+    }
+
     /// Register a reference link and return the label that must be used to
     /// refer to it.
     ///
@@ -617,7 +706,7 @@ impl<'a> Serializer<'a> {
     /// pending_footnote_references instead, along with the current footnote's
     /// reference line for proper flush timing.
     pub fn register_reference(&mut self, label: &str, url: &str, title: &str) -> String {
-        let key = normalize_reference_key(label);
+        let key = self.reference_key(label);
         // Copy the occupant out of the borrow so the maps below can be updated.
         let occupant = self
             .find_occupant(&key)
@@ -638,15 +727,14 @@ impl<'a> Serializer<'a> {
                 label.to_string()
             }
             // Taken: by a different target, or by a definition that a verbatim
-            // copy carries.  A carried definition holds its label document-wide
-            // whether or not a link resolves through it, and its target is
-            // unknown when none does, so its label cannot be shared either.
+            // copy carries.  A carried definition has no target a formatted
+            // link can safely share.
             _ => {
                 // The variants live in the namespace of the shortened base, so
                 // that is what both the cursor and the reuse map are keyed by:
                 // labels long enough to be shortened to the same prefix share
                 // one namespace and must not allocate against each other.
-                let cursor_key = normalize_reference_key(truncate_reference_label_base(label));
+                let cursor_key = self.reference_key(truncate_reference_label_base(label));
                 // Reuse the variant this target was already given, if any.
                 // Looking it up directly keeps a document full of same-text
                 // links from rescanning every variant it has handed out.
@@ -663,7 +751,7 @@ impl<'a> Serializer<'a> {
                     .unwrap_or(2);
                 for n in start.. {
                     let candidate = numbered_reference_label(label, n);
-                    let candidate_key = normalize_reference_key(&candidate);
+                    let candidate_key = self.reference_key(&candidate);
                     // Copy the occupant out of the borrow so the maps below can
                     // be updated.
                     let occupant = self
@@ -682,10 +770,11 @@ impl<'a> Serializer<'a> {
                                 .or_insert(candidate);
                             continue;
                         }
-                        // Held by a definition a verbatim copy carries, whose
-                        // target is unknown; nothing to remember it by, so the
+                        // Held without a known target, either by a definition a
+                        // verbatim copy carries or by unresolved reference
+                        // syntax.  There is nothing to remember it by, so the
                         // search simply moves on.
-                        None if self.is_label_carried_verbatim(&candidate_key) => continue,
+                        None if self.is_numbered_label_unavailable(&candidate_key) => continue,
                         // Already holds this very target: share it.
                         Some(_) => {
                             self.satisfy_claimed_label(candidate_key, &candidate, url, title)
@@ -732,7 +821,7 @@ impl<'a> Serializer<'a> {
     /// earlier run had already written the very definition being reserved.
     /// Following the source keeps every run agreeing on the placement.
     pub fn reserve_reference(&mut self, label: &str, url: &str, title: &str) -> bool {
-        let key = normalize_reference_key(label);
+        let key = self.reference_key(label);
         if let Some(existing) = self.find_reference(&key)
             && (existing.url != url || existing.title != title)
         {
@@ -770,7 +859,7 @@ impl<'a> Serializer<'a> {
             if before_line.is_some_and(|line| *due >= line) {
                 return true;
             }
-            let key = normalize_reference_key(&reference.label);
+            let key = self.reference_key(&reference.label);
             if !self.emitted_references.contains_key(&key)
                 && !self.pending_references.contains_key(&key)
             {
@@ -851,7 +940,39 @@ impl<'a> Serializer<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::safe_str_slice;
+    use super::{REFERENCE_LABEL_REPLACEMENT_SCANS, Serializer, safe_str_slice};
+    use crate::Options;
+
+    #[test]
+    fn ordinary_reference_labels_skip_mdx_replacements() {
+        let options = Options::default();
+        let replacements = (0..128)
+            .map(|index| {
+                (
+                    format!("<!--hongdown-mdx:nonce:{index}-->"),
+                    format!("{{expression{index}}}"),
+                )
+            })
+            .collect();
+        let serializer = Serializer::new(&options, Vec::new(), false)
+            .with_reference_label_replacements(replacements);
+
+        REFERENCE_LABEL_REPLACEMENT_SCANS.with(|scans| scans.set(0));
+        for index in 0..128 {
+            serializer.reference_key(&format!("ordinary label {index}"));
+        }
+        REFERENCE_LABEL_REPLACEMENT_SCANS.with(|scans| assert_eq!(scans.get(), 0));
+
+        REFERENCE_LABEL_REPLACEMENT_SCANS.with(|scans| scans.set(0));
+        assert_eq!(
+            serializer.restore_reference_label(
+                "before <!--hongdown-mdx:nonce:0--> and \
+                 <!--hongdown-mdx:nonce:127--> after"
+            ),
+            "before {expression0} and {expression127} after"
+        );
+        REFERENCE_LABEL_REPLACEMENT_SCANS.with(|scans| assert_eq!(scans.get(), 2));
+    }
 
     #[test]
     fn test_safe_str_slice_ascii() {

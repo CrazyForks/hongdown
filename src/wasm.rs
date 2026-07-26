@@ -457,7 +457,7 @@ pub fn format_with_code_formatter(
     options: JsValue,
     code_formatter: Option<js_sys::Function>,
 ) -> Result<JsValue, JsError> {
-    use comrak::{Arena, Options as ComrakOptions, parse_document};
+    use comrak::{Arena, parse_document};
 
     let js_opts: JsOptions = if options.is_undefined() || options.is_null() {
         JsOptions::default()
@@ -476,14 +476,7 @@ pub fn format_with_code_formatter(
     }
 
     let arena = Arena::new();
-    let mut comrak_options = ComrakOptions::default();
-    comrak_options.extension.front_matter_delimiter = Some("---".to_string());
-    comrak_options.extension.table = true;
-    comrak_options.extension.description_lists = true;
-    comrak_options.extension.alerts = true;
-    comrak_options.extension.footnotes = true;
-    comrak_options.extension.tasklist = true;
-    comrak_options.extension.math_dollars = opts.math;
+    let comrak_options = crate::comrak_options(&opts);
 
     // In MDX mode, protect embedded JavaScript/JSX before parsing and restore it
     // afterwards (see [`crate::mdx`]).
@@ -516,8 +509,16 @@ pub fn format_with_code_formatter(
         }) as Box<dyn Fn(&str, &str) -> Option<String>>
     });
 
-    let result =
-        crate::serializer::serialize_with_code_formatter(root, &opts, Some(source), callback);
+    let replacements = protection
+        .as_ref()
+        .map_or_else(Vec::new, |p| p.reference_label_replacements());
+    let result = crate::serializer::serialize_with_code_formatter(
+        root,
+        &opts,
+        Some(source),
+        callback,
+        replacements,
+    );
 
     let output = match &protection {
         Some(p) => p.restore(&result.output),
@@ -534,7 +535,9 @@ pub fn format_with_code_formatter(
                 line: protection
                     .as_ref()
                     .map_or(w.line, |p| p.original_line(w.line)),
-                message: w.message,
+                message: protection
+                    .as_ref()
+                    .map_or(w.message.clone(), |p| p.restore(&w.message)),
             })
             .collect(),
     };

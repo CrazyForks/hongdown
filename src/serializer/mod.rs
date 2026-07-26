@@ -87,9 +87,19 @@ pub fn serialize_with_source_and_warnings<'a>(
     options: &Options,
     source: Option<&str>,
 ) -> SerializeResult {
+    serialize_with_source_and_warnings_and_replacements(node, options, source, Vec::new())
+}
+
+pub(crate) fn serialize_with_source_and_warnings_and_replacements<'a>(
+    node: &'a AstNode<'a>,
+    options: &Options,
+    source: Option<&str>,
+    replacements: Vec<(String, String)>,
+) -> SerializeResult {
     let source_lines: Vec<&str> = source.map(|s| s.lines().collect()).unwrap_or_default();
     let source_ends_with_newline = source.is_some_and(|s| s.ends_with('\n'));
-    let mut serializer = Serializer::new(options, source_lines, source_ends_with_newline);
+    let mut serializer = Serializer::new(options, source_lines, source_ends_with_newline)
+        .with_reference_label_replacements(replacements);
     serializer.serialize_node(node);
     SerializeResult {
         output: strip_math_sentinels(serializer.output),
@@ -104,6 +114,7 @@ pub fn serialize_with_code_formatter<'a>(
     options: &Options,
     source: Option<&str>,
     code_formatter: CodeFormatterCallback,
+    replacements: Vec<(String, String)>,
 ) -> SerializeResult {
     let source_lines: Vec<&str> = source.map(|s| s.lines().collect()).unwrap_or_default();
     let source_ends_with_newline = source.is_some_and(|s| s.ends_with('\n'));
@@ -112,7 +123,8 @@ pub fn serialize_with_code_formatter<'a>(
         source_lines,
         source_ends_with_newline,
         code_formatter,
-    );
+    )
+    .with_reference_label_replacements(replacements);
     serializer.serialize_node(node);
     SerializeResult {
         output: strip_math_sentinels(serializer.output),
@@ -313,10 +325,8 @@ impl<'a> Serializer<'a> {
     /// Record that a reference definition has been written out, so that later
     /// sections neither repeat it nor reuse its label for a different target.
     fn mark_reference_emitted(&mut self, reference: &ReferenceLink) {
-        self.emitted_references.insert(
-            state::normalize_reference_key(&reference.label),
-            reference.clone(),
-        );
+        self.emitted_references
+            .insert(self.reference_key(&reference.label), reference.clone());
     }
 
     /// Extract numeric value from a reference label like "123" or "#123"

@@ -61,11 +61,17 @@ fn parse_and_serialize_no_wrap(input: &str) -> String {
 }
 
 fn parse_and_serialize_with_warnings(input: &str) -> SerializeResult {
+    parse_and_serialize_with_warnings_and_options(input, &Options::default())
+}
+
+fn parse_and_serialize_with_warnings_and_options(
+    input: &str,
+    format_options: &Options,
+) -> SerializeResult {
     let arena = Arena::new();
     let options = comrak_options();
     let root = parse_document(&arena, input, &options);
-    let format_options = Options::default();
-    serialize_with_source_and_warnings(root, &format_options, Some(input))
+    serialize_with_source_and_warnings(root, format_options, Some(input))
 }
 
 #[test]
@@ -1697,6 +1703,30 @@ fn test_directive_disable_next_line_copy_carries_its_head_definition() {
 }
 
 #[test]
+fn test_mdx_copied_block_carries_its_head_definition() {
+    let input = "<!-- hongdown-disable -->\n\n\
+                 [foo {bar}]: https://example.com/copied\n\
+                 Prose directly below keeps the definition consumed.\n\n\
+                 <!-- hongdown-enable -->\n\n\
+                 Read [foo {bar}](https://example.com/other).\n";
+    let options = Options {
+        mdx: true,
+        ..Options::default()
+    };
+    let result = crate::format(input, &options).unwrap();
+    assert!(
+        result.contains("Read [foo {bar}][foo {bar} 2].")
+            && result.contains("[foo {bar} 2]: https://example.com/other"),
+        "the formatted link must keep its own destination, got:\n{result}"
+    );
+    assert_eq!(
+        crate::format(&result, &options).unwrap(),
+        result,
+        "formatting must be idempotent"
+    );
+}
+
+#[test]
 fn test_directive_disable_reservation_precedes_a_setext_heading() {
     // The definition sits on the line a setext heading reports as its own
     // start, but it precedes the heading, so it belongs above the section.
@@ -3273,6 +3303,18 @@ fn test_abbreviation_with_undefined_reference() {
         result.warnings
     );
     assert!(result.warnings[0].message.contains("undefined ref"));
+}
+
+#[test]
+fn test_abbreviation_exemption_is_case_sensitive() {
+    let input = "*[HTML]: Hyper Text Markup Language\n\nSee [html].";
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(result.warnings[0].line, 3);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [html]"
+    );
 }
 
 #[test]
@@ -6331,6 +6373,1013 @@ fn test_duplicate_link_text_different_urls_get_distinct_labels() {
 }
 
 #[test]
+fn test_numbered_link_label_skips_undefined_reference() {
+    let input = "See [guide 2].\n\n\
+                  -  Read [guide](https://example.com/first).\n\
+                  -  Read [guide](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(
+        result.output,
+        concat!(
+            "See [guide 2].\n\n",
+            " -  Read [guide].\n",
+            " -  Read [guide][guide 3].\n\n",
+            "[guide]: https://example.com/first\n",
+            "[guide 3]: https://example.com/second\n",
+        )
+    );
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [guide 2]"
+    );
+
+    let second = parse_and_serialize_with_warnings(&result.output);
+    assert_eq!(second.output, result.output);
+    assert_eq!(second.warnings.len(), 1);
+    assert_eq!(
+        second.warnings[0].message,
+        "undefined reference link: [guide 2]"
+    );
+}
+
+#[test]
+fn test_numbered_link_label_preserves_emphasis_boundaries() {
+    let input = "See [_foo_ 2].\n\n\
+                  -  Read [_foo_](https://example.com/first).\n\
+                  -  Read [_foo_](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.output.contains("[_foo_][_foo_ 3]"),
+        "the unresolved emphasized label should remain occupied, got:\n{}",
+        result.output
+    );
+    assert!(!result.output.contains("[_foo_ 2]:"));
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [_foo_ 2]"
+    );
+
+    let second = parse_and_serialize_with_warnings(&result.output);
+    assert_eq!(second.output, result.output);
+}
+
+#[test]
+fn test_whitespace_only_explicit_label_is_collapsed() {
+    let input = "See [guide 2][ ].\n\n\
+                  -  Read [guide](https://example.com/first).\n\
+                  -  Read [guide](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.output.contains("[guide][guide 3]"),
+        "the collapsed reference label should remain occupied, got:\n{}",
+        result.output
+    );
+    assert!(!result.output.contains("[guide 2]:"));
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [guide 2]"
+    );
+
+    let second = parse_and_serialize_with_warnings(&result.output);
+    assert_eq!(second.output, result.output);
+    assert_eq!(
+        second.warnings[0].message,
+        "undefined reference link: [guide 2]"
+    );
+}
+
+#[test]
+fn test_numbered_link_label_skips_markup_in_undefined_reference() {
+    let input = "See [foo *bar* 2].\n\n\
+                  -  Read [foo *bar*](https://example.com/first).\n\
+                  -  Read [foo *bar*](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(
+        result.output,
+        concat!(
+            "See [foo *bar* 2].\n\n",
+            " -  Read [foo *bar*].\n",
+            " -  Read [foo *bar*][foo *bar* 3].\n\n",
+            "[foo *bar*]: https://example.com/first\n",
+            "[foo *bar* 3]: https://example.com/second\n",
+        )
+    );
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [foo *bar* 2]"
+    );
+}
+
+#[test]
+fn test_numbered_link_label_skips_soft_break_in_undefined_reference() {
+    let input = "See [foo\nbar 2].\n\n\
+                  -  Read [foo\nbar](https://example.com/first).\n\
+                  -  Read [foo\nbar](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(
+        result.output,
+        concat!(
+            "See [foo\nbar 2].\n\n",
+            " -  Read [foo bar].\n",
+            " -  Read [foo bar][foo bar 3].\n\n",
+            "[foo bar]: https://example.com/first\n",
+            "[foo bar 3]: https://example.com/second\n",
+        )
+    );
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [foo bar 2]"
+    );
+}
+
+#[test]
+fn test_numbered_link_label_skips_multiline_blockquote_reference() {
+    let input = "> See [foo\n\
+                 > bar 2].\n\n\
+                  -  Read [foo\nbar](https://example.com/first).\n\
+                  -  Read [foo\nbar](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.output.contains("[foo bar][foo bar 3]"),
+        "blockquote prefixes must not become part of the label, got:\n{}",
+        result.output
+    );
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [foo bar 2]"
+    );
+
+    let second = parse_and_serialize_with_warnings(&result.output);
+    assert_eq!(second.output, result.output);
+    assert_eq!(
+        second.warnings[0].message,
+        "undefined reference link: [foo bar 2]"
+    );
+}
+
+#[test]
+fn test_lazy_blockquote_reference_preserves_literal_marker() {
+    let input = "> See [foo\n    > bar 2].\n\n\
+                  -  Read [foo > bar](https://example.com/first).\n\
+                  -  Read [foo > bar](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.output.contains("[foo > bar][foo > bar 3]"),
+        "a literal marker on a lazy continuation must remain in the label, got:\n{}",
+        result.output
+    );
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [foo > bar 2]"
+    );
+    assert!(!result.output.contains("[foo > bar 2]:"));
+}
+
+#[test]
+fn test_list_blockquote_reference_strips_container_indent() {
+    let input = " -  > See [foo\n    > bar 2].\n\n\
+                  -  Read [foo bar](https://example.com/first).\n\
+                  -  Read [foo bar](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.output.contains("[foo bar][foo bar 3]"),
+        "list indentation should not become part of a blockquote label, got:\n{}",
+        result.output
+    );
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [foo bar 2]"
+    );
+    assert!(!result.output.contains("[foo bar 2]:"));
+
+    let second = parse_and_serialize_with_warnings(&result.output);
+    assert_eq!(second.output, result.output);
+    assert_eq!(
+        second.warnings[0].message,
+        "undefined reference link: [foo bar 2]"
+    );
+}
+
+#[test]
+fn test_list_blockquote_reference_strips_tabbed_container_indent() {
+    let input = " -  > See [foo\n\
+                 \t> bar 2].\n\n\
+                  -  Read [foo bar](https://example.com/first).\n\
+                  -  Read [foo bar](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.output.contains("[foo bar][foo bar 3]"),
+        "tab indentation should not become part of a blockquote label, got:\n{}",
+        result.output
+    );
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [foo bar 2]"
+    );
+    assert!(!result.output.contains("[foo bar 2]:"));
+
+    let second = parse_and_serialize_with_warnings(&result.output);
+    assert_eq!(second.output, result.output);
+    assert_eq!(
+        second.warnings[0].message,
+        "undefined reference link: [foo bar 2]"
+    );
+}
+
+#[test]
+fn test_list_blockquote_lazy_reference_preserves_literal_marker() {
+    let input = " -  > See [foo\n        > bar 2].\n\n\
+                  -  Read [foo > bar](https://example.com/first).\n\
+                  -  Read [foo > bar](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.output.contains("[foo > bar][foo > bar 3]"),
+        "indentation beyond the list container should keep a literal marker, got:\n{}",
+        result.output
+    );
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [foo > bar 2]"
+    );
+    assert!(!result.output.contains("[foo > bar 2]:"));
+}
+
+#[test]
+fn test_numbered_link_label_skips_hard_break_in_undefined_reference() {
+    let input = "See [foo  \nbar 2].\n\n\
+                  -  Read [foo\nbar](https://example.com/first).\n\
+                  -  Read [foo\nbar](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.output.contains("[foo bar][foo bar 3]"),
+        "the hard-break label should remain occupied, got:\n{}",
+        result.output
+    );
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [foo bar 2]"
+    );
+}
+
+#[test]
+fn test_undefined_reference_in_description_term() {
+    let result = parse_and_serialize_with_warnings("[missing]\n: detail\n");
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [missing]"
+    );
+}
+
+#[test]
+fn test_disabled_description_term_reserves_undefined_reference() {
+    let input = "<!-- hongdown-disable -->\n\n\
+                 [guide 2]\n\
+                 : detail\n\n\
+                 <!-- hongdown-enable -->\n\n\
+                  -  Read [guide](https://example.com/first).\n\
+                  -  Read [guide](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.output.contains("[guide][guide 3]"),
+        "the copied description term should reserve its label, got:\n{}",
+        result.output
+    );
+    assert!(result.warnings.is_empty());
+}
+
+#[test]
+fn test_multiline_description_term_reserves_undefined_reference() {
+    let input = "See\n\
+                 continued [guide 2]\n\
+                 : detail\n\n\
+                  -  Read [guide](https://example.com/first).\n\
+                  -  Read [guide](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.output.contains("[guide][guide 3]"),
+        "every line of the description term should reserve labels, got:\n{}",
+        result.output
+    );
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [guide 2]"
+    );
+}
+
+#[test]
+fn test_adjacent_inline_link_is_not_an_explicit_reference_label() {
+    let input = "See [guide 2][bar](/bar).\n\n\
+                  -  Read [guide](https://example.com/first).\n\
+                  -  Read [guide](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.output.contains("[guide][guide 3]"),
+        "the unresolved shortcut should reserve its own label, got:\n{}",
+        result.output
+    );
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [guide 2]"
+    );
+}
+
+#[test]
+fn test_numbered_link_label_uses_rendered_undefined_reference() {
+    let input = "See [foo_bar 2].\n\n\
+                  -  Read [foo_bar](https://example.com/first).\n\
+                  -  Read [foo_bar](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(
+        result.output,
+        concat!(
+            "See [foo\\_bar 2].\n\n",
+            " -  Read [foo\\_bar].\n",
+            " -  Read [foo\\_bar][foo\\_bar 3].\n\n",
+            "[foo\\_bar]: https://example.com/first\n",
+            "[foo\\_bar 3]: https://example.com/second\n",
+        )
+    );
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [foo\\_bar 2]"
+    );
+}
+
+#[test]
+fn test_numbered_link_label_skips_code_in_undefined_reference() {
+    let input = "See [foo `bar` 2].\n\n\
+                  -  Read [foo `bar`](https://example.com/first).\n\
+                  -  Read [foo `bar`](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(
+        result.output,
+        concat!(
+            "See [foo `bar` 2].\n\n",
+            " -  Read [foo `bar`].\n",
+            " -  Read [foo `bar`][foo `bar` 3].\n\n",
+            "[foo `bar`]: https://example.com/first\n",
+            "[foo `bar` 3]: https://example.com/second\n",
+        )
+    );
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [foo `bar` 2]"
+    );
+}
+
+#[test]
+fn test_numbered_link_label_uses_emitted_inline_spans() {
+    for (source_label, emitted_label) in [
+        ("foo -- bar", "foo — bar"),
+        ("foo &amp;", "foo &amp;"),
+        ("foo $x$", "foo $x$"),
+        ("foo <i>bar</i>", "foo <i>bar</i>"),
+    ] {
+        let input = format!(
+            "See [{source_label} 2].\n\n\
+             -  Read [{source_label}](https://example.com/first).\n\
+             -  Read [{source_label}](https://example.com/second).\n"
+        );
+        let result = parse_and_serialize_with_warnings(&input);
+        assert!(
+            result
+                .output
+                .contains(&format!("[{emitted_label}][{emitted_label} 3]")),
+            "the occupied label should be skipped for {source_label:?}, got:\n{}",
+            result.output
+        );
+        assert!(
+            !result.output.contains(&format!("[{emitted_label} 2]:")),
+            "the unresolved label should not be defined for {source_label:?}, got:\n{}",
+            result.output
+        );
+        assert_eq!(result.warnings.len(), 1);
+        assert_eq!(
+            result.warnings[0].message,
+            format!("undefined reference link: [{emitted_label} 2]")
+        );
+    }
+}
+
+#[test]
+fn test_cross_node_full_reference_warns_once_for_explicit_label() {
+    let first = parse_and_serialize_with_warnings("[foo *bar*][baz]\n");
+    assert_eq!(first.warnings.len(), 1);
+    assert_eq!(first.warnings[0].message, "undefined reference link: [baz]");
+
+    let second = parse_and_serialize_with_warnings("[foo][baz *qux*]\n");
+    assert_eq!(second.warnings.len(), 1);
+    assert_eq!(
+        second.warnings[0].message,
+        "undefined reference link: [baz *qux*]"
+    );
+}
+
+#[test]
+fn test_rendered_escaped_reference_is_not_reserved() {
+    let input = "See \\[foo_bar 2].\n\n\
+                  -  Read [foo_bar](https://example.com/first).\n\
+                  -  Read [foo_bar](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(
+        result.output,
+        concat!(
+            "See \\[foo\\_bar 2].\n\n",
+            " -  Read [foo\\_bar].\n",
+            " -  Read [foo\\_bar][foo\\_bar 2].\n\n",
+            "[foo\\_bar]: https://example.com/first\n",
+            "[foo\\_bar 2]: https://example.com/second\n",
+        )
+    );
+    assert!(result.warnings.is_empty());
+}
+
+#[test]
+fn test_rendered_source_only_definition_is_not_undefined() {
+    let input = "See [foo_bar].\n\n*[X]: abbreviation\n[foo_bar]: https://example.com/\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(result.warnings.is_empty());
+}
+
+#[test]
+fn test_wrapped_source_only_reference_is_not_undefined() {
+    let input = "*[X]: abbreviation\n\
+                 [foo bar]: https://example.com/\n\n\
+                 See [foo\n\
+                 bar] here.\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.warnings.is_empty(),
+        "wrapped labels should match whitespace-normalized definitions: {:?}",
+        result.warnings
+    );
+}
+
+#[test]
+fn test_abbreviation_label_reserves_numbered_reference() {
+    let input = "See [guide 2].\n\n\
+                 *[guide 2]: abbreviation\n\n\
+                  -  Read [guide](https://example.com/first).\n\
+                  -  Read [guide](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.output.contains("[guide][guide 3]"),
+        "a warning-exempt abbreviation label should remain occupied, got:\n{}",
+        result.output
+    );
+    assert!(
+        !result
+            .output
+            .contains("[guide 2]: https://example.com/second")
+    );
+    assert!(result.warnings.is_empty());
+
+    let second = parse_and_serialize_with_warnings(&result.output);
+    assert_eq!(second.output, result.output);
+    assert!(second.warnings.is_empty());
+}
+
+#[test]
+fn test_verbatim_abbreviation_does_not_reserve_rendered_variant() {
+    let input = "*[foo_bar 2]: abbreviation\n\n\
+                  -  Read [foo_bar](https://example.com/first).\n\
+                  -  Read [foo_bar](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.output.contains("[foo\\_bar][foo\\_bar 2]"),
+        "the parser-distinct rendered variant should remain free, got:\n{}",
+        result.output
+    );
+    assert!(!result.output.contains("[foo\\_bar 3]:"));
+    assert!(result.output.contains("*[foo_bar 2]: abbreviation"));
+    assert!(result.warnings.is_empty());
+
+    let second = parse_and_serialize_with_warnings(&result.output);
+    assert_eq!(second.output, result.output);
+    assert!(second.warnings.is_empty());
+}
+
+#[test]
+fn test_verbatim_source_definition_does_not_reserve_rendered_variant() {
+    let input = "*[X]: abbreviation\n\
+                 [foo_bar 2]: https://example.com/existing\n\n\
+                  -  Read [foo_bar](https://example.com/first).\n\
+                  -  Read [foo_bar](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.output.contains("[foo\\_bar][foo\\_bar 2]"),
+        "the parser-distinct rendered variant should remain free, got:\n{}",
+        result.output
+    );
+    assert!(!result.output.contains("[foo\\_bar 3]:"));
+    assert!(
+        result
+            .output
+            .contains("[foo_bar 2]: https://example.com/existing")
+    );
+    assert!(result.warnings.is_empty());
+
+    let second = parse_and_serialize_with_warnings(&result.output);
+    assert_eq!(second.output, result.output);
+    assert!(second.warnings.is_empty());
+}
+
+#[test]
+fn test_prose_sharing_verbatim_label_reserves_rendered_variant() {
+    let input = "See [foo_bar 2].\n\n\
+                 *[foo_bar 2]: abbreviation\n\n\
+                  -  Read [foo_bar](https://example.com/first).\n\
+                  -  Read [foo_bar](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.output.contains("[foo\\_bar][foo\\_bar 3]"),
+        "the rendered prose occurrence should remain occupied, got:\n{}",
+        result.output
+    );
+    assert!(!result.output.contains("[foo\\_bar 2]:"));
+    assert!(result.output.contains("*[foo_bar 2]: abbreviation"));
+    assert!(result.warnings.is_empty());
+
+    let second = parse_and_serialize_with_warnings(&result.output);
+    assert_eq!(second.output, result.output);
+}
+
+#[test]
+fn test_source_only_definition_label_reserves_numbered_reference() {
+    let input = "See [guide 2].\n\n\
+                 *[X]: abbreviation\n\
+                 [guide 2]: https://example.com/existing\n\n\
+                  -  Read [guide](https://example.com/first).\n\
+                  -  Read [guide](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.output.contains("[guide][guide 3]"),
+        "a source-only definition label should remain occupied, got:\n{}",
+        result.output
+    );
+    assert!(
+        !result
+            .output
+            .contains("[guide 2]: https://example.com/second")
+    );
+    assert!(result.warnings.is_empty());
+
+    let second = parse_and_serialize_with_warnings(&result.output);
+    assert_eq!(second.output, result.output);
+    assert!(second.warnings.is_empty());
+}
+
+#[test]
+fn test_unused_source_definition_can_supply_numbered_reference() {
+    let input = "[guide 2]: https://example.com/b\n\n\
+                  -  Read [guide](https://example.com/a).\n\
+                  -  Read [guide](https://example.com/b).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.output.contains("[guide][guide 2]"),
+        "the matching source label should be reused, got:\n{}",
+        result.output
+    );
+    assert!(!result.output.contains("[guide][guide 3]"));
+    assert!(result.warnings.is_empty());
+
+    let second = parse_and_serialize_with_warnings(&result.output);
+    assert_eq!(second.output, result.output);
+    assert!(second.warnings.is_empty());
+}
+
+#[test]
+fn test_code_block_definition_does_not_reserve_numbered_reference() {
+    for code_block in [
+        "~~~~ text\n[guide 2]: example\n~~~~",
+        "    [guide 2]: example",
+    ] {
+        let input = format!(
+            "{code_block}\n\n\
+             -  Read [guide](https://example.com/first).\n\
+             -  Read [guide](https://example.com/second).\n"
+        );
+        let result = parse_and_serialize_with_warnings(&input);
+        assert!(
+            result.output.contains("[guide][guide 2]"),
+            "a definition lookalike in code should leave label 2 free, got:\n{}",
+            result.output
+        );
+        assert!(!result.output.contains("[guide][guide 3]"));
+        assert!(result.warnings.is_empty());
+    }
+}
+
+#[test]
+fn test_undefined_reference_preserves_surrounding_quote_state() {
+    let input = "Opening \" then [foo\"bar 2].\n\n\
+                  -  Read [foo”bar](https://example.com/first).\n\
+                  -  Read [foo”bar](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.output.contains("Opening “ then \\[foo”bar 2]."),
+        "the unresolved label should use the paragraph's quote state, got:\n{}",
+        result.output
+    );
+    assert!(
+        result.output.contains("[foo”bar][foo”bar 3]"),
+        "the emitted unresolved label should remain occupied, got:\n{}",
+        result.output
+    );
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [foo”bar 2]"
+    );
+
+    let second = parse_and_serialize_with_warnings(&result.output);
+    assert_eq!(second.output, result.output);
+    assert!(second.warnings.is_empty());
+}
+
+#[test]
+fn test_undefined_reference_preserves_resolved_link_context() {
+    let input = "[\"][ref] [foo\"bar 2].\n\n\
+                  -  Read [foo“bar](https://example.com/first).\n\
+                  -  Read [foo“bar](https://example.com/second).\n\n\
+                 [ref]: /url\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.output.contains("[foo“bar][foo“bar 3]"),
+        "the emitted unresolved label should remain occupied, got:\n{}",
+        result.output
+    );
+    assert!(!result.output.contains("[foo“bar 2]:"));
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [foo“bar 2]"
+    );
+
+    let second = parse_and_serialize_with_warnings(&result.output);
+    assert_eq!(second.output, result.output);
+}
+
+#[test]
+fn test_heading_undefined_reference_preserves_resolved_link_context() {
+    let input = "# [\"][ref] [foo\"bar 2]\n\n\
+                  -  Read [foo“bar](https://example.com/first).\n\
+                  -  Read [foo“bar](https://example.com/second).\n\n\
+                 [ref]: /url\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.output.contains("[foo“bar][foo“bar 3]"),
+        "the emitted heading label should remain occupied, got:\n{}",
+        result.output
+    );
+    assert!(!result.output.contains("[foo“bar 2]:"));
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [foo“bar 2]"
+    );
+
+    let second = parse_and_serialize_with_warnings(&result.output);
+    assert_eq!(second.output, result.output);
+}
+
+#[test]
+fn test_numbered_link_label_skips_escaped_closing_bracket() {
+    let input = "See [foo\\]bar 2].\n\n\
+                  -  Read [foo\\]bar](https://example.com/first).\n\
+                  -  Read [foo\\]bar](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(
+        result.output,
+        concat!(
+            "See [foo\\]bar 2].\n\n",
+            " -  Read [foo\\]bar].\n",
+            " -  Read [foo\\]bar][foo\\]bar 3].\n\n",
+            "[foo\\]bar]: https://example.com/first\n",
+            "[foo\\]bar 3]: https://example.com/second\n",
+        )
+    );
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [foo\\]bar 2]"
+    );
+}
+
+#[test]
+fn test_undefined_reference_after_consumed_definition() {
+    let result = parse_and_serialize_with_warnings("[a]: /url\nSee [missing].\n");
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(result.warnings[0].line, 2);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [missing]"
+    );
+}
+
+#[test]
+fn test_heading_undefined_reference_uses_heading_rendering() {
+    let input = "# [foo <i>bar</i> 2]\n\n\
+                  -  Read [foo <i>bar</i>](https://example.com/first).\n\
+                  -  Read [foo <i>bar</i>](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.output.contains("[foo <i>bar</i>][foo <i>bar</i> 2]"),
+        "the heading's rendered label should not occupy the HTML label, got:\n{}",
+        result.output
+    );
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [foo bar 2]"
+    );
+}
+
+#[test]
+fn test_heading_undefined_reference_ignores_brackets_in_html() {
+    let input = "# See [foo <i title=\"]\">bar</i> 2]\n\n\
+                  -  Read [foo bar](https://example.com/first).\n\
+                  -  Read [foo bar](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.output.contains("[foo bar][foo bar 3]"),
+        "the stripped heading label should remain occupied, got:\n{}",
+        result.output
+    );
+    assert!(!result.output.contains("[foo bar 2]:"));
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [foo bar 2]"
+    );
+
+    let second = parse_and_serialize_with_warnings(&result.output);
+    assert_eq!(second.output, result.output);
+    assert_eq!(
+        second.warnings[0].message,
+        "undefined reference link: [foo bar 2]"
+    );
+}
+
+#[test]
+fn test_heading_undefined_reference_uses_sentence_case_rendering() {
+    let input = "# See [foo \"bar\" 2]\n\n\
+                  -  Read [foo “bar”](https://example.com/first).\n\
+                  -  Read [foo “bar”](https://example.com/second).\n";
+    let mut options = Options::default();
+    options.heading_sentence_case = true;
+    options.curly_double_quotes = false;
+
+    let result = parse_and_serialize_with_warnings_and_options(input, &options);
+    assert!(
+        result.output.contains("[foo “bar”][foo “bar” 3]"),
+        "the sentence-cased heading label should remain occupied, got:\n{}",
+        result.output
+    );
+    assert!(
+        !result.output.contains("[foo “bar” 2]:"),
+        "the unresolved heading label must not be defined, got:\n{}",
+        result.output
+    );
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [foo “bar” 2]"
+    );
+}
+
+#[test]
+fn test_heading_undefined_reference_uses_noun_directives() {
+    let options = Options {
+        heading_sentence_case: true,
+        ..Options::default()
+    };
+    for (directive, heading_label, link_label, emitted_label) in [
+        ("hongdown-proper-nouns: MyAPI", "MyAPI", "MyAPI", "MyAPI"),
+        (
+            "hongdown-common-nouns: Python",
+            "Python",
+            "python",
+            "python",
+        ),
+    ] {
+        let input = format!(
+            "<!-- {directive} -->\n\n\
+             # See [{heading_label} 2]\n\n\
+              -  Read [{link_label}](https://example.com/first).\n\
+              -  Read [{link_label}](https://example.com/second).\n"
+        );
+        let result = parse_and_serialize_with_warnings_and_options(&input, &options);
+        assert!(
+            result.output.contains(&format!("See [{emitted_label} 2]")),
+            "the heading should use the noun directive, got:\n{}",
+            result.output
+        );
+        assert!(
+            result
+                .output
+                .contains(&format!("[{link_label}][{link_label} 3]")),
+            "the occupied label should be skipped, got:\n{}",
+            result.output
+        );
+        assert_eq!(result.warnings.len(), 1);
+        assert_eq!(
+            result.warnings[0].message,
+            format!("undefined reference link: [{emitted_label} 2]")
+        );
+    }
+}
+
+#[test]
+fn test_numbered_link_label_skips_bang_prefixed_reference() {
+    let input = "See [!guide 2].\n\n\
+                  -  Read [!guide](https://example.com/first).\n\
+                  -  Read [!guide](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.output.contains("[!guide][!guide 3]"),
+        "the unresolved bang-prefixed label should remain occupied, got:\n{}",
+        result.output
+    );
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [!guide 2]"
+    );
+}
+
+#[test]
+fn test_numbered_link_label_skips_mdx_reference() {
+    let input = "See [foo {bar} 2].\n\n\
+                  -  Read [foo {bar}](https://example.com/first).\n\
+                  -  Read [foo {bar}](https://example.com/second).\n";
+    let options = Options {
+        mdx: true,
+        ..Options::default()
+    };
+    let result = crate::format_with_warnings(input, &options).unwrap();
+    assert!(
+        result.output.contains("[foo {bar}][foo {bar} 3]"),
+        "the restored MDX label should remain occupied, got:\n{}",
+        result.output
+    );
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [foo {bar} 2]"
+    );
+}
+
+#[test]
+fn test_copied_heading_reserves_verbatim_reference_label() {
+    let input = "<!-- hongdown-disable-next-line -->\n\
+                 # [foo <i>bar</i> 2]\n\n\
+                  -  Read [foo <i>bar</i>](https://example.com/first).\n\
+                  -  Read [foo <i>bar</i>](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.output.contains("[foo <i>bar</i>][foo <i>bar</i> 3]"),
+        "the copied heading's verbatim label should remain occupied, got:\n{}",
+        result.output
+    );
+    assert!(result.warnings.is_empty());
+}
+
+#[test]
+fn test_disabled_reference_keeps_escaped_label_free() {
+    let input = "<!-- hongdown-disable-next-line -->\n\
+                 See [foo_bar 2].\n\n\
+                  -  Read [foo_bar](https://example.com/first).\n\
+                  -  Read [foo_bar](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.output.contains("[foo\\_bar][foo\\_bar 2]"),
+        "parser-distinct escaped labels should remain available, got:\n{}",
+        result.output
+    );
+    assert!(result.warnings.is_empty());
+
+    let second = parse_and_serialize_with_warnings(&result.output);
+    assert_eq!(second.output, result.output);
+    assert!(second.warnings.is_empty());
+}
+
+#[test]
+fn test_bracket_in_inline_code_is_not_reference_terminator() {
+    let result = parse_and_serialize_with_warnings("See [foo `bar 2]` baz].\n");
+    assert!(
+        result.warnings.is_empty(),
+        "a bracket inside code cannot terminate a reference label: {:?}",
+        result.warnings
+    );
+}
+
+#[test]
+fn test_unresolved_reference_inside_link_text_remains_occupied() {
+    let input = "[x [guide 2]](/u)\n\n\
+                  -  Read [guide](https://example.com/first).\n\
+                  -  Read [guide](https://example.com/second).\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert!(
+        result.output.contains("[x [guide 2]](/u)"),
+        "the outer link should retain its destination, got:\n{}",
+        result.output
+    );
+    assert!(
+        result.output.contains("[guide][guide 3]"),
+        "the nested unresolved label should remain occupied, got:\n{}",
+        result.output
+    );
+    assert!(!result.output.contains("[guide 2]:"));
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [guide 2]"
+    );
+
+    let second = parse_and_serialize_with_warnings(&result.output);
+    assert_eq!(second.output, result.output);
+    assert_eq!(
+        second.warnings[0].message,
+        "undefined reference link: [guide 2]"
+    );
+}
+
+#[test]
+fn test_heading_reference_marker_does_not_collide_with_source() {
+    let input = format!(
+        "# {} [foo 2]\n\n\
+         -  Read [foo](https://example.com/first).\n\
+         -  Read [foo](https://example.com/second).\n",
+        '\u{e000}'
+    );
+    let result = parse_and_serialize_with_warnings(&input);
+    assert!(
+        result.output.contains("[foo][foo 3]"),
+        "a source PUA character must not corrupt the occupied label, got:\n{}",
+        result.output
+    );
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        result.warnings[0].message,
+        "undefined reference link: [foo 2]"
+    );
+}
+
+#[test]
+fn test_numbered_link_label_uses_complete_container_source() {
+    let escaped = "\\\\[guide 2]\n\n\
+                   -  Read [guide](https://example.com/first).\n\
+                   -  Read [guide](https://example.com/second).\n";
+    let escaped_result = parse_and_serialize_with_warnings(escaped);
+    assert!(
+        escaped_result.output.contains("[guide][guide 3]"),
+        "both source backslashes must be reconstructed, got:\n{}",
+        escaped_result.output
+    );
+    assert_eq!(escaped_result.warnings.len(), 1);
+    assert_eq!(
+        escaped_result.warnings[0].message,
+        "undefined reference link: [guide 2]"
+    );
+
+    let table = "| Value |\n\
+                 | ----- |\n\
+                 | [foo\\|bar 2] |\n\n\
+                  -  Read [foo\\|bar](https://example.com/first).\n\
+                  -  Read [foo\\|bar](https://example.com/second).\n";
+    let table_result = parse_and_serialize_with_warnings(table);
+    assert!(
+        table_result.output.contains("[foo\\|bar][foo\\|bar 3]"),
+        "the complete table-cell label must remain occupied, got:\n{}",
+        table_result.output
+    );
+}
+
+#[test]
+fn test_undefined_reference_scan_handles_many_inline_spans() {
+    let input = "[missing] *markup* ".repeat(1_000);
+    let result = parse_and_serialize_with_warnings(&input);
+    assert_eq!(result.warnings.len(), 1_000);
+}
+
+#[test]
 fn test_duplicate_link_text_same_url_reuses_label() {
     // Identical targets should still share a single definition.
     let input = " -  Read [guide](https://example.com/).\n \
@@ -6347,6 +7396,19 @@ fn test_duplicate_link_text_same_url_reuses_label() {
         "identical targets should not be renamed, got:\n{}",
         result
     );
+}
+
+#[test]
+fn test_escaped_and_unescaped_reference_labels_remain_distinct() {
+    let input = "[one][foo_bar] and [two][foo\\_bar].\n\n\
+                 [foo_bar]: https://example.com/\n\
+                 [foo\\_bar]: https://example.com/\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(result.output, input);
+
+    let second = parse_and_serialize_with_warnings(&result.output);
+    assert_eq!(second.output, result.output);
+    assert!(second.warnings.is_empty());
 }
 
 #[test]

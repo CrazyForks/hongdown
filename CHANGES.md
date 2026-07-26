@@ -14,6 +14,11 @@ To be released.
     otherwise the colliding link gets a numbered label and full reference
     syntax, as in `[guide][guide 2]`.  [[#26], [#29]]
 
+ -  Fixed a bug where a numbered label assigned to a colliding link could match
+    unresolved reference syntax elsewhere in the document, silently turning
+    ordinary bracketed text into a link.  Numbered label allocation now skips
+    labels already used by unresolved references.  [[#33], [#34]]
+
  -  Fixed a bug where a reference definition needed by a later section was
     dropped entirely when an earlier section had already defined the same
     label with a different destination, leaving the later link pointing at
@@ -76,6 +81,8 @@ To be released.
 [#27]: https://github.com/dahlia/hongdown/issues/27
 [#29]: https://github.com/dahlia/hongdown/pull/29
 [#32]: https://github.com/dahlia/hongdown/pull/32
+[#33]: https://github.com/dahlia/hongdown/issues/33
+[#34]: https://github.com/dahlia/hongdown/pull/34
 
 
 Version 0.5.1

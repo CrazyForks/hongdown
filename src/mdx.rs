@@ -55,6 +55,13 @@ impl Protection {
         result
     }
 
+    pub(crate) fn reference_label_replacements(&self) -> Vec<(String, String)> {
+        self.replacements
+            .iter()
+            .map(|protected| (protected.token.clone(), protected.original.clone()))
+            .collect()
+    }
+
     /// Map a 1-indexed line number in the protected source back to the original
     /// source.
     ///
