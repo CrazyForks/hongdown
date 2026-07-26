@@ -431,6 +431,10 @@ collapsed and Unicode case folding applied.  So `[Guide]` and `[guide]` are
 the same label, as are `[Straße]` and `[STRASSE]`, and one of them is
 renumbered unless both point at the same target.
 
+For numbered label allocation, a label appearing as unresolved reference
+syntax is also considered occupied.  Allocation skips it rather than adding a
+definition that would silently turn the bracketed text into a link.
+
 *Rationale*: A reference definition is document-wide, and a duplicate
 definition is ignored by the parser rather than merged.  Sharing a label
 between different targets would therefore silently change where one of the

@@ -516,8 +516,16 @@ pub fn format_with_code_formatter(
         }) as Box<dyn Fn(&str, &str) -> Option<String>>
     });
 
-    let result =
-        crate::serializer::serialize_with_code_formatter(root, &opts, Some(source), callback);
+    let replacements = protection
+        .as_ref()
+        .map_or_else(Vec::new, |p| p.reference_label_replacements());
+    let result = crate::serializer::serialize_with_code_formatter(
+        root,
+        &opts,
+        Some(source),
+        callback,
+        replacements,
+    );
 
     let output = match &protection {
         Some(p) => p.restore(&result.output),
@@ -534,7 +542,9 @@ pub fn format_with_code_formatter(
                 line: protection
                     .as_ref()
                     .map_or(w.line, |p| p.original_line(w.line)),
-                message: w.message,
+                message: protection
+                    .as_ref()
+                    .map_or(w.message.clone(), |p| p.restore(&w.message)),
             })
             .collect(),
     };
