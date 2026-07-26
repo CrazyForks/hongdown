@@ -1768,6 +1768,8 @@ impl<'a> Serializer<'a> {
         disabled_ranges: &[(usize, usize)],
     ) -> Vec<UndefinedReference> {
         let mut undefined_references = Vec::new();
+        let directive_proper_nouns = self.directive_proper_nouns.clone();
+        let directive_common_nouns = self.directive_common_nouns.clone();
 
         self.walk_ast_for_undefined_refs(
             node,
@@ -1777,6 +1779,8 @@ impl<'a> Serializer<'a> {
             &mut undefined_references,
             0,
         );
+        self.directive_proper_nouns = directive_proper_nouns;
+        self.directive_common_nouns = directive_common_nouns;
 
         undefined_references
     }
@@ -1806,6 +1810,7 @@ impl<'a> Serializer<'a> {
         );
 
         drop(data);
+        self.apply_noun_directive(node);
         let child_offset = self.consumed_head_offset(node).unwrap_or(line_offset);
 
         // Scan an inline container exactly once.  This lets a full reference
@@ -2612,11 +2617,11 @@ impl<'a> Serializer<'a> {
         let heading_text = serializer.collect_text(heading);
         let (heading_body, _) = super::heading::split_trailing_explicit_anchor(&heading_text);
         let rendered = if self.options.heading_sentence_case {
-            super::heading::to_sentence_case(
-                heading_body,
-                &self.options.heading_proper_nouns,
-                &self.options.heading_common_nouns,
-            )
+            let mut proper_nouns = self.options.heading_proper_nouns.clone();
+            proper_nouns.extend(self.directive_proper_nouns.clone());
+            let mut common_nouns = self.options.heading_common_nouns.clone();
+            common_nouns.extend(self.directive_common_nouns.clone());
+            super::heading::to_sentence_case(heading_body, &proper_nouns, &common_nouns)
         } else {
             heading_body.to_string()
         };

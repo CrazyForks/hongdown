@@ -7153,6 +7153,48 @@ fn test_heading_undefined_reference_uses_sentence_case_rendering() {
 }
 
 #[test]
+fn test_heading_undefined_reference_uses_noun_directives() {
+    let options = Options {
+        heading_sentence_case: true,
+        ..Options::default()
+    };
+    for (directive, heading_label, link_label, emitted_label) in [
+        ("hongdown-proper-nouns: MyAPI", "MyAPI", "MyAPI", "MyAPI"),
+        (
+            "hongdown-common-nouns: Python",
+            "Python",
+            "python",
+            "python",
+        ),
+    ] {
+        let input = format!(
+            "<!-- {directive} -->\n\n\
+             # See [{heading_label} 2]\n\n\
+              -  Read [{link_label}](https://example.com/first).\n\
+              -  Read [{link_label}](https://example.com/second).\n"
+        );
+        let result = parse_and_serialize_with_warnings_and_options(&input, &options);
+        assert!(
+            result.output.contains(&format!("See [{emitted_label} 2]")),
+            "the heading should use the noun directive, got:\n{}",
+            result.output
+        );
+        assert!(
+            result
+                .output
+                .contains(&format!("[{link_label}][{link_label} 3]")),
+            "the occupied label should be skipped, got:\n{}",
+            result.output
+        );
+        assert_eq!(result.warnings.len(), 1);
+        assert_eq!(
+            result.warnings[0].message,
+            format!("undefined reference link: [{emitted_label} 2]")
+        );
+    }
+}
+
+#[test]
 fn test_numbered_link_label_skips_bang_prefixed_reference() {
     let input = "See [!guide 2].\n\n\
                   -  Read [!guide](https://example.com/first).\n\
