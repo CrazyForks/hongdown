@@ -14,6 +14,16 @@ impl<'a> Serializer<'a> {
         text
     }
 
+    /// Serialize the inline children of `node` without adding an outer link or
+    /// image wrapper.
+    pub(super) fn collect_inline_children<'b>(&mut self, node: &'b AstNode<'b>) -> String {
+        let mut text = String::new();
+        for child in node.children() {
+            self.collect_inline_node(child, &mut text);
+        }
+        text
+    }
+
     /// Collect raw text without escaping (for comparison purposes)
     pub(super) fn collect_raw_text<'b>(&self, node: &'b AstNode<'b>) -> String {
         let mut text = String::new();
@@ -107,13 +117,14 @@ impl<'a> Serializer<'a> {
             }
             NodeValue::Link(link) => {
                 // Handle reference-style links in headings
-                if let Some((link_text, label)) = self.get_reference_style_info(node) {
+                if let Some((_, label)) = self.get_reference_style_info(node) {
+                    let link_text = self.collect_inline_children(node);
                     self.format_reference_link(text, &link_text, &label, &link.url, &link.title);
                 } else {
                     // For inline links, just output plain text (or format as inline?)
                     // In headings, we typically want reference style for external links
-                    let link_text = self.collect_raw_text(node);
                     if Self::is_external_url(&link.url) {
+                        let link_text = self.collect_inline_children(node);
                         // Headings don't have footnote references as siblings, so no need for collapsed style
                         self.format_external_link_as_reference(
                             text,
@@ -123,6 +134,7 @@ impl<'a> Serializer<'a> {
                             false,
                         );
                     } else {
+                        let link_text = self.collect_raw_text(node);
                         Self::format_inline_link(text, &link_text, &link.url, &link.title);
                     }
                 }
@@ -227,7 +239,7 @@ impl<'a> Serializer<'a> {
                 let is_autolink = link.title.is_empty() && raw_text == link.url;
 
                 // Check if original was reference style
-                if let Some((text, label)) = self.get_reference_style_info(node) {
+                if let Some((_, label)) = self.get_reference_style_info(node) {
                     // Preserve reference style
                     if contains_image {
                         // Badge-style with reference: [![alt][img-ref]][link-ref]
@@ -243,6 +255,7 @@ impl<'a> Serializer<'a> {
                         content.push(']');
                     } else {
                         // Non-badge reference links: use helper
+                        let text = self.collect_inline_children(node);
                         self.format_reference_link(content, &text, &label, &link.url, &link.title);
                     }
                 } else if contains_image {
@@ -264,10 +277,7 @@ impl<'a> Serializer<'a> {
                     Self::format_autolink(content, &link.url);
                 } else if Self::is_external_url(&link.url) {
                     // External URL: collect link text first
-                    let mut link_text = String::new();
-                    for child in node.children() {
-                        self.collect_inline_node(child, &mut link_text);
-                    }
+                    let link_text = self.collect_inline_children(node);
                     // Check if next sibling starts with '[' to decide if we need collapsed style
                     let use_collapsed = Self::next_sibling_starts_with_bracket(node);
                     self.format_external_link_as_reference(
@@ -279,10 +289,7 @@ impl<'a> Serializer<'a> {
                     );
                 } else {
                     // Relative/local URL: keep as inline link
-                    let mut link_text = String::new();
-                    for child in node.children() {
-                        self.collect_inline_node(child, &mut link_text);
-                    }
+                    let link_text = self.collect_inline_children(node);
                     Self::format_inline_link(content, &link_text, &link.url, &link.title);
                 }
             }

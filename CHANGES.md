@@ -6,6 +6,12 @@ Version 0.5.2
 
 To be released.
 
+ -  Fixed a bug where non-ASCII whitespace at the edge of an inline link's text
+    could leave its generated shortcut reference with no matching definition.
+    Reference labels now follow the parser's edge-whitespace rules, preserving
+    distinct labels and their definitions across formatting runs.
+    [[#31], [#35]]
+
  -  Fixed a bug where formatting could silently change a link's destination.
     Reference labels are generated from the link text, so two links with the
     same text but different destinations were given the same label, and the
@@ -80,9 +86,11 @@ To be released.
 [#26]: https://github.com/dahlia/hongdown/issues/26
 [#27]: https://github.com/dahlia/hongdown/issues/27
 [#29]: https://github.com/dahlia/hongdown/pull/29
+[#31]: https://github.com/dahlia/hongdown/issues/31
 [#32]: https://github.com/dahlia/hongdown/pull/32
 [#33]: https://github.com/dahlia/hongdown/issues/33
 [#34]: https://github.com/dahlia/hongdown/pull/34
+[#35]: https://github.com/dahlia/hongdown/pull/35
 
 
 Version 0.5.1

@@ -197,8 +197,8 @@ impl<'a> Serializer<'a> {
         let after_close: String = chars[text_end_pos + 1..].iter().collect();
         let text: String = chars[first_bracket + 1..text_end_pos].iter().collect();
 
-        // Normalize newlines to spaces in the text (for idempotency when text spans lines)
-        let text = escape::normalize_whitespace(&text);
+        // Normalize the reference spelling for idempotency across formatting runs.
+        let text = escape::normalize_reference_spelling(&text);
 
         // If followed by "(", it's inline style
         if after_close.starts_with('(') {
@@ -211,7 +211,7 @@ impl<'a> Serializer<'a> {
             if let Some(label_end) = find_unescaped(label_content, ']') {
                 let label = label_content[..label_end].to_string();
                 // Normalize label too
-                let label = escape::normalize_whitespace(&label);
+                let label = escape::normalize_reference_spelling(&label);
 
                 // If label is empty, it's collapsed reference - mark with special prefix
                 // to distinguish from shortcut reference
