@@ -2462,90 +2462,33 @@ impl<'a> Serializer<'a> {
         resolved_reference_definitions: &str,
         labels: &[(usize, usize)],
     ) -> Vec<String> {
-        if labels.is_empty() {
-            return Vec::new();
-        }
-        let render_fallback = || {
-            labels
-                .iter()
-                .map(|&(start, end)| {
-                    inline_source
-                        .get(start..end)
-                        .map_or_else(String::new, |label| {
-                            self.render_unresolved_reference_label(label)
-                        })
-                })
-                .collect()
-        };
-        let (open_marker, close_marker) = Self::unused_reference_label_markers(inline_source);
-        let marker_capacity = labels.len() * (open_marker.len() + close_marker.len());
-        let mut marked_source = String::with_capacity(inline_source.len() + marker_capacity);
-        let mut source_offset = 0;
-        for &(label_start, label_end) in labels {
-            let Some(marker_start) = label_start.checked_sub(1) else {
-                return render_fallback();
-            };
-            let Some(marker_end) = label_end.checked_add(1) else {
-                return render_fallback();
-            };
-            if marker_start < source_offset
-                || label_end < label_start
-                || marker_end > inline_source.len()
-            {
-                return render_fallback();
-            }
-            marked_source.push_str(&inline_source[source_offset..marker_start]);
-            marked_source.push_str(&open_marker);
-            marked_source.push_str(&inline_source[marker_start..marker_end]);
-            marked_source.push_str(&close_marker);
-            source_offset = marker_end;
-        }
-        marked_source.push_str(&inline_source[source_offset..]);
-        marked_source.retain(|character| character != '\0');
+        self.render_marked_reference_labels(
+            inline_source,
+            labels,
+            |marked_source| {
+                let source = if resolved_reference_definitions.is_empty() {
+                    marked_source
+                } else {
+                    format!("{marked_source}\n\n{resolved_reference_definitions}")
+                };
+                let arena = Arena::new();
+                let options = crate::comrak_options(self.options);
+                let root = parse_document(&arena, &source, &options);
+                let paragraph = root
+                    .children()
+                    .find(|child| matches!(&child.data.borrow().value, NodeValue::Paragraph))?;
 
-        let source = if resolved_reference_definitions.is_empty() {
-            marked_source
-        } else {
-            format!("{marked_source}\n\n{resolved_reference_definitions}")
-        };
-        let arena = Arena::new();
-        let options = crate::comrak_options(self.options);
-        let root = parse_document(&arena, &source, &options);
-        let Some(paragraph) = root
-            .children()
-            .find(|child| matches!(&child.data.borrow().value, NodeValue::Paragraph))
-        else {
-            return render_fallback();
-        };
-
-        let source_lines = source.lines().collect();
-        let mut serializer = Serializer::new(self.options, source_lines, false);
-        let mut rendered = String::new();
-        serializer.collect_inline_content(paragraph, &mut rendered);
-        rendered.retain(|character| {
-            character != super::MATH_TOKEN_OPEN && character != super::MATH_TOKEN_CLOSE
-        });
-
-        let mut rendered_labels = Vec::with_capacity(labels.len());
-        let mut rendered_offset = 0;
-        for _ in labels {
-            let Some(open) = rendered[rendered_offset..].find(&open_marker) else {
-                return render_fallback();
-            };
-            let marked_start = rendered_offset + open + open_marker.len();
-            let Some(close) = rendered[marked_start..].find(&close_marker) else {
-                return render_fallback();
-            };
-            let marked_end = marked_start + close;
-            let Some(label) =
-                Self::strip_rendered_reference_brackets(&rendered[marked_start..marked_end])
-            else {
-                return render_fallback();
-            };
-            rendered_labels.push(label.replace(['\0', '\n'], " "));
-            rendered_offset = marked_end + close_marker.len();
-        }
-        rendered_labels
+                let source_lines = source.lines().collect();
+                let mut serializer = Serializer::new(self.options, source_lines, false);
+                let mut rendered = String::new();
+                serializer.collect_inline_content(paragraph, &mut rendered);
+                rendered.retain(|character| {
+                    character != super::MATH_TOKEN_OPEN && character != super::MATH_TOKEN_CLOSE
+                });
+                Some(rendered)
+            },
+            |label| label.replace(['\0', '\n'], " "),
+        )
     }
 
     /// Render an unresolved label in the context of its complete heading.
@@ -2561,23 +2504,72 @@ impl<'a> Serializer<'a> {
         if labels.is_empty() {
             return Vec::new();
         }
+        #[cfg(test)]
+        HEADING_REFERENCE_RENDER_PASSES.with(|passes| passes.set(passes.get() + 1));
+        self.render_marked_reference_labels(
+            heading_source,
+            labels,
+            |marked_source| {
+                let source = if resolved_reference_definitions.is_empty() {
+                    format!("# {marked_source}")
+                } else {
+                    format!("# {marked_source}\n\n{resolved_reference_definitions}")
+                };
+                let arena = Arena::new();
+                let options = crate::comrak_options(self.options);
+                let root = parse_document(&arena, &source, &options);
+                let heading = root
+                    .children()
+                    .find(|child| matches!(&child.data.borrow().value, NodeValue::Heading(_)))?;
+
+                let source_lines = source.lines().collect();
+                let mut serializer = Serializer::new(self.options, source_lines, false);
+                let heading_text = serializer.collect_text(heading);
+                let (heading_body, _) =
+                    super::heading::split_trailing_explicit_anchor(&heading_text);
+                if self.options.heading_sentence_case {
+                    let mut proper_nouns = self.options.heading_proper_nouns.clone();
+                    proper_nouns.extend(self.directive_proper_nouns.clone());
+                    let mut common_nouns = self.options.heading_common_nouns.clone();
+                    common_nouns.extend(self.directive_common_nouns.clone());
+                    Some(super::heading::to_sentence_case(
+                        heading_body,
+                        &proper_nouns,
+                        &common_nouns,
+                    ))
+                } else {
+                    Some(heading_body.to_string())
+                }
+            },
+            str::to_string,
+        )
+    }
+
+    /// Mark reference labels, render their source in context, and extract the
+    /// rendered spellings between the markers.
+    fn render_marked_reference_labels(
+        &self,
+        source: &str,
+        labels: &[(usize, usize)],
+        render_marked_source: impl FnOnce(String) -> Option<String>,
+        normalize_label: impl Fn(&str) -> String,
+    ) -> Vec<String> {
+        if labels.is_empty() {
+            return Vec::new();
+        }
         let render_fallback = || {
             labels
                 .iter()
                 .map(|&(start, end)| {
-                    heading_source
-                        .get(start..end)
-                        .map_or_else(String::new, |label| {
-                            self.render_unresolved_reference_label(label)
-                        })
+                    source.get(start..end).map_or_else(String::new, |label| {
+                        self.render_unresolved_reference_label(label)
+                    })
                 })
                 .collect()
         };
-        #[cfg(test)]
-        HEADING_REFERENCE_RENDER_PASSES.with(|passes| passes.set(passes.get() + 1));
-        let (open_marker, close_marker) = Self::unused_reference_label_markers(heading_source);
+        let (open_marker, close_marker) = Self::unused_reference_label_markers(source);
         let marker_capacity = labels.len() * (open_marker.len() + close_marker.len());
-        let mut marked_source = String::with_capacity(heading_source.len() + marker_capacity);
+        let mut marked_source = String::with_capacity(source.len() + marker_capacity);
         let mut source_offset = 0;
         for &(label_start, label_end) in labels {
             let Some(marker_start) = label_start.checked_sub(1) else {
@@ -2586,50 +2578,22 @@ impl<'a> Serializer<'a> {
             let Some(marker_end) = label_end.checked_add(1) else {
                 return render_fallback();
             };
-            if marker_start < source_offset
-                || label_end < label_start
-                || marker_end > heading_source.len()
+            if marker_start < source_offset || label_end < label_start || marker_end > source.len()
             {
                 return render_fallback();
             }
-            marked_source.push_str(&heading_source[source_offset..marker_start]);
+            marked_source.push_str(&source[source_offset..marker_start]);
             marked_source.push_str(&open_marker);
-            marked_source.push_str(&heading_source[marker_start..marker_end]);
+            marked_source.push_str(&source[marker_start..marker_end]);
             marked_source.push_str(&close_marker);
             source_offset = marker_end;
         }
-        marked_source.push_str(&heading_source[source_offset..]);
+        marked_source.push_str(&source[source_offset..]);
         marked_source.retain(|character| character != '\0');
 
-        let source = if resolved_reference_definitions.is_empty() {
-            format!("# {marked_source}")
-        } else {
-            format!("# {marked_source}\n\n{resolved_reference_definitions}")
-        };
-        let arena = Arena::new();
-        let options = crate::comrak_options(self.options);
-        let root = parse_document(&arena, &source, &options);
-        let Some(heading) = root
-            .children()
-            .find(|child| matches!(&child.data.borrow().value, NodeValue::Heading(_)))
-        else {
+        let Some(rendered) = render_marked_source(marked_source) else {
             return render_fallback();
         };
-
-        let source_lines = source.lines().collect();
-        let mut serializer = Serializer::new(self.options, source_lines, false);
-        let heading_text = serializer.collect_text(heading);
-        let (heading_body, _) = super::heading::split_trailing_explicit_anchor(&heading_text);
-        let rendered = if self.options.heading_sentence_case {
-            let mut proper_nouns = self.options.heading_proper_nouns.clone();
-            proper_nouns.extend(self.directive_proper_nouns.clone());
-            let mut common_nouns = self.options.heading_common_nouns.clone();
-            common_nouns.extend(self.directive_common_nouns.clone());
-            super::heading::to_sentence_case(heading_body, &proper_nouns, &common_nouns)
-        } else {
-            heading_body.to_string()
-        };
-
         let mut rendered_labels = Vec::with_capacity(labels.len());
         let mut rendered_offset = 0;
         for _ in labels {
@@ -2646,7 +2610,7 @@ impl<'a> Serializer<'a> {
             else {
                 return render_fallback();
             };
-            rendered_labels.push(label.to_string());
+            rendered_labels.push(normalize_label(label));
             rendered_offset = marked_end + close_marker.len();
         }
         rendered_labels
@@ -2670,6 +2634,19 @@ impl<'a> Serializer<'a> {
         const BMP_COUNT: usize = (BMP_END - BMP_START + 1) as usize;
         const PLANE_COUNT: usize = (PLANE_15_END - PLANE_15_START + 1) as usize;
         const PRIVATE_USE_COUNT: usize = BMP_COUNT + PLANE_COUNT * 2;
+
+        let contains_private_use = source.chars().any(|character| {
+            matches!(
+                character as u32,
+                BMP_START..=BMP_END | PLANE_15_START..=PLANE_15_END | PLANE_16_START..=PLANE_16_END
+            )
+        });
+        if !contains_private_use {
+            return (
+                char::from_u32(BMP_START).unwrap().to_string(),
+                char::from_u32(BMP_START + 1).unwrap().to_string(),
+            );
+        }
 
         let private_use_index = |character: char| {
             let value = character as u32;
