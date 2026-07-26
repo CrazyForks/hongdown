@@ -45,6 +45,13 @@ struct VerbatimReference {
     line: usize,
 }
 
+struct DisableRegionBounds {
+    region_start: usize,
+    region_end: usize,
+    enable_index: Option<usize>,
+    disables_file: bool,
+}
+
 struct UnresolvedReferenceInline {
     text: String,
     opener_ranges: Vec<(usize, usize)>,
@@ -239,26 +246,10 @@ impl<'a> Serializer<'a> {
                         // consumed by the parser and has no node of its own, so
                         // a node-by-node copy would leave the region's links
                         // pointing at nothing.
-                        let enable_index = Self::find_enable_directive(&children, i);
-                        let region_last = enable_index.unwrap_or(children.len());
-                        let region_start = child.data.borrow().sourcepos.end.line + 1;
-                        // A directive disabling the file, written inside the
-                        // region, disables it past the region's own end, so the
-                        // copy runs to the last line and nothing follows it.
-                        let disables_file = Self::disables_file(&children[i + 1..region_last]);
-                        let region_end = match enable_index {
-                            Some(_) if disables_file => self.source_lines.len(),
-                            Some(j) => children[j]
-                                .data
-                                .borrow()
-                                .sourcepos
-                                .start
-                                .line
-                                .saturating_sub(1),
-                            None => self.source_lines.len(),
-                        };
+                        let bounds = self.disable_region_bounds(&children, i);
+                        let region_last = bounds.enable_index.unwrap_or(children.len());
                         let region = self
-                            .extract_source_lines(region_start, region_end)
+                            .extract_source_lines(bounds.region_start, bounds.region_end)
                             .map(|source| Self::trim_blank_lines(&source))
                             .unwrap_or_default();
 
@@ -294,7 +285,7 @@ impl<'a> Serializer<'a> {
                             self.output.push('\n');
                             self.output.push_str(&region);
                             self.output.push('\n');
-                            if disables_file {
+                            if bounds.disables_file {
                                 return;
                             }
                             skip_until = region_last;
@@ -475,6 +466,34 @@ impl<'a> Serializer<'a> {
             .map(|(i, _)| i)
     }
 
+    /// Find the source bounds and closing directive of a disabled region.
+    fn disable_region_bounds<'b>(
+        &self,
+        children: &[&'b AstNode<'b>],
+        from: usize,
+    ) -> DisableRegionBounds {
+        let enable_index = Self::find_enable_directive(children, from);
+        let region_last = enable_index.unwrap_or(children.len());
+        let disables_file = Self::disables_file(&children[from + 1..region_last]);
+        let region_end = match enable_index {
+            Some(_) if disables_file => self.source_lines.len(),
+            Some(index) => children[index]
+                .data
+                .borrow()
+                .sourcepos
+                .start
+                .line
+                .saturating_sub(1),
+            None => self.source_lines.len(),
+        };
+        DisableRegionBounds {
+            region_start: children[from].data.borrow().sourcepos.end.line + 1,
+            region_end,
+            enable_index,
+            disables_file,
+        }
+    }
+
     /// Collect the source line ranges that are copied verbatim instead of being
     /// rebuilt from the AST: every `hongdown-disable` region and the tail that
     /// follows a `hongdown-disable-file` directive.
@@ -498,28 +517,13 @@ impl<'a> Serializer<'a> {
                     break;
                 }
                 Some(Directive::Disable) => {
-                    let enable_index = Self::find_enable_directive(children, i);
-                    let region_last = enable_index.unwrap_or(children.len());
-                    // A directive disabling the file leaves everything after it
-                    // as it stands, which reaches past the end of the region it
-                    // is written in.
-                    if Self::disables_file(&children[i + 1..region_last]) {
-                        ranges.push((start_line, last_line));
+                    let bounds = self.disable_region_bounds(children, i);
+                    ranges.push((bounds.region_start, bounds.region_end));
+                    if bounds.disables_file {
                         break;
                     }
-                    let end_line = match enable_index {
-                        Some(j) => children[j]
-                            .data
-                            .borrow()
-                            .sourcepos
-                            .start
-                            .line
-                            .saturating_sub(1),
-                        None => last_line,
-                    };
-                    ranges.push((start_line, end_line));
                     // Nested directives inside the region are part of the copy.
-                    i = region_last;
+                    i = bounds.enable_index.unwrap_or(children.len());
                 }
                 _ => {}
             }
@@ -850,10 +854,10 @@ impl<'a> Serializer<'a> {
     /// Mark every line of the given ranges in a line-indexed table.
     fn mark_lines(ranges: &[(usize, usize)], lines: &mut [bool]) {
         for (start, end) in ranges {
-            for line in (*start).max(1)..=*end {
-                if let Some(marked) = lines.get_mut(line - 1) {
-                    *marked = true;
-                }
+            let start = (*start).max(1);
+            let end = (*end).min(lines.len());
+            for line in start..=end {
+                lines[line - 1] = true;
             }
         }
     }
