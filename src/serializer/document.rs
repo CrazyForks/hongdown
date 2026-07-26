@@ -214,7 +214,12 @@ impl<'a> Serializer<'a> {
                         let enable_index = Self::find_enable_directive(&children, i);
                         let region_last = enable_index.unwrap_or(children.len());
                         let region_start = child.data.borrow().sourcepos.end.line + 1;
+                        // A directive disabling the file, written inside the
+                        // region, disables it past the region's own end, so the
+                        // copy runs to the last line and nothing follows it.
+                        let disables_file = Self::disables_file(&children[i + 1..region_last]);
                         let region_end = match enable_index {
+                            Some(_) if disables_file => self.source_lines.len(),
                             Some(j) => children[j]
                                 .data
                                 .borrow()
@@ -261,6 +266,9 @@ impl<'a> Serializer<'a> {
                             self.output.push('\n');
                             self.output.push_str(&region);
                             self.output.push('\n');
+                            if disables_file {
+                                return;
+                            }
                             skip_until = region_last;
                         }
                         continue;
@@ -394,6 +402,19 @@ impl<'a> Serializer<'a> {
         self.output_trailing_html_blocks(&children, trailing_html_start);
     }
 
+    /// Whether any of these nodes is a directive disabling the file, which
+    /// leaves the rest of it as it stands wherever the directive is written,
+    /// the end of an enclosing region included.
+    fn disables_file<'b>(children: &[&'b AstNode<'b>]) -> bool {
+        children.iter().any(|child| {
+            matches!(
+                &child.data.borrow().value,
+                NodeValue::HtmlBlock(html_block)
+                    if Directive::parse(&html_block.literal) == Some(Directive::DisableFile)
+            )
+        })
+    }
+
     /// Take up the nouns a node names, where the node is a directive naming
     /// any.  Whether the node's own text is formatted or copied has no bearing
     /// on the headings it speaks for.
@@ -450,6 +471,14 @@ impl<'a> Serializer<'a> {
                 }
                 Some(Directive::Disable) => {
                     let enable_index = Self::find_enable_directive(children, i);
+                    let region_last = enable_index.unwrap_or(children.len());
+                    // A directive disabling the file leaves everything after it
+                    // as it stands, which reaches past the end of the region it
+                    // is written in.
+                    if Self::disables_file(&children[i + 1..region_last]) {
+                        ranges.push((start_line, last_line));
+                        break;
+                    }
                     let end_line = match enable_index {
                         Some(j) => children[j]
                             .data
@@ -462,7 +491,7 @@ impl<'a> Serializer<'a> {
                     };
                     ranges.push((start_line, end_line));
                     // Nested directives inside the region are part of the copy.
-                    i = enable_index.unwrap_or(children.len());
+                    i = region_last;
                 }
                 _ => {}
             }

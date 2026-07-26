@@ -1897,6 +1897,16 @@ fn test_directive_disable_preserves_footnote_definition_in_place() {
 }
 
 #[test]
+fn test_directive_disable_file_inside_a_region_reaches_past_it() {
+    // A directive disabling the file does so wherever it is written, so the
+    // region it sits in is not where its effect ends.  What follows the enable
+    // keeps its own marker and spacing.
+    let input = "<!-- hongdown-disable -->\n\n<!-- hongdown-disable-file -->\n\nRaw   text.\n\n<!-- hongdown-enable -->\n\n*   badly    spaced list item\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(result, input, "the rest of the file must be left as it is");
+}
+
+#[test]
 fn test_directive_disable_keeps_trailing_comment_once() {
     // A trailing HTML comment inside the region is part of the verbatim copy
     // and must not be emitted a second time after the references.
