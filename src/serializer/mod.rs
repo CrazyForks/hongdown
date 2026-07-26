@@ -40,6 +40,28 @@ fn strip_math_sentinels(mut output: String) -> String {
     output
 }
 
+/// The byte offset of the first `delimiter` a backslash does not escape.
+///
+/// A link label may hold either bracket escaped, as in `[a\]b]`, and cutting it
+/// at that bracket would leave a label that no longer names the same
+/// definition.  The same rule decides where a definition's label ends, so both
+/// readings share this one.
+pub(super) fn find_unescaped(text: &str, delimiter: char) -> Option<usize> {
+    let mut escaped = false;
+    for (offset, character) in text.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match character {
+            '\\' => escaped = true,
+            _ if character == delimiter => return Some(offset),
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Result of serialization including output and any warnings.
 pub struct SerializeResult {
     /// The formatted Markdown output.
@@ -103,7 +125,17 @@ impl<'a> Serializer<'a> {
     /// Returns Some((text, label)) if reference style, None if inline style.
     /// The returned text has newlines normalized to spaces for consistent output.
     fn get_reference_style_info<'b>(&self, node: &'b AstNode<'b>) -> Option<(String, String)> {
-        let source = self.extract_source(node)?;
+        self.get_reference_style_info_shifted(node, 0)
+    }
+
+    /// As [`Self::get_reference_style_info`], for a node whose reported lines
+    /// sit `line_offset` above its real ones.
+    fn get_reference_style_info_shifted<'b>(
+        &self,
+        node: &'b AstNode<'b>,
+        line_offset: usize,
+    ) -> Option<(String, String)> {
+        let source = self.extract_source_shifted(node, line_offset)?;
 
         // Reference style patterns:
         // [text][label] or ![text][label] - full reference
@@ -123,11 +155,18 @@ impl<'a> Serializer<'a> {
         let first_bracket = source.find('[')?;
         let chars: Vec<char> = source.chars().collect();
 
-        // Find the closing bracket at depth 0 (the one that closes the text/content part)
+        // Find the closing bracket at depth 0 (the one that closes the text/content part).
+        // A backslash-escaped bracket is part of the text, not a delimiter.
         let mut depth = 0;
+        let mut escaped = false;
         let mut text_end_pos = None;
         for (i, &ch) in chars.iter().enumerate().skip(first_bracket) {
+            if escaped {
+                escaped = false;
+                continue;
+            }
             match ch {
+                '\\' => escaped = true,
                 '[' => depth += 1,
                 ']' => {
                     depth -= 1;
@@ -156,8 +195,8 @@ impl<'a> Serializer<'a> {
 
         // If followed by "[", it's full or collapsed reference style
         if let Some(label_content) = after_close.strip_prefix('[') {
-            // Find the label between [ and ]
-            if let Some(label_end) = label_content.find(']') {
+            // Find the label between [ and ], again past any escaped bracket
+            if let Some(label_end) = find_unescaped(label_content, ']') {
                 let label = label_content[..label_end].to_string();
                 // Normalize label too
                 let label = escape::normalize_whitespace(&label);
@@ -181,7 +220,13 @@ impl<'a> Serializer<'a> {
 
     /// Ensure output ends with a blank line (two newlines).
     /// Used before emitting reference definitions and footnotes.
+    ///
+    /// Empty output needs no separator: a document must not start with blank
+    /// lines just because its first emitted thing is a definition.
     fn ensure_blank_line(&mut self) {
+        if self.output.is_empty() {
+            return;
+        }
         if !self.output.ends_with("\n\n") {
             if self.output.ends_with('\n') {
                 self.output.push('\n');
@@ -191,8 +236,18 @@ impl<'a> Serializer<'a> {
         }
     }
 
-    /// Output pending reference definitions and clear them
+    /// Output all pending reference definitions and clear them.
     fn flush_references(&mut self) {
+        self.flush_references_before(None);
+    }
+
+    /// Output the pending reference definitions, along with the queued
+    /// definitions of copied links that the source places before `before_line`.
+    fn flush_references_before(&mut self, before_line: Option<usize>) {
+        // Definitions that copied links depend on join the pending ones here,
+        // behind whatever the document's own links registered before them.
+        self.take_deferred_references(before_line);
+
         if self.pending_references.is_empty() {
             return;
         }

@@ -1281,6 +1281,952 @@ fn test_directive_disable_enable() {
 }
 
 #[test]
+fn test_directive_disable_preserves_reference_definition() {
+    // A reference definition inside a disabled region has no AST node of its
+    // own, but it must still survive: dropping it leaves the region's links
+    // pointing at nothing.
+    let input = "Intro.\n\n<!-- hongdown-disable -->\n\nPreserved [guide] here.\n\n[guide]: https://example.com/preserved\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(
+        result, input,
+        "a disabled region must keep its own reference definition"
+    );
+}
+
+#[test]
+fn test_directive_disable_preserves_region_verbatim() {
+    // Everything between the directives is copied from the source, so
+    // indentation and blank lines inside the region are kept as they were.
+    let input = "Intro.\n\n<!-- hongdown-disable -->\n\n  Indented   [a] line.\n\n\n[a]: https://example.com/a\n[b]: https://example.com/b \"Title\"\n\nUses [b] too.\n\n<!-- hongdown-enable -->\n\nBack.\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(
+        result, input,
+        "a disabled region must be preserved verbatim"
+    );
+}
+
+#[test]
+fn test_directive_disable_keeps_definitions_defined_outside() {
+    // The definitions live after the region, so they cannot be copied with it;
+    // the region's links must still keep them from being dropped.
+    let input = "Normal paragraph.\n\n<!-- hongdown-disable -->\n\n[![Badge][img]][url]\n\n<!-- hongdown-enable -->\n\nBack to normal formatting.\n\n[img]: https://example.com/img.svg\n[url]: https://example.com\n";
+    let result = parse_and_serialize_with_source(input);
+    // Definitions keep the order the formatted path would give them: the
+    // badge's image is registered before the link wrapping it.
+    assert_eq!(
+        result, input,
+        "definitions used only inside a disabled region must be kept"
+    );
+}
+
+#[test]
+fn test_directive_disable_without_source_still_skips_formatting() {
+    // Without the original source there is nothing to copy, so the region
+    // falls back to emitting its blocks one by one.
+    let input = "Normal.\n\n<!-- hongdown-disable -->\n\nUnformatted.\n\n<!-- hongdown-enable -->\n\nBack.\n";
+    let result = parse_and_serialize(input);
+    assert!(
+        result.contains("Unformatted."),
+        "the region's content must survive without a source, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_copied_definition_holds_its_label() {
+    // No link resolves through the copied definition, so nothing reveals its
+    // target, but it still defines the label document-wide.  Letting a later
+    // link take that label would put a second definition after it, and since
+    // CommonMark keeps the first, the later link would point at the copy.
+    let input = "<!-- hongdown-disable -->\n\nRaw text.\n\n[guide]: https://example.com/copied\n\n<!-- hongdown-enable -->\n\nLater [guide](https://example.com/other) link.\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(
+        result,
+        "<!-- hongdown-disable -->\n\nRaw text.\n\n[guide]: https://example.com/copied\n\n<!-- hongdown-enable -->\n\nLater [guide][guide 2] link.\n\n[guide 2]: https://example.com/other\n",
+        "the later link must keep its own destination"
+    );
+    assert_eq!(
+        parse_and_serialize_with_source(&result),
+        result,
+        "formatting must be idempotent"
+    );
+}
+
+#[test]
+fn test_directive_disable_copied_duplicate_holds_its_label() {
+    // The copy repeats a label defined above it, and nothing resolves through
+    // the definition above, so that one is dropped as unused.  The copy is
+    // still a definition, and a later link taking its label would resolve
+    // through the copy rather than through its own destination.
+    let input = "[g]: https://example.com/first\n\n<!-- hongdown-disable -->\n\nRaw text.\n\n[g]: https://example.com/second\n\n<!-- hongdown-enable -->\n\nLater [g](https://example.com/other) link.\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("Later [g][g 2] link.")
+            && result.contains("[g 2]: https://example.com/other"),
+        "the later link must keep its own destination, got:\n{}",
+        result
+    );
+    assert_eq!(
+        parse_and_serialize_with_source(&result),
+        result,
+        "formatting must be idempotent"
+    );
+}
+
+#[test]
+fn test_directive_disable_link_keeps_its_label_against_a_formatted_one() {
+    // Both links want the label `guide` for different destinations.  The one
+    // inside the region is copied verbatim and cannot be relabelled, so the
+    // formatted link is the one that takes a derived label.
+    let input = "[guide](https://example.com/first)\n\n<!-- hongdown-disable -->\n\nSee [guide] here.\n\n<!-- hongdown-enable -->\n\n[guide]: https://example.com/second\n";
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(
+        result.output,
+        "[guide][guide 2]\n\n[guide 2]: https://example.com/first\n\n<!-- hongdown-disable -->\n\nSee [guide] here.\n\n<!-- hongdown-enable -->\n\n[guide]: https://example.com/second\n",
+        "the verbatim link must keep its label and both destinations must survive"
+    );
+    assert!(
+        result.warnings.is_empty(),
+        "the collision is resolvable, so nothing should be reported: {:?}",
+        result.warnings
+    );
+    assert_eq!(
+        parse_and_serialize_with_source(&result.output),
+        result.output,
+        "formatting must be idempotent"
+    );
+}
+
+#[test]
+fn test_directive_disable_file_keeps_definitions_defined_before() {
+    // The tail keeps its source text, so a definition placed before the
+    // directive is only kept if the tail's links reserve it.
+    let input = "Intro.\n\n<!-- hongdown-disable-file -->\n\nRaw   [guide] text.\n";
+    let source = format!("[guide]: https://example.com/guide\n\n{}", input);
+    let result = parse_and_serialize_with_source(&source);
+    assert!(
+        result.contains("[guide]: https://example.com/guide"),
+        "a definition the disabled tail depends on must be kept, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_keeps_a_duplicated_definition_inert() {
+    // The region's copy repeats a label that is already defined above it.
+    // CommonMark resolves both links through the first definition, so that one
+    // has to stay first in the output or the links would be retargeted.
+    let input = "Intro [g].\n\n[g]: https://example.com/first\n\n<!-- hongdown-disable -->\n\nRaw [g].\n\n[g]: https://example.com/second\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(
+        result, input,
+        "the winning definition must stay ahead of the copied duplicate"
+    );
+}
+
+#[test]
+fn test_directive_disable_keeps_a_multiline_definition_ahead_of_its_duplicate() {
+    // The winning definition spells its destination on the following line, as
+    // CommonMark allows.  Overlooking it would make the region's duplicate look
+    // like the winner and let the copy retarget the link.
+    let input = "Intro.\n\n[g]:\n    https://example.com/first\n\n<!-- hongdown-disable -->\n\nRaw [g].\n\n[g]: https://example.com/second\n";
+    let result = parse_and_serialize_with_source(input);
+    let winner = result
+        .find("[g]: https://example.com/first")
+        .expect("the winning definition must be kept");
+    let duplicate = result
+        .find("[g]: https://example.com/second")
+        .expect("the region's copy must be preserved");
+    assert!(
+        winner < duplicate,
+        "the winning definition must come first, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_definition_inside_region_is_not_duplicated() {
+    // The definition is copied with the region and also serves a link outside
+    // it; the outside link must reuse that copy rather than emit its own.
+    let input =
+        "Intro [g].\n\n<!-- hongdown-disable -->\n\nRaw [g].\n\n[g]: https://example.com/url\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(
+        result.matches("[g]: ").count(),
+        1,
+        "the definition must appear exactly once, got:\n{}",
+        result
+    );
+    assert_eq!(result, input, "the region must be preserved verbatim");
+}
+
+#[test]
+fn test_directive_disable_ignores_definitions_inside_code_blocks() {
+    // A definition-looking line inside a fenced code block in the region is
+    // not a definition, so the real one outside must still be kept.
+    let input = "Intro.\n\n<!-- hongdown-disable -->\n\nSee [guide] here.\n\n~~~~ markdown\n[guide]: https://example.com/not-a-definition\n~~~~\n\n<!-- hongdown-enable -->\n\n[guide]: https://example.com/real\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("[guide]: https://example.com/real"),
+        "a definition must not be considered preserved by a code block, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_ignores_definitions_inside_html_blocks() {
+    // Raw HTML is not Markdown either, so a definition-looking line in it does
+    // not stand in for the real definition outside the region.
+    let input = "Intro.\n\n<!-- hongdown-disable -->\n\nSee [guide] here.\n\n<pre>\n[guide]: https://example.com/not-a-definition\n</pre>\n\n<!-- hongdown-enable -->\n\n[guide]: https://example.com/real\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("[guide]: https://example.com/real"),
+        "a definition must not be considered preserved by an HTML block, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_ignores_a_bare_label_that_defines_nothing() {
+    // `[foo]:` here is a continuation line of a paragraph, not a definition, so
+    // the real definition must still be kept.
+    let input = "Intro.\n\n<!-- hongdown-disable -->\n\nSee [foo] here.\n\nA line\n[foo]:\nnot a destination at all\n\n<!-- hongdown-enable -->\n\n[foo]: https://example.com/real\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("[foo]: https://example.com/real"),
+        "a label that defines nothing must not stand in for the definition, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_ignores_a_definition_lookalike_in_a_paragraph() {
+    // The line inside the region continues a paragraph, so it defines nothing.
+    // Taking it for the winning definition would suppress the real one and
+    // leave both links pointing at nothing.
+    let input = "Formatted [g] link.\n\n<!-- hongdown-disable -->\n\nThis is prose\n[g]: https://example.com/not-a-definition\n\n<!-- hongdown-enable -->\n\nEnd.\n\n[g]: https://example.com/real\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("[g]: https://example.com/real"),
+        "the real definition must survive, got:\n{}",
+        result
+    );
+    assert_eq!(
+        parse_and_serialize_with_source(&result),
+        result,
+        "formatting must be idempotent"
+    );
+}
+
+#[test]
+fn test_directive_disable_sees_a_blockquoted_definition_in_the_region() {
+    // A definition under a blockquote prefix is still a definition, and it is
+    // copied with the region, so it must not also be emitted outside it.
+    let input = "Intro.\n\n<!-- hongdown-disable -->\n\n> Quoted [g] link.\n>\n> [g]: https://example.com/quoted\n\n<!-- hongdown-enable -->\n\nEnd.\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(
+        result.matches("[g]: ").count(),
+        1,
+        "the definition must appear exactly once, got:\n{}",
+        result
+    );
+    assert_eq!(result, input, "the region must be preserved verbatim");
+}
+
+#[test]
+fn test_directive_disable_ignores_a_definition_lookalike_in_a_code_span() {
+    // A code span holding a newline spans lines without a break node, so the
+    // line count alone would expose the line above it.  It is paragraph content
+    // all the same, and the real definition must survive.
+    let input = "Formatted [g] link.\n\n<!-- hongdown-disable -->\n\nSee [g] and `code\n[g]: not-a-definition\nspan`\n\n<!-- hongdown-enable -->\n\nEnd.\n\n[g]: https://example.com/real\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("[g]: https://example.com/real"),
+        "the real definition must survive, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_sees_a_definition_at_a_paragraph_head() {
+    // The parser consumes a definition written at the head of a paragraph but
+    // leaves its line inside the paragraph's span.  Overlooking it would make
+    // the region's duplicate look like the winner and retarget the links.
+    let input = "Intro.\n\n[g]: https://example.com/first\nSome text right after.\n\n<!-- hongdown-disable -->\n\nRaw [g].\n\n[g]: https://example.com/second\n";
+    let result = parse_and_serialize_with_source(input);
+    let winner = result
+        .find("[g]: https://example.com/first")
+        .expect("the winning definition must be kept");
+    let duplicate = result
+        .find("[g]: https://example.com/second")
+        .expect("the region's copy must be preserved");
+    assert!(
+        winner < duplicate,
+        "the winning definition must come first, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_sees_definitions_after_a_multiline_one() {
+    // The first definition takes its destination from the line below it, and
+    // the second sits beneath that.  Overlooking the second would make the
+    // region's duplicate of it the apparent winner and retarget the links.
+    let input = "Intro.\n\n[a]:\n    https://example.com/a\n[b]: https://example.com/b\nSome text right after.\n\n<!-- hongdown-disable -->\n\nRaw [a] and [b].\n\n[b]: https://example.com/wrong\n";
+    let result = parse_and_serialize_with_source(input);
+    let winner = result
+        .find("[b]: https://example.com/b")
+        .expect("the winning definition must be kept");
+    let duplicate = result
+        .find("[b]: https://example.com/wrong")
+        .expect("the region's copy must be preserved");
+    assert!(
+        winner < duplicate,
+        "the winning definition must come first, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_shadowed_definition_beats_a_footnote_schedule() {
+    // The winning definition is only spoken for by a footnote referenced after
+    // the region, and that collection is flushed on the footnote's schedule.
+    // It still has to come out ahead of the copy that redefines the label.
+    let input = "[a]: https://example.com/first\n\nIntro [a].\n\n<!-- hongdown-disable -->\n\nRaw [a].\n\n[a]: https://example.com/second\n\n<!-- hongdown-enable -->\n\nText[^1].\n\n[^1]: See [a].\n";
+    let result = parse_and_serialize_with_source(input);
+    let winner = result
+        .find("[a]: https://example.com/first")
+        .expect("the winning definition must be kept");
+    let duplicate = result
+        .find("[a]: https://example.com/second")
+        .expect("the region's copy must be preserved");
+    assert!(
+        winner < duplicate,
+        "the winning definition must come first, got:\n{}",
+        result
+    );
+    assert_eq!(
+        result.matches("[a]: https://example.com/first").count(),
+        1,
+        "and only once, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_sees_a_definition_a_setext_heading_swallowed() {
+    // A setext heading keeps the lines of a definition consumed at its head,
+    // just as a paragraph does.  Overlooking it would make the region's copy
+    // the apparent winner and retarget the links.
+    let input = "[a]: https://example.com/first\nHeading\n=======\n\nIntro [a].\n\n<!-- hongdown-disable -->\n\nRaw [a].\n\n[a]: https://example.com/second\n";
+    let result = parse_and_serialize_with_source(input);
+    let winner = result
+        .find("[a]: https://example.com/first")
+        .expect("the winning definition must be kept");
+    let duplicate = result
+        .find("[a]: https://example.com/second")
+        .expect("the region's copy must be preserved");
+    assert!(
+        winner < duplicate,
+        "the winning definition must come first, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_next_line_survives_a_noun_directive() {
+    // A directive that only names nouns leaves the skip in place, so the block
+    // after it is still the one copied, along with the definition at its head.
+    let input = "<!-- hongdown-disable-next-line -->\n<!-- hongdown-proper-nouns: Foo -->\n[a]: https://example.com/copied\nSome   prose.\n\nLater [a](https://example.com/other).\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("Later [a][a 2].") && result.contains("[a 2]: https://example.com/other"),
+        "the copied definition must hold its label, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_next_line_survives_a_footnote_definition() {
+    // A footnote definition is emitted by the footnote machinery rather than
+    // copied, so it does not consume the skip either.
+    let input = "Text[^1].\n\n<!-- hongdown-disable-next-line -->\n\n[^1]: Note.\n\n[a]: https://example.com/copied\nSome   prose.\n\nLater [a](https://example.com/other).\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("Later [a][a 2].") && result.contains("[a 2]: https://example.com/other"),
+        "the copied definition must hold its label, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_next_section_ends_at_an_enable() {
+    // `hongdown-enable` ends a section-wide skip, so what follows is formatted
+    // and its definitions are not carried by any copy.
+    let input = "<!-- hongdown-disable-next-section -->\n\nRaw   text.\n\n<!-- hongdown-enable -->\n\n[a]: https://example.com/plain\nSome prose.\n\nLater [a](https://example.com/other).\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("Raw   text."),
+        "the skipped block must keep its spacing, got:\n{}",
+        result
+    );
+    assert!(
+        result.contains("Later [a].") && result.contains("[a]: https://example.com/other"),
+        "the label is free after the enable, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_next_line_copy_carries_its_head_definition() {
+    // The block is copied by its source span, which reaches back over the
+    // definition consumed at its head, so the copy defines that label too and
+    // a later link must not take it.
+    let input = "<!-- hongdown-disable-next-line -->\n[a]: https://example.com/copied\nSome   prose.\n\nLater [a](https://example.com/other).\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("Later [a][a 2].") && result.contains("[a 2]: https://example.com/other"),
+        "the later link must keep its own destination, got:\n{}",
+        result
+    );
+    assert_eq!(
+        parse_and_serialize_with_source(&result),
+        result,
+        "formatting must be idempotent"
+    );
+}
+
+#[test]
+fn test_directive_disable_reservation_precedes_a_setext_heading() {
+    // The definition sits on the line a setext heading reports as its own
+    // start, but it precedes the heading, so it belongs above the section.
+    let input = "<!-- hongdown-disable -->\n\nRaw [a].\n\n<!-- hongdown-enable -->\n\n[a]: https://example.com/first\nSection\n-------\n\nBody.\n";
+    let result = parse_and_serialize_with_source(input);
+    let definition = result
+        .find("[a]: https://example.com/first")
+        .expect("the definition must be kept");
+    let section = result
+        .find("Section\n-------")
+        .expect("the section must be emitted");
+    assert!(
+        definition < section,
+        "the definition must come before the section it precedes, got:\n{}",
+        result
+    );
+    assert_eq!(
+        parse_and_serialize_with_source(&result),
+        result,
+        "formatting must be idempotent"
+    );
+}
+
+#[test]
+fn test_directive_disable_reservation_waits_for_its_section() {
+    // The definition the copied link needs sits after a section boundary, so
+    // reserving it must not pull it up to that boundary.  It is a link only on
+    // the second run, when the first has already written the definition, so
+    // pulling it up would mean one run never settles the file.
+    let input = "<!-- hongdown-disable -->\n\nRaw [a].\n\n<!-- hongdown-enable -->\n\nSection\n-------\n\nLater [a](https://example.com/a).\n";
+    let result = parse_and_serialize_with_source(input);
+    let definition = result
+        .find("[a]: https://example.com/a")
+        .expect("the definition must be kept");
+    let section = result.find("Section").expect("the section must be emitted");
+    assert!(
+        definition > section,
+        "the definition must stay in the section the source put it in, got:\n{}",
+        result
+    );
+    assert_eq!(
+        parse_and_serialize_with_source(&result),
+        result,
+        "one pass must settle the file"
+    );
+}
+
+#[test]
+fn test_directive_disable_reservation_keeps_its_section() {
+    // Nothing outside the region uses these labels, so the reservation decides
+    // where they go.  It follows the source, which puts them at the end of the
+    // region's own section rather than at the end of the document.
+    let input = "Section one\n-----------\n\n<!-- hongdown-disable -->\n\n[![B][img]][url]\n\n<!-- hongdown-enable -->\n\n[img]: https://example.com/i.svg\n[url]: https://example.com/u\n\n\nSection two\n-----------\n\nText.\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(
+        result, input,
+        "the definitions must stay in their own section"
+    );
+}
+
+#[test]
+fn test_directive_disable_reservation_keeps_the_definition_order() {
+    // `[a]` in the region resolves only once the formatter has defined it, so
+    // it is a link on the second run and not on the first.  Reserving it must
+    // not therefore move its definition ahead of `[b]`, or one run would not
+    // settle the file.
+    let input = "<!-- hongdown-disable -->\n\nRaw [a].\n\n<!-- hongdown-enable -->\n\nLater [b](https://example.com/b) and [a](https://example.com/a).\n";
+    let result = parse_and_serialize_with_source(input);
+    let first = result
+        .find("[b]: https://example.com/b")
+        .expect("the first definition must be kept");
+    let second = result
+        .find("[a]: https://example.com/a")
+        .expect("the second definition must be kept");
+    assert!(
+        first < second,
+        "the definitions must follow the order the document's own links set, got:\n{}",
+        result
+    );
+    assert_eq!(
+        parse_and_serialize_with_source(&result),
+        result,
+        "one pass must settle the file"
+    );
+}
+
+#[test]
+fn test_directive_disable_rejects_a_malformed_definition_lookalike() {
+    // Neither line is a definition — the parser leaves both inside a paragraph
+    // — so the real definition must survive.
+    let input = "Intro.\n\n<!-- hongdown-disable -->\n\nSee [g].\n\nprose\n[g]: foo(bar\n[g]: <unterminated\n\n<!-- hongdown-enable -->\n\n[g]: https://example.com/real\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("[g]: https://example.com/real"),
+        "the real definition must survive, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_accepts_a_destination_with_balanced_parentheses() {
+    // Parentheses are ordinary in URLs, so the definition is real and is copied
+    // with the region rather than emitted a second time outside it.
+    let input = "Intro.\n\n<!-- hongdown-disable -->\n\nSee [w].\n\n[w]: https://en.wikipedia.org/wiki/Foo_(bar)\n\n<!-- hongdown-enable -->\n\nEnd.\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(
+        result.matches("[w]: ").count(),
+        1,
+        "the definition must appear exactly once, got:\n{}",
+        result
+    );
+    assert_eq!(result, input, "the region must be preserved verbatim");
+}
+
+#[test]
+fn test_directive_disable_separates_a_definition_from_the_directive() {
+    // The definition is flushed above the region because the copy redefines the
+    // label, and it has no node of its own for the child index to count.
+    let input = "[g]: https://example.com/first\n\n<!-- hongdown-disable -->\n\nRaw [g].\n\n[g]: https://example.com/second\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(
+        result, input,
+        "the directive must not run into the definition above it"
+    );
+}
+
+#[test]
+fn test_directive_after_front_matter_gets_one_blank_line() {
+    // Front matter already ends with a blank line, so the directive must not
+    // add another one on top of it.
+    let input = "---\ntitle: Test\n---\n\n<!-- hongdown-disable-next-line -->\n\nSome   text.\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(
+        result, input,
+        "a directive after front matter must be separated by one blank line"
+    );
+}
+
+#[test]
+fn test_directive_disable_file_definition_does_not_add_leading_blank_lines() {
+    // The definition is the only thing before the directive, and it has no node
+    // of its own, so the document would start with the flush that emits it.
+    let input = "[g]: https://example.com/g\n\n<!-- hongdown-disable-file -->\n\nRaw   [g] text.\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(
+        result, input,
+        "a document must not gain leading blank lines"
+    );
+}
+
+#[test]
+fn test_directive_disable_next_line_keeps_definitions() {
+    // Same loss through a different directive: the badge is emitted verbatim,
+    // so nothing registers the definitions it depends on.
+    let input = "<!-- hongdown-disable-next-line -->\n[![Badge][badge-img]][badge-url]\n\n[badge-img]: https://example.com/badge.svg\n[badge-url]: https://example.com\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("[badge-img]: https://example.com/badge.svg"),
+        "disable-next-line must keep the definitions its block uses, got:\n{}",
+        result
+    );
+    assert!(
+        result.contains("[badge-url]: https://example.com"),
+        "disable-next-line must keep the definitions its block uses, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_next_section_keeps_definitions() {
+    // Without a following heading the whole rest of the document is skipped,
+    // so its links are the only users of the definitions.
+    let input = "Intro.\n\n<!-- hongdown-disable-next-section -->\n\nPreserved [guide] here.\n\n[guide]: https://example.com/preserved\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("[guide]: https://example.com/preserved"),
+        "disable-next-section must keep the definitions its content uses, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_preserves_footnote_definition_in_place() {
+    // A footnote definition inside the region is copied with the region, so it
+    // must not also be re-emitted by the footnote flush.
+    let input = "Intro.\n\n<!-- hongdown-disable -->\n\nPara[^1].\n\n[^1]: The   note.\n\n<!-- hongdown-enable -->\n\nAfter.\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(
+        result.matches("[^1]:").count(),
+        1,
+        "the footnote definition must not be duplicated, got:\n{}",
+        result
+    );
+    assert_eq!(
+        result, input,
+        "a footnote definition inside a disabled region stays where it was"
+    );
+}
+
+#[test]
+fn test_directive_disable_file_inside_a_region_reaches_past_it() {
+    // A directive disabling the file does so wherever it is written, so the
+    // region it sits in is not where its effect ends.  What follows the enable
+    // keeps its own marker and spacing.
+    let input = "<!-- hongdown-disable -->\n\n<!-- hongdown-disable-file -->\n\nRaw   text.\n\n<!-- hongdown-enable -->\n\n*   badly    spaced list item\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(result, input, "the rest of the file must be left as it is");
+}
+
+#[test]
+fn test_directive_disable_keeps_trailing_comment_once() {
+    // A trailing HTML comment inside the region is part of the verbatim copy
+    // and must not be emitted a second time after the references.
+    let input = "Intro.\n\n<!-- hongdown-disable -->\n\nPara.\n\n<!-- a comment -->\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(
+        result.matches("<!-- a comment -->").count(),
+        1,
+        "the trailing comment must not be duplicated, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_definition_used_on_both_sides() {
+    // The definition sits outside the region and is used from both sides; it
+    // must stay where the formatter normally puts it, exactly once.
+    let input = "Intro.\n\n<!-- hongdown-disable -->\n\nPreserved [guide] here.\n\n<!-- hongdown-enable -->\n\nAfter [guide] too.\n\n[guide]: https://example.com/preserved\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(
+        result, input,
+        "the shared definition must be kept exactly once"
+    );
+}
+
+#[test]
+fn test_reference_label_keeps_an_escaped_bracket() {
+    // A label may hold a bracket the backslash escapes.  Cutting the label
+    // there would name a different definition, and the output would no longer
+    // parse as one.
+    let input = "See [x][a\\]b] here.\n\n[a\\]b]: https://example.com/x\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(result, input, "the label must be read whole");
+}
+
+#[test]
+fn test_directive_disable_reads_a_link_below_a_consumed_definition() {
+    // The copied paragraph opens with a definition, so the parser reports the
+    // link inside it against the paragraph's own start, a line above where it
+    // really sits.  Reading the link there would find no label, the winning
+    // definition would go unreserved, and the copy's own would take over.
+    let input = "[b]: https://example.com/first\n\n<!-- hongdown-disable -->\n\n[b]: https://example.com/second\nRaw [b].\n\n<!-- hongdown-enable -->\n\nEnd.\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(
+        result, input,
+        "the winning definition must survive, ahead of the copy"
+    );
+}
+
+#[test]
+fn test_directive_disable_next_line_reads_a_link_below_a_consumed_definition() {
+    // Same block, copied by a different directive: the winning definition still
+    // has to come out above the copy that repeats its label.
+    let input = "[b]: https://example.com/first\n\n<!-- hongdown-disable-next-line -->\n[b]: https://example.com/second\nRaw [b].\n";
+    let result = parse_and_serialize_with_source(input);
+    let winner = result
+        .find("[b]: https://example.com/first")
+        .expect("the winning definition must be kept");
+    let duplicate = result
+        .find("[b]: https://example.com/second")
+        .expect("the region's copy must be preserved");
+    assert!(
+        winner < duplicate,
+        "the winning definition must come first, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_sees_a_definition_below_a_multiline_title() {
+    // The first definition's title runs onto a second line, and the next
+    // definition sits beneath it.  Missing that one would make the region's
+    // copy of its label look like the winner.
+    let input = "[a]: https://example.com/a \"A title\nspanning lines\"\n[b]: https://example.com/first\nSome prose.\n\n<!-- hongdown-disable -->\n\nRaw [b].\n\n[b]: https://example.com/second\n";
+    let result = parse_and_serialize_with_source(input);
+    let winner = result
+        .find("[b]: https://example.com/first")
+        .expect("the winning definition must be kept");
+    let duplicate = result
+        .find("[b]: https://example.com/second")
+        .expect("the region's copy must be preserved");
+    assert!(
+        winner < duplicate,
+        "the winning definition must come first, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_sees_a_definition_below_a_three_line_title() {
+    // The title runs over two continuation lines, and only the delimiter that
+    // opened it closes it.  Stopping at the first continuation would hide the
+    // definition beneath from the scanner.
+    let input = "[a]: https://example.com/a \"A title\nspanning three\nlines\"\n[b]: https://example.com/first\nSome prose.\n\n<!-- hongdown-disable -->\n\nRaw [b].\n\n[b]: https://example.com/second\n";
+    let result = parse_and_serialize_with_source(input);
+    let winner = result
+        .find("[b]: https://example.com/first")
+        .expect("the winning definition must be kept");
+    let duplicate = result
+        .find("[b]: https://example.com/second")
+        .expect("the region's copy must be preserved");
+    assert!(
+        winner < duplicate,
+        "the winning definition must come first, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_next_line_copies_whole_lines() {
+    // A block's span begins at its content, past the indentation and the
+    // markers of whatever holds it.  Copying from there would lose them, and
+    // with them a definition the parser took out of the list item, which the
+    // span leaves behind — while the lines it sits on count as copied.
+    let input = "<!-- hongdown-disable-next-line -->\n\n  - [a]: https://example.com\n\nSee [x][a 2].\n\n[a 2]: https://example.com\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("  - [a]: https://example.com"),
+        "the copy must keep the whole line, got:\n{}",
+        result
+    );
+    assert_eq!(result, input, "and formatting must be a fixed point");
+}
+
+#[test]
+fn test_directive_disable_next_section_copies_indented_code() {
+    // The indentation is what makes this a code block, and the span reaching
+    // over the blank line below it must not add one to the separator that
+    // follows.
+    let input = "<!-- hongdown-disable-next-section -->\n\n    indented code\n\nAfter.\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(result, input, "the copy must keep the block as it stands");
+}
+
+#[test]
+fn test_directive_disable_next_section_copies_whole_lines() {
+    // Same, for the section-wide skip, where the definition the list item held
+    // is what the copied link resolves through.
+    let input =
+        "<!-- hongdown-disable-next-section -->\n\n[x][a]\n\n  - [a]: https://example.com\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(
+        result, input,
+        "the copy must keep the definition the link needs"
+    );
+}
+
+#[test]
+fn test_directive_disable_sees_a_definition_under_a_list_marker() {
+    // A definition keeps defining a document-wide label wherever it is written,
+    // and a list marker does not make one a task item — the colon rules that
+    // out.  The copy therefore holds the label against a later link.
+    let input = "<!-- hongdown-disable -->\n\n- [foo]: https://example.com/first\n\n<!-- hongdown-enable -->\n\nLater [foo](https://example.com/second).\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("Later [foo][foo 2].")
+            && result.contains("[foo 2]: https://example.com/second"),
+        "the later link must keep its own destination, got:\n{}",
+        result
+    );
+    assert_eq!(
+        parse_and_serialize_with_source(&result),
+        result,
+        "formatting must be idempotent"
+    );
+}
+
+#[test]
+fn test_directive_disable_sees_a_definition_with_a_broken_label() {
+    // The label breaks across two lines, which names `foo bar` all the same, so
+    // the copy holds that label too.
+    let input = "<!-- hongdown-disable -->\n\n[foo\nbar]: https://example.com/first\n\n<!-- hongdown-enable -->\n\nLater [foo bar](https://example.com/second).\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("Later [foo bar][foo bar 2].")
+            && result.contains("[foo bar 2]: https://example.com/second"),
+        "the later link must keep its own destination, got:\n{}",
+        result
+    );
+    assert_eq!(
+        parse_and_serialize_with_source(&result),
+        result,
+        "formatting must be idempotent"
+    );
+}
+
+#[test]
+fn test_directive_disable_sees_a_broken_label_inside_a_blockquote() {
+    // The label breaks across two lines of a blockquote, so both carry its
+    // marker.  A marker is no more part of the label on the second line than on
+    // the first, and the label is `foo bar` either way.
+    let input = "<!-- hongdown-disable -->\n\n> [foo\n> bar]: https://example.com/first\n\n<!-- hongdown-enable -->\n\nLater [foo bar](https://example.com/second).\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("Later [foo bar][foo bar 2].")
+            && result.contains("[foo bar 2]: https://example.com/second"),
+        "the later link must keep its own destination, got:\n{}",
+        result
+    );
+    assert_eq!(
+        parse_and_serialize_with_source(&result),
+        result,
+        "formatting must be idempotent"
+    );
+}
+
+#[test]
+fn test_directive_disable_sees_a_broken_label_inside_a_list_item() {
+    // A list marks only the line it opens and indents the rest, so the label's
+    // second line carries no marker and reads as part of `foo bar`.
+    let input = "<!-- hongdown-disable -->\n\n- [foo\n  bar]: https://example.com/first\n\n<!-- hongdown-enable -->\n\nLater [foo bar](https://example.com/second).\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("Later [foo bar][foo bar 2].")
+            && result.contains("[foo bar 2]: https://example.com/second"),
+        "the later link must keep its own destination, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_reads_an_ordered_marker_below_a_label_as_label() {
+    // An ordered marker only opens a block in the middle of one where it
+    // numbers from one, so `2.` goes on reading as part of the label above it.
+    let input = "<!-- hongdown-disable -->\n\n[foo\n2. bar]: https://example.com/first\n\n<!-- hongdown-enable -->\n\nLater [foo 2. bar](https://example.com/second).\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("Later [foo 2. bar][foo 2. bar 2].")
+            && result.contains("[foo 2. bar 2]: https://example.com/second"),
+        "the copied label must be held, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_list_marker_below_a_label_ends_the_definition() {
+    // A list marker opens a block wherever it stands, so it interrupts rather
+    // than continuing the label above it.  The parser defines nothing here, and
+    // neither does the copy, leaving the label free for the later link.
+    let input = "<!-- hongdown-disable -->\n\n[foo\n- bar]: https://example.com/phantom\n\n<!-- hongdown-enable -->\n\nLater [foo bar](https://example.com/second).\n";
+    let result = parse_and_serialize_with_source(input);
+    assert!(
+        result.contains("Later [foo bar].")
+            && result.contains("[foo bar]: https://example.com/second"),
+        "the label is free, so the later link keeps it, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_sees_a_definition_below_a_title_of_its_own_line() {
+    // The title begins on the line below a complete destination, as CommonMark
+    // allows.  The definition beneath it still has to be found.
+    let input = "[a]: https://example.com/a\n  \"A title\"\n[b]: https://example.com/first\nSome prose.\n\n<!-- hongdown-disable -->\n\nRaw [b].\n\n[b]: https://example.com/second\n";
+    let result = parse_and_serialize_with_source(input);
+    let winner = result
+        .find("[b]: https://example.com/first")
+        .expect("the winning definition must be kept");
+    let duplicate = result
+        .find("[b]: https://example.com/second")
+        .expect("the region's copy must be preserved");
+    assert!(
+        winner < duplicate,
+        "the winning definition must come first, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_sees_a_definition_below_a_title_running_on() {
+    // Same, with the title beginning below the destination and running on to a
+    // further line before it closes.
+    let input = "[a]: https://example.com/a\n  \"A title\nspanning lines\"\n[b]: https://example.com/first\nSome prose.\n\n<!-- hongdown-disable -->\n\nRaw [b].\n\n[b]: https://example.com/second\n";
+    let result = parse_and_serialize_with_source(input);
+    let winner = result
+        .find("[b]: https://example.com/first")
+        .expect("the winning definition must be kept");
+    let duplicate = result
+        .find("[b]: https://example.com/second")
+        .expect("the region's copy must be preserved");
+    assert!(
+        winner < duplicate,
+        "the winning definition must come first, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_title_is_not_closed_by_an_escaped_quote() {
+    // The quotes inside the title are escaped, so they close nothing and the
+    // title still runs to the line below.
+    let input = "[a]: https://example.com/a \"A \\\"quoted\\\" title\nspanning lines\"\n[b]: https://example.com/first\nSome prose.\n\n<!-- hongdown-disable -->\n\nRaw [b].\n\n[b]: https://example.com/second\n";
+    let result = parse_and_serialize_with_source(input);
+    let winner = result
+        .find("[b]: https://example.com/first")
+        .expect("the winning definition must be kept");
+    let duplicate = result
+        .find("[b]: https://example.com/second")
+        .expect("the region's copy must be preserved");
+    assert!(
+        winner < duplicate,
+        "the winning definition must come first, got:\n{}",
+        result
+    );
+}
+
+#[test]
+fn test_directive_disable_copy_carries_an_escaped_bracket_label() {
+    // The region carries both the link and its definition, so nothing is left
+    // for the reservation to emit — least of all a definition under a label cut
+    // short at the escaped bracket.
+    let input = "<!-- hongdown-disable -->\n\nSee [x][a\\]b] here.\n\n[a\\]b]: https://example.com/x\n\n<!-- hongdown-enable -->\n\nEnd.\n";
+    let result = parse_and_serialize_with_source(input);
+    assert_eq!(
+        result, input,
+        "the region must be preserved with nothing added after it"
+    );
+}
+
+#[test]
 fn test_preserve_reference_style_badge() {
     // Reference-style badge links should be preserved as reference style
     let input = "[![JSR][JSR badge]][JSR]\n\n[JSR]: https://jsr.io/@optique\n[JSR badge]: https://jsr.io/badges/@optique/core";
