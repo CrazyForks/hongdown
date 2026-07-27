@@ -347,8 +347,8 @@ Links
 
 ### Reference-style for external URLs
 
-Convert external URLs to reference-style links, with definitions placed at
-the end of the current section:
+Convert external URLs to reference-style links, with each definition placed at
+the end of the first section that uses it:
 
 ~~~~ markdown
 See the [documentation] for more details.
@@ -358,6 +358,12 @@ Read the [installation guide] before proceeding.
 [documentation]: https://example.com/docs
 [installation guide]: https://example.com/install
 ~~~~
+
+When several links share a definition, keep it in the first section that uses
+it.  A link inside a footnote belongs to the section where the footnote is
+referenced, regardless of where its definition appears in the source.  If body
+content and one of its footnotes share a definition in the same section, place
+the reference definition after the footnote definition.
 
 *Rationale*: Reference-style links keep the prose readable by moving long URLs
 out of the text flow.  Placing definitions at section end keeps related content
