@@ -4092,6 +4092,150 @@ More content here.
 }
 
 #[test]
+fn test_body_reference_shared_with_later_footnote_stays_in_body_section() {
+    let input = r#"Section one
+-----------
+
+Body [guide] link.
+
+Section two
+-----------
+
+Text with a footnote[^1].
+
+[^1]: See [guide] as well.
+
+[guide]: https://example.com/guide
+"#;
+    let result = parse_and_serialize(input);
+
+    assert_eq!(
+        result,
+        r#"Section one
+-----------
+
+Body [guide] link.
+
+[guide]: https://example.com/guide
+
+
+Section two
+-----------
+
+Text with a footnote[^1].
+
+[^1]: See [guide] as well.
+"#
+    );
+}
+
+#[test]
+fn test_numbered_body_reference_shared_with_later_footnote_stays_in_body_section() {
+    let input = r#"Section one
+-----------
+
+Body [guide](https://example.com/b) link.
+
+Section two
+-----------
+
+Text with a footnote[^1].
+
+[^1]: Compare [guide](https://example.com/a) and [guide](https://example.com/b).
+"#;
+    let result = parse_and_serialize(input);
+    let expected = r#"Section one
+-----------
+
+Body [guide][guide 2] link.
+
+[guide 2]: https://example.com/b
+
+
+Section two
+-----------
+
+Text with a footnote[^1].
+
+[^1]: Compare [guide] and [guide][guide 2].
+
+[guide]: https://example.com/a
+"#;
+
+    assert_eq!(result, expected);
+    assert_eq!(parse_and_serialize(&result), expected);
+}
+
+#[test]
+fn test_shared_reference_stays_below_footnote_in_same_section() {
+    let input = r#"Section
+-------
+
+Body [shared] link with a footnote[^1].
+
+[^1]: See [other] and [shared].
+
+[other]: https://example.com/other
+[shared]: https://example.com/shared
+"#;
+    let result = parse_and_serialize(input);
+    let expected = r#"Section
+-------
+
+Body [shared] link with a footnote[^1].
+
+[^1]: See [other] and [shared].
+
+[shared]: https://example.com/shared
+
+[other]: https://example.com/other
+"#;
+
+    assert_eq!(result, expected);
+    assert_eq!(parse_and_serialize(&result), expected);
+}
+
+#[test]
+fn test_reference_shared_by_footnotes_stays_in_first_section() {
+    let input = r#"Section one
+-----------
+
+First footnote[^a].
+
+Section two
+-----------
+
+Second footnote[^b].
+
+[^b]: Later [guide].
+[^a]: Earlier [guide].
+
+[guide]: https://example.com/guide
+"#;
+    let result = parse_and_serialize(input);
+    let expected = r#"Section one
+-----------
+
+First footnote[^a].
+
+[^a]: Earlier [guide].
+
+[guide]: https://example.com/guide
+
+
+Section two
+-----------
+
+Second footnote[^b].
+
+[^b]: Later [guide].
+"#;
+
+    assert_eq!(result, expected);
+    assert_eq!(parse_and_serialize(&result), expected);
+}
+
+#[test]
 fn test_preserve_html_entities() {
     // HTML entities like &lt; and &gt; should be preserved, not decoded
     let input = "HTML에는 &lt;strong&gt;태그 등 여러 가지 태그가 있습니다.";
