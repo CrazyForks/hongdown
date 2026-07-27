@@ -4,7 +4,7 @@ Hongdown changelog
 Version 0.5.2
 -------------
 
-To be released.
+Released on July 28, 2026.
 
  -  Fixed a bug where a reference definition shared by a body link and a link
     inside a footnote could sink to the later footnote's section, leaving the
