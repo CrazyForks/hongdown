@@ -433,10 +433,12 @@ label, as are `[Straße]` and `[STRASSE]`, and one of them is renumbered unless
 both point at the same target.  Non-ASCII whitespace at a label edge remains
 significant.
 
-When an inline external link is converted to reference style, its displayed
-text is preserved while the generated label is normalized separately.
-Significant edge whitespace is retained in both so that the reference resolves
-through the same key.
+When an inline external link is converted to reference style, runs of CommonMark
+ASCII whitespace in ordinary text are collapsed to one space before its
+displayed text and label are emitted.  Whitespace-sensitive inline constructs,
+including code spans, math, and inline HTML, keep their displayed content; their
+generated labels are normalized separately.  Significant edge whitespace is
+retained in both so that the reference resolves through the same key.
 
 For numbered label allocation, a label appearing as unresolved reference
 syntax is also considered occupied.  Allocation skips it rather than adding a

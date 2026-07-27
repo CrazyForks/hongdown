@@ -156,9 +156,7 @@ impl<'a> Serializer<'a> {
 
     pub(super) fn serialize_link<'b>(&mut self, node: &'b AstNode<'b>, url: &str, title: &str) {
         // Check if link contains an image (badge-style link)
-        let contains_image = node
-            .children()
-            .any(|child| matches!(&child.data.borrow().value, NodeValue::Image(_)));
+        let contains_image = Self::contains_image(node);
 
         // Check if this is an autolink (link text equals URL)
         let raw_text = self.collect_raw_text(node);
@@ -202,7 +200,7 @@ impl<'a> Serializer<'a> {
         } else if is_autolink {
             Self::format_autolink(&mut self.output, url);
         } else if Self::is_external_url(url) {
-            let link_text = self.collect_inline_children(node);
+            let link_text = self.collect_normalized_link_text(node);
             let mut output = String::new();
             let use_collapsed = Self::next_sibling_starts_with_bracket(node);
             self.format_external_link_as_reference(

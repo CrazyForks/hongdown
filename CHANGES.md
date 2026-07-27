@@ -6,6 +6,12 @@ Version 0.5.2
 
 To be released.
 
+ -  Fixed a bug where an external inline link whose text contained consecutive
+    whitespace could require two formatting passes to settle.  Runs of
+    CommonMark ASCII whitespace in ordinary link text are now collapsed on the
+    first pass, so `[a  b](https://example.com/)` immediately becomes `[a b]`
+    with a matching definition.  [[#28], [#36]]
+
  -  Fixed a bug where non-ASCII whitespace at the edge of an inline link's text
     could leave its generated shortcut reference with no matching definition.
     Reference labels now follow the parser's edge-whitespace rules, preserving
@@ -85,12 +91,14 @@ To be released.
 
 [#26]: https://github.com/dahlia/hongdown/issues/26
 [#27]: https://github.com/dahlia/hongdown/issues/27
+[#28]: https://github.com/dahlia/hongdown/issues/28
 [#29]: https://github.com/dahlia/hongdown/pull/29
 [#31]: https://github.com/dahlia/hongdown/issues/31
 [#32]: https://github.com/dahlia/hongdown/pull/32
 [#33]: https://github.com/dahlia/hongdown/issues/33
 [#34]: https://github.com/dahlia/hongdown/pull/34
 [#35]: https://github.com/dahlia/hongdown/pull/35
+[#36]: https://github.com/dahlia/hongdown/pull/36
 
 
 Version 0.5.1
