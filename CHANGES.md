@@ -6,6 +6,14 @@ Version 0.5.2
 
 To be released.
 
+ -  Fixed a bug where reference definitions lost angle brackets required by an
+    empty destination, ASCII whitespace, or other targets that cannot be
+    serialized safely in bare form.  Those lines no longer represented the
+    original CommonMark reference definitions, and a second formatting pass
+    treated them as ordinary text.  These destinations now stay
+    angle-bracketed, preserving their link targets and making formatting
+    idempotent.  [[#25], [#37]]
+
  -  Fixed a bug where an external inline link whose text contained consecutive
     whitespace could require two formatting passes to settle.  Runs of
     CommonMark ASCII whitespace in ordinary link text are now collapsed on the
@@ -89,6 +97,7 @@ To be released.
     out cut short too, so the next run no longer read it as a definition at
     all.  [[#32]]
 
+[#25]: https://github.com/dahlia/hongdown/issues/25
 [#26]: https://github.com/dahlia/hongdown/issues/26
 [#27]: https://github.com/dahlia/hongdown/issues/27
 [#28]: https://github.com/dahlia/hongdown/issues/28
@@ -99,6 +108,7 @@ To be released.
 [#34]: https://github.com/dahlia/hongdown/pull/34
 [#35]: https://github.com/dahlia/hongdown/pull/35
 [#36]: https://github.com/dahlia/hongdown/pull/36
+[#37]: https://github.com/dahlia/hongdown/pull/37
 
 
 Version 0.5.1
