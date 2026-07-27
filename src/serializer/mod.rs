@@ -62,6 +62,37 @@ pub(super) fn find_unescaped(text: &str, delimiter: char) -> Option<usize> {
     None
 }
 
+/// Return whether `url` cannot be emitted as a bare CommonMark destination.
+fn reference_destination_requires_angle_brackets(url: &str) -> bool {
+    if url.is_empty()
+        || url.starts_with('<')
+        || url
+            .bytes()
+            .any(|byte| byte == b' ' || byte.is_ascii_control())
+        || url.contains('\\')
+        || url.contains("&#")
+        || html_escape::decode_html_entities(url).as_ref() != url
+    {
+        return true;
+    }
+
+    let mut parenthesis_depth = 0;
+    for byte in url.bytes() {
+        match byte {
+            b'(' => {
+                parenthesis_depth += 1;
+                if parenthesis_depth > 32 {
+                    return true;
+                }
+            }
+            b')' if parenthesis_depth == 0 => return true,
+            b')' => parenthesis_depth -= 1,
+            _ => {}
+        }
+    }
+    parenthesis_depth != 0
+}
+
 /// Result of serialization including output and any warnings.
 pub struct SerializeResult {
     /// The formatted Markdown output.
@@ -342,7 +373,25 @@ impl<'a> Serializer<'a> {
         // (comrak normalizes whitespace in labels, so this ensures idempotency)
         output.push_str(&reference.label.replace('\x00', " "));
         output.push_str("]: ");
-        output.push_str(&reference.url);
+        if reference_destination_requires_angle_brackets(&reference.url) {
+            output.push('<');
+            for character in reference.url.chars() {
+                match character {
+                    '<' | '>' => {
+                        output.push('\\');
+                        output.push(character);
+                    }
+                    '\\' => output.push_str("\\\\"),
+                    '&' => output.push_str("&amp;"),
+                    '\n' => output.push_str("&#10;"),
+                    '\r' => output.push_str("&#13;"),
+                    _ => output.push(character),
+                }
+            }
+            output.push('>');
+        } else {
+            output.push_str(&reference.url);
+        }
         if !reference.title.is_empty() {
             output.push_str(" \"");
             output.push_str(&reference.title);

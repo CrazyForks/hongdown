@@ -300,6 +300,110 @@ fn test_serialize_external_link_with_title_becomes_reference() {
 }
 
 #[test]
+fn test_reference_destinations_requiring_angle_brackets() {
+    // https://github.com/dahlia/hongdown/issues/25
+    let input = concat!(
+        " -  Read [space].\n",
+        " -  Read [empty].\n\n",
+        "[space]: <https://example.com/a b> \"A title\"\n",
+        "[empty]: <>\n",
+    );
+    let expected = concat!(
+        " -  Read [space].\n",
+        " -  Read [empty].\n\n",
+        "[space]: <https://example.com/a b> \"A title\"\n",
+        "[empty]: <>\n",
+    );
+
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(result.output, expected);
+    assert!(result.warnings.is_empty());
+
+    let second = parse_and_serialize_with_warnings(&result.output);
+    assert_eq!(second.output, result.output);
+    assert!(second.warnings.is_empty());
+}
+
+#[test]
+fn test_angle_bracketed_reference_destination_escaping_is_idempotent() {
+    let input = concat!(
+        " -  Read [escaped].\n",
+        " -  Read [backslash].\n",
+        " -  Read [entity].\n",
+        " -  Read [line break].\n",
+        " -  Read [carriage return].\n",
+        " -  Read [surrogate].\n",
+        " -  Read [out of range].\n",
+        " -  Read [overflow].\n\n",
+        "[escaped]: <https://example.com/a\\> b>\n",
+        "[backslash]: <https://example.com/a b\\\\*c>\n",
+        "[entity]: <https://example.com/a b&amp;#10;>\n",
+        "[line break]: <https://example.com/a&#10;b>\n",
+        "[carriage return]: <https://example.com/a&#13;b>\n",
+        "[surrogate]: <a&amp;#xD800;b>\n",
+        "[out of range]: <a&amp;#x110000;b>\n",
+        "[overflow]: <a&amp;#99999999;b>\n",
+    );
+
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(result.output, input);
+    assert!(result.warnings.is_empty());
+
+    let second = parse_and_serialize_with_warnings(&result.output);
+    assert_eq!(second.output, result.output);
+    assert!(second.warnings.is_empty());
+}
+
+#[test]
+fn test_reference_destinations_not_safe_bare_use_angle_brackets() {
+    let input = concat!(
+        " -  Read [leading angle].\n",
+        " -  Read [vertical tab].\n",
+        " -  Read [open paren].\n",
+        " -  Read [backslash].\n",
+        " -  Read [entity].\n",
+        " -  Read [balanced].\n\n",
+        "[leading angle]: <\\<foo\\>>\n",
+        "[vertical tab]: <a&#11;b>\n",
+        "[open paren]: <a(b>\n",
+        "[backslash]: <a\\\\*b>\n",
+        "[entity]: <a&amp;#10;>\n",
+        "[balanced]: <a(b)>\n",
+    );
+    let expected = concat!(
+        " -  Read [leading angle].\n",
+        " -  Read [vertical tab].\n",
+        " -  Read [open paren].\n",
+        " -  Read [backslash].\n",
+        " -  Read [entity].\n",
+        " -  Read [balanced].\n\n",
+        "[leading angle]: <\\<foo\\>>\n",
+        "[vertical tab]: <a\u{b}b>\n",
+        "[open paren]: <a(b>\n",
+        "[backslash]: <a\\\\*b>\n",
+        "[entity]: <a&amp;#10;>\n",
+        "[balanced]: a(b)\n",
+    );
+
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(result.output, expected);
+    assert!(result.warnings.is_empty());
+
+    let second = parse_and_serialize_with_warnings(&result.output);
+    assert_eq!(second.output, result.output);
+    assert!(second.warnings.is_empty());
+}
+
+#[test]
+fn test_bare_reference_destination_parenthesis_limit() {
+    let at_limit = format!("a{}{}", "(".repeat(32), ")".repeat(32));
+    assert!(!reference_destination_requires_angle_brackets(&at_limit));
+
+    let beyond_limit = format!("a{}{}", "(".repeat(33), ")".repeat(33));
+    assert!(reference_destination_requires_angle_brackets(&beyond_limit));
+}
+
+#[test]
 fn test_reference_order_preserved() {
     // Regular references should maintain insertion order
     let input = "See [foo](https://foo.com), [bar](https://bar.com), and [baz](https://baz.com).";

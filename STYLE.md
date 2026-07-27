@@ -363,6 +363,28 @@ Read the [installation guide] before proceeding.
 out of the text flow.  Placing definitions at section end keeps related content
 together.
 
+### Angle brackets for reference destinations
+
+Wrap a reference destination in angle brackets when the bare form would be
+empty, ambiguous, or invalid.  This includes destinations containing ASCII
+whitespace or control characters, destinations beginning with `<`, and
+destinations containing backslashes or text that would be reparsed as a
+character reference.  Also use angle brackets for unbalanced parentheses or
+more than 32 levels of parenthesis nesting.
+
+~~~~ markdown
+[space]: <https://example.com/a b>
+[empty]: <>
+~~~~
+
+Within such a destination, backslash-escape literal angle brackets and
+backslashes.  Write ampersands as `&amp;` and line endings as numeric character
+references.
+
+*Rationale*: Without the angle brackets, whitespace ends the destination and an
+empty destination is not recognized at all.  Keeping these destinations
+angle-bracketed preserves their targets and makes formatting idempotent.
+
 ### Inline style for links containing images
 
 Keep an inline link inline when its text contains an image, even if its
