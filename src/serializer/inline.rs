@@ -109,7 +109,6 @@ impl<'a> Serializer<'a> {
     fn normalize_link_text_segments(segments: Vec<LinkTextSegment>) -> String {
         let mut output = String::new();
         let mut pending_whitespace = String::new();
-        let mut has_content = false;
 
         for segment in segments {
             match segment {
@@ -118,47 +117,29 @@ impl<'a> Serializer<'a> {
                         if escape::is_commonmark_whitespace(ch) {
                             pending_whitespace.push(ch);
                         } else {
-                            Self::flush_link_text_whitespace(
-                                &mut output,
-                                &mut pending_whitespace,
-                                has_content,
-                            );
+                            Self::flush_link_text_whitespace(&mut output, &mut pending_whitespace);
                             output.push(ch);
-                            has_content = true;
                         }
                     }
                 }
                 LinkTextSegment::Verbatim(text) => {
                     if !text.is_empty() {
-                        Self::flush_link_text_whitespace(
-                            &mut output,
-                            &mut pending_whitespace,
-                            has_content,
-                        );
+                        Self::flush_link_text_whitespace(&mut output, &mut pending_whitespace);
                         output.push_str(&text);
-                        has_content = true;
                     }
                 }
             }
         }
 
-        output.push_str(&pending_whitespace);
+        Self::flush_link_text_whitespace(&mut output, &mut pending_whitespace);
         output
     }
 
-    fn flush_link_text_whitespace(
-        output: &mut String,
-        pending_whitespace: &mut String,
-        has_content: bool,
-    ) {
+    fn flush_link_text_whitespace(output: &mut String, pending_whitespace: &mut String) {
         if pending_whitespace.is_empty() {
             return;
         }
-        if has_content {
-            output.push(' ');
-        } else {
-            output.push_str(pending_whitespace);
-        }
+        output.push(' ');
         pending_whitespace.clear();
     }
 

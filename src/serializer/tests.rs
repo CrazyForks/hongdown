@@ -7504,6 +7504,25 @@ fn test_inline_external_link_whitespace_is_normalized() {
 }
 
 #[test]
+fn test_inline_external_link_edge_whitespace_is_normalized() {
+    for (text, displayed) in [("  a", " a"), ("a  ", "a "), ("a\t\t", "a ")] {
+        let input = format!("See [{text}](https://example.com/).\n");
+        let expected = format!(
+            "See [{displayed}][a].\n\n\
+             [a]: https://example.com/\n"
+        );
+
+        let result = parse_and_serialize_with_warnings(&input);
+        assert_eq!(result.output, expected, "failed for {text:?}");
+        assert!(result.warnings.is_empty());
+
+        let second = parse_and_serialize_with_warnings(&result.output);
+        assert_eq!(second.output, result.output);
+        assert!(second.warnings.is_empty());
+    }
+}
+
+#[test]
 fn test_non_ascii_internal_whitespace_is_preserved() {
     for whitespace in ['\u{a0}', '\u{3000}'] {
         let text = format!("a{whitespace}b");
