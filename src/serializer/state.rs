@@ -731,13 +731,13 @@ impl<'a> Serializer<'a> {
             .find_occupant(&key)
             .map(|existing| (existing.url.clone(), existing.title.clone()));
         match occupant {
-            // Already registered with the same target: share it.  The existing
-            // entry is left untouched so that its spelling (and, once emitted,
-            // its definition) is not duplicated or altered.
+            // Already registered with the same target: share it.  A body link
+            // may still need to queue the definition for its section when the
+            // existing entry belongs to a later footnote's schedule.
             Some((occupied_url, occupied_title))
                 if occupied_url == url && occupied_title == title =>
             {
-                self.satisfy_claimed_label(key, label, url, title);
+                self.satisfy_shared_reference(key, label, url, title);
                 label.to_string()
             }
             // Free label: take it.
@@ -758,8 +758,10 @@ impl<'a> Serializer<'a> {
                 // Looking it up directly keeps a document full of same-text
                 // links from rescanning every variant it has handed out.
                 let target = (cursor_key.clone(), url.to_string(), title.to_string());
-                if let Some(label) = self.numbered_reference_labels.get(&target) {
-                    return label.clone();
+                if let Some(label) = self.numbered_reference_labels.get(&target).cloned() {
+                    let key = self.reference_key(&label);
+                    self.satisfy_shared_reference(key, &label, url, title);
+                    return label;
                 }
                 // Every variant below the cursor is already taken, and taken
                 // labels are never released, so the search can resume there.
@@ -796,7 +798,7 @@ impl<'a> Serializer<'a> {
                         None if self.is_numbered_label_unavailable(&candidate_key) => continue,
                         // Already holds this very target: share it.
                         Some(_) => {
-                            self.satisfy_claimed_label(candidate_key, &candidate, url, title)
+                            self.satisfy_shared_reference(candidate_key, &candidate, url, title)
                         }
                         None => self.insert_reference(candidate_key, candidate.clone(), url, title),
                     }
@@ -810,14 +812,22 @@ impl<'a> Serializer<'a> {
         }
     }
 
-    /// Register a definition for a label that so far is only *claimed*.
+    /// Ensure a shared reference is scheduled where the current link needs it.
     ///
-    /// A claim marks the label as spoken for by a link preserved verbatim, but
-    /// emits no definition of its own, so a formatted link sharing that label
-    /// still has to supply one.  The exception is a label whose definition is
-    /// preserved verbatim too: that copy already defines it, and adding another
-    /// would merely repeat it.
-    fn satisfy_claimed_label(&mut self, key: String, label: &str, url: &str, title: &str) {
+    /// Footnotes are collected before the body.  If a later footnote registered
+    /// the target first, a body link still needs the definition queued for its
+    /// own section.  A label only claimed by a verbatim link likewise needs a
+    /// definition, unless the definition itself is preserved verbatim.
+    fn satisfy_shared_reference(&mut self, key: String, label: &str, url: &str, title: &str) {
+        if !self.footnotes.collecting_content
+            && self.footnotes.pending_references.contains_key(&key)
+            && !self.verbatim_reference_labels.contains(&key)
+            && !self.emitted_references.contains_key(&key)
+            && !self.pending_references.contains_key(&key)
+        {
+            self.insert_reference(key, label.to_string(), url, title);
+            return;
+        }
         if self.find_reference(&key).is_none() && !self.verbatim_reference_labels.contains(&key) {
             self.insert_reference(key, label.to_string(), url, title);
         }
@@ -960,7 +970,8 @@ impl<'a> Serializer<'a> {
 #[cfg(test)]
 mod tests {
     use super::{
-        REFERENCE_LABEL_REPLACEMENT_SCANS, Serializer, normalize_reference_key, safe_str_slice,
+        REFERENCE_LABEL_REPLACEMENT_SCANS, ReferenceLink, Serializer, normalize_reference_key,
+        safe_str_slice,
     };
     use crate::Options;
 
@@ -1000,6 +1011,29 @@ mod tests {
             "before {expression0} and {expression127} after"
         );
         REFERENCE_LABEL_REPLACEMENT_SCANS.with(|scans| assert_eq!(scans.get(), 2));
+    }
+
+    #[test]
+    fn shared_reference_carried_verbatim_is_not_queued() {
+        let options = Options::default();
+        let mut serializer = Serializer::new(&options, Vec::new(), false);
+        let key = serializer.reference_key("guide");
+        serializer.footnotes.pending_references.insert(
+            key.clone(),
+            (
+                ReferenceLink {
+                    label: "guide".to_string(),
+                    url: "https://example.com/guide".to_string(),
+                    title: String::new(),
+                },
+                1,
+            ),
+        );
+        serializer.verbatim_reference_labels.insert(key.clone());
+
+        serializer.satisfy_shared_reference(key.clone(), "guide", "https://example.com/guide", "");
+
+        assert!(!serializer.pending_references.contains_key(&key));
     }
 
     #[test]

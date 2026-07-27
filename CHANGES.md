@@ -6,6 +6,12 @@ Version 0.5.2
 
 To be released.
 
+ -  Fixed a bug where a reference definition shared by a body link and a link
+    inside a footnote could sink to the later footnote's section, leaving the
+    body link's section without its definition.  Shared definitions now stay at
+    the end of the first section that uses them, while remaining below footnote
+    definitions when both occur in the same section.  [[#30], [#38]]
+
  -  Fixed a bug where reference definitions lost angle brackets required by an
     empty destination, ASCII whitespace, or other targets that cannot be
     serialized safely in bare form.  Those lines no longer represented the
@@ -102,6 +108,7 @@ To be released.
 [#27]: https://github.com/dahlia/hongdown/issues/27
 [#28]: https://github.com/dahlia/hongdown/issues/28
 [#29]: https://github.com/dahlia/hongdown/pull/29
+[#30]: https://github.com/dahlia/hongdown/issues/30
 [#31]: https://github.com/dahlia/hongdown/issues/31
 [#32]: https://github.com/dahlia/hongdown/pull/32
 [#33]: https://github.com/dahlia/hongdown/issues/33
@@ -109,6 +116,7 @@ To be released.
 [#35]: https://github.com/dahlia/hongdown/pull/35
 [#36]: https://github.com/dahlia/hongdown/pull/36
 [#37]: https://github.com/dahlia/hongdown/pull/37
+[#38]: https://github.com/dahlia/hongdown/pull/38
 
 
 Version 0.5.1
