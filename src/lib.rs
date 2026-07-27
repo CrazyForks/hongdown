@@ -29,6 +29,18 @@ pub use serializer::punctuation::{PunctuationError, validate_dash_settings};
 
 use comrak::{Arena, Options as ComrakOptions, parse_document};
 
+pub(crate) fn comrak_options(options: &Options) -> ComrakOptions<'static> {
+    let mut comrak_options = ComrakOptions::default();
+    comrak_options.extension.front_matter_delimiter = Some("---".to_string());
+    comrak_options.extension.table = true;
+    comrak_options.extension.description_lists = true;
+    comrak_options.extension.alerts = true;
+    comrak_options.extension.footnotes = true;
+    comrak_options.extension.tasklist = true;
+    comrak_options.extension.math_dollars = options.math;
+    comrak_options
+}
+
 /// External code formatter configuration.
 #[derive(Debug, Clone)]
 pub struct CodeFormatter {
@@ -253,21 +265,20 @@ pub fn format(input: &str, options: &Options) -> Result<String, FormatError> {
         return Ok(String::new());
     }
 
-    let mut comrak_options = ComrakOptions::default();
-    comrak_options.extension.front_matter_delimiter = Some("---".to_string());
-    comrak_options.extension.table = true;
-    comrak_options.extension.description_lists = true;
-    comrak_options.extension.alerts = true;
-    comrak_options.extension.footnotes = true;
-    comrak_options.extension.tasklist = true;
-    comrak_options.extension.math_dollars = options.math;
+    let comrak_options = comrak_options(options);
 
     if options.mdx
         && let Some(protection) = mdx::protect(input, &comrak_options)
     {
         let arena = Arena::new();
         let root = parse_document(&arena, &protection.source, &comrak_options);
-        let output = serializer::serialize_with_source(root, options, Some(&protection.source));
+        let output = serializer::serialize_with_source_and_warnings_and_replacements(
+            root,
+            options,
+            Some(&protection.source),
+            protection.reference_label_replacements(),
+        )
+        .output;
         return Ok(protection.restore(&output));
     }
 
@@ -308,26 +319,24 @@ pub fn format_with_warnings(input: &str, options: &Options) -> Result<FormatResu
         });
     }
 
-    let mut comrak_options = ComrakOptions::default();
-    comrak_options.extension.front_matter_delimiter = Some("---".to_string());
-    comrak_options.extension.table = true;
-    comrak_options.extension.description_lists = true;
-    comrak_options.extension.alerts = true;
-    comrak_options.extension.footnotes = true;
-    comrak_options.extension.tasklist = true;
-    comrak_options.extension.math_dollars = options.math;
+    let comrak_options = comrak_options(options);
 
     if options.mdx
         && let Some(protection) = mdx::protect(input, &comrak_options)
     {
         let arena = Arena::new();
         let root = parse_document(&arena, &protection.source, &comrak_options);
-        let mut result =
-            serializer::serialize_with_source_and_warnings(root, options, Some(&protection.source));
+        let mut result = serializer::serialize_with_source_and_warnings_and_replacements(
+            root,
+            options,
+            Some(&protection.source),
+            protection.reference_label_replacements(),
+        );
         // Warning line numbers refer to the protected source; map them back to
         // the original so multi-line constructs do not shift them.
         for warning in &mut result.warnings {
             warning.line = protection.original_line(warning.line);
+            warning.message = protection.restore(&warning.message);
         }
         return Ok(FormatResult {
             output: protection.restore(&result.output),

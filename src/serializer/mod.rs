@@ -40,6 +40,59 @@ fn strip_math_sentinels(mut output: String) -> String {
     output
 }
 
+/// The byte offset of the first `delimiter` a backslash does not escape.
+///
+/// A link label may hold either bracket escaped, as in `[a\]b]`, and cutting it
+/// at that bracket would leave a label that no longer names the same
+/// definition.  The same rule decides where a definition's label ends, so both
+/// readings share this one.
+pub(super) fn find_unescaped(text: &str, delimiter: char) -> Option<usize> {
+    let mut escaped = false;
+    for (offset, character) in text.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match character {
+            '\\' => escaped = true,
+            _ if character == delimiter => return Some(offset),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Return whether `url` cannot be emitted as a bare CommonMark destination.
+fn reference_destination_requires_angle_brackets(url: &str) -> bool {
+    if url.is_empty()
+        || url.starts_with('<')
+        || url
+            .bytes()
+            .any(|byte| byte == b' ' || byte.is_ascii_control())
+        || url.contains('\\')
+        || url.contains("&#")
+        || html_escape::decode_html_entities(url).as_ref() != url
+    {
+        return true;
+    }
+
+    let mut parenthesis_depth = 0;
+    for byte in url.bytes() {
+        match byte {
+            b'(' => {
+                parenthesis_depth += 1;
+                if parenthesis_depth > 32 {
+                    return true;
+                }
+            }
+            b')' if parenthesis_depth == 0 => return true,
+            b')' => parenthesis_depth -= 1,
+            _ => {}
+        }
+    }
+    parenthesis_depth != 0
+}
+
 /// Result of serialization including output and any warnings.
 pub struct SerializeResult {
     /// The formatted Markdown output.
@@ -65,9 +118,19 @@ pub fn serialize_with_source_and_warnings<'a>(
     options: &Options,
     source: Option<&str>,
 ) -> SerializeResult {
+    serialize_with_source_and_warnings_and_replacements(node, options, source, Vec::new())
+}
+
+pub(crate) fn serialize_with_source_and_warnings_and_replacements<'a>(
+    node: &'a AstNode<'a>,
+    options: &Options,
+    source: Option<&str>,
+    replacements: Vec<(String, String)>,
+) -> SerializeResult {
     let source_lines: Vec<&str> = source.map(|s| s.lines().collect()).unwrap_or_default();
     let source_ends_with_newline = source.is_some_and(|s| s.ends_with('\n'));
-    let mut serializer = Serializer::new(options, source_lines, source_ends_with_newline);
+    let mut serializer = Serializer::new(options, source_lines, source_ends_with_newline)
+        .with_reference_label_replacements(replacements);
     serializer.serialize_node(node);
     SerializeResult {
         output: strip_math_sentinels(serializer.output),
@@ -82,6 +145,7 @@ pub fn serialize_with_code_formatter<'a>(
     options: &Options,
     source: Option<&str>,
     code_formatter: CodeFormatterCallback,
+    replacements: Vec<(String, String)>,
 ) -> SerializeResult {
     let source_lines: Vec<&str> = source.map(|s| s.lines().collect()).unwrap_or_default();
     let source_ends_with_newline = source.is_some_and(|s| s.ends_with('\n'));
@@ -90,7 +154,8 @@ pub fn serialize_with_code_formatter<'a>(
         source_lines,
         source_ends_with_newline,
         code_formatter,
-    );
+    )
+    .with_reference_label_replacements(replacements);
     serializer.serialize_node(node);
     SerializeResult {
         output: strip_math_sentinels(serializer.output),
@@ -103,7 +168,17 @@ impl<'a> Serializer<'a> {
     /// Returns Some((text, label)) if reference style, None if inline style.
     /// The returned text has newlines normalized to spaces for consistent output.
     fn get_reference_style_info<'b>(&self, node: &'b AstNode<'b>) -> Option<(String, String)> {
-        let source = self.extract_source(node)?;
+        self.get_reference_style_info_shifted(node, 0)
+    }
+
+    /// As [`Self::get_reference_style_info`], for a node whose reported lines
+    /// sit `line_offset` above its real ones.
+    fn get_reference_style_info_shifted<'b>(
+        &self,
+        node: &'b AstNode<'b>,
+        line_offset: usize,
+    ) -> Option<(String, String)> {
+        let source = self.extract_source_shifted(node, line_offset)?;
 
         // Reference style patterns:
         // [text][label] or ![text][label] - full reference
@@ -123,11 +198,18 @@ impl<'a> Serializer<'a> {
         let first_bracket = source.find('[')?;
         let chars: Vec<char> = source.chars().collect();
 
-        // Find the closing bracket at depth 0 (the one that closes the text/content part)
+        // Find the closing bracket at depth 0 (the one that closes the text/content part).
+        // A backslash-escaped bracket is part of the text, not a delimiter.
         let mut depth = 0;
+        let mut escaped = false;
         let mut text_end_pos = None;
         for (i, &ch) in chars.iter().enumerate().skip(first_bracket) {
+            if escaped {
+                escaped = false;
+                continue;
+            }
             match ch {
+                '\\' => escaped = true,
                 '[' => depth += 1,
                 ']' => {
                     depth -= 1;
@@ -146,8 +228,8 @@ impl<'a> Serializer<'a> {
         let after_close: String = chars[text_end_pos + 1..].iter().collect();
         let text: String = chars[first_bracket + 1..text_end_pos].iter().collect();
 
-        // Normalize newlines to spaces in the text (for idempotency when text spans lines)
-        let text = escape::normalize_whitespace(&text);
+        // Normalize the reference spelling for idempotency across formatting runs.
+        let text = escape::normalize_reference_spelling(&text);
 
         // If followed by "(", it's inline style
         if after_close.starts_with('(') {
@@ -156,11 +238,11 @@ impl<'a> Serializer<'a> {
 
         // If followed by "[", it's full or collapsed reference style
         if let Some(label_content) = after_close.strip_prefix('[') {
-            // Find the label between [ and ]
-            if let Some(label_end) = label_content.find(']') {
+            // Find the label between [ and ], again past any escaped bracket
+            if let Some(label_end) = find_unescaped(label_content, ']') {
                 let label = label_content[..label_end].to_string();
                 // Normalize label too
-                let label = escape::normalize_whitespace(&label);
+                let label = escape::normalize_reference_spelling(&label);
 
                 // If label is empty, it's collapsed reference - mark with special prefix
                 // to distinguish from shortcut reference
@@ -181,7 +263,13 @@ impl<'a> Serializer<'a> {
 
     /// Ensure output ends with a blank line (two newlines).
     /// Used before emitting reference definitions and footnotes.
+    ///
+    /// Empty output needs no separator: a document must not start with blank
+    /// lines just because its first emitted thing is a definition.
     fn ensure_blank_line(&mut self) {
+        if self.output.is_empty() {
+            return;
+        }
         if !self.output.ends_with("\n\n") {
             if self.output.ends_with('\n') {
                 self.output.push('\n');
@@ -191,8 +279,18 @@ impl<'a> Serializer<'a> {
         }
     }
 
-    /// Output pending reference definitions and clear them
+    /// Output all pending reference definitions and clear them.
     fn flush_references(&mut self) {
+        self.flush_references_before(None);
+    }
+
+    /// Output the pending reference definitions, along with the queued
+    /// definitions of copied links that the source places before `before_line`.
+    fn flush_references_before(&mut self, before_line: Option<usize>) {
+        // Definitions that copied links depend on join the pending ones here,
+        // behind whatever the document's own links registered before them.
+        self.take_deferred_references(before_line);
+
         if self.pending_references.is_empty() {
             return;
         }
@@ -201,9 +299,9 @@ impl<'a> Serializer<'a> {
         // Filter out references that have already been emitted
         let refs: Vec<ReferenceLink> = self
             .pending_references
-            .values()
-            .filter(|r| !self.emitted_references.contains(&r.label))
-            .cloned()
+            .iter()
+            .filter(|(key, _)| !self.emitted_references.contains_key(*key))
+            .map(|(_, r)| r.clone())
             .collect();
         self.pending_references.clear();
 
@@ -223,7 +321,7 @@ impl<'a> Serializer<'a> {
             // Less than 2 numeric refs: output all in insertion order
             for reference in &refs {
                 Self::write_reference(&mut self.output, reference);
-                self.emitted_references.insert(reference.label.clone());
+                self.mark_reference_emitted(reference);
             }
         } else {
             // 2+ numeric refs: separate, sort numeric ones, output regular first
@@ -244,15 +342,22 @@ impl<'a> Serializer<'a> {
             // Output regular references first (in insertion order)
             for reference in regular_refs {
                 Self::write_reference(&mut self.output, reference);
-                self.emitted_references.insert(reference.label.clone());
+                self.mark_reference_emitted(reference);
             }
 
             // Output numeric references (sorted by number)
             for (_, reference) in numeric_refs {
                 Self::write_reference(&mut self.output, reference);
-                self.emitted_references.insert(reference.label.clone());
+                self.mark_reference_emitted(reference);
             }
         }
+    }
+
+    /// Record that a reference definition has been written out, so that later
+    /// sections neither repeat it nor reuse its label for a different target.
+    fn mark_reference_emitted(&mut self, reference: &ReferenceLink) {
+        self.emitted_references
+            .insert(self.reference_key(&reference.label), reference.clone());
     }
 
     /// Extract numeric value from a reference label like "123" or "#123"
@@ -268,7 +373,25 @@ impl<'a> Serializer<'a> {
         // (comrak normalizes whitespace in labels, so this ensures idempotency)
         output.push_str(&reference.label.replace('\x00', " "));
         output.push_str("]: ");
-        output.push_str(&reference.url);
+        if reference_destination_requires_angle_brackets(&reference.url) {
+            output.push('<');
+            for character in reference.url.chars() {
+                match character {
+                    '<' | '>' => {
+                        output.push('\\');
+                        output.push(character);
+                    }
+                    '\\' => output.push_str("\\\\"),
+                    '&' => output.push_str("&amp;"),
+                    '\n' => output.push_str("&#10;"),
+                    '\r' => output.push_str("&#13;"),
+                    _ => output.push(character),
+                }
+            }
+            output.push('>');
+        } else {
+            output.push_str(&reference.url);
+        }
         if !reference.title.is_empty() {
             output.push_str(" \"");
             output.push_str(&reference.title);
@@ -377,8 +500,8 @@ impl<'a> Serializer<'a> {
         let mut to_emit: Vec<ReferenceLink> = Vec::new();
         let mut to_keep: Vec<(String, (ReferenceLink, usize))> = Vec::new();
 
-        for (label, (reference, footnote_ref_line)) in self.footnotes.pending_references.drain(..) {
-            if self.emitted_references.contains(&label) {
+        for (key, (reference, footnote_ref_line)) in self.footnotes.pending_references.drain(..) {
+            if self.emitted_references.contains_key(&key) {
                 continue;
             }
             let should_emit = match before_line {
@@ -388,7 +511,7 @@ impl<'a> Serializer<'a> {
             if should_emit {
                 to_emit.push(reference);
             } else {
-                to_keep.push((label, (reference, footnote_ref_line)));
+                to_keep.push((key, (reference, footnote_ref_line)));
             }
         }
 
@@ -406,7 +529,7 @@ impl<'a> Serializer<'a> {
         // Output references in insertion order
         for reference in &to_emit {
             Self::write_reference(&mut self.output, reference);
-            self.emitted_references.insert(reference.label.clone());
+            self.mark_reference_emitted(reference);
         }
     }
 

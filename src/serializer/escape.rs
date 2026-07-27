@@ -1,8 +1,65 @@
 //! Text escaping and formatting utilities for Markdown serialization.
 
-/// Normalize whitespace in text: convert newlines and multiple spaces to single space.
-pub fn normalize_whitespace(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
+/// Return whether `ch` is whitespace trimmed from a CommonMark label edge.
+pub(super) fn is_commonmark_whitespace(ch: char) -> bool {
+    matches!(ch, ' ' | '\t' | '\n' | '\r')
+}
+
+/// Normalize a reference label's emitted spelling without losing significant
+/// whitespace at its edges.
+///
+/// CommonMark trims its own ASCII whitespace from label edges, but converts
+/// other Unicode whitespace there to an ordinary space in the lookup key.
+/// Keeping one original non-CommonMark whitespace character at either edge
+/// ensures the emitted spelling produces that key when parsed again.
+pub(super) fn normalize_reference_spelling(text: &str) -> String {
+    let chars: Vec<char> = text
+        .chars()
+        .map(|ch| if ch == '\x00' { ' ' } else { ch })
+        .collect();
+    let Some(first) = chars.iter().position(|ch| !ch.is_whitespace()) else {
+        return chars
+            .into_iter()
+            .find(|ch| !is_commonmark_whitespace(*ch))
+            .map(String::from)
+            .unwrap_or_default();
+    };
+    let last = chars
+        .iter()
+        .rposition(|ch| !ch.is_whitespace())
+        .expect("a first non-whitespace character implies a last one");
+    let mut normalized = String::with_capacity(text.len());
+
+    if let Some(ch) = chars[..first]
+        .iter()
+        .copied()
+        .find(|ch| !is_commonmark_whitespace(*ch))
+    {
+        normalized.push(ch);
+    }
+
+    let mut last_was_whitespace = false;
+    for &ch in &chars[first..=last] {
+        if ch.is_whitespace() {
+            if !last_was_whitespace {
+                normalized.push(' ');
+                last_was_whitespace = true;
+            }
+        } else {
+            normalized.push(ch);
+            last_was_whitespace = false;
+        }
+    }
+
+    if let Some(ch) = chars[last + 1..]
+        .iter()
+        .copied()
+        .find(|ch| !is_commonmark_whitespace(*ch))
+    {
+        normalized.push(ch);
+    }
+
+    normalized
 }
 
 /// Escape special Markdown characters in text content.
@@ -196,6 +253,18 @@ pub fn escape_table_cell(content: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_normalize_reference_spelling() {
+        assert_eq!(normalize_reference_spelling(" \tfoo\r\n"), "foo");
+        assert_eq!(
+            normalize_reference_spelling(" \u{a0}foo\u{2003}\t"),
+            "\u{a0}foo\u{2003}"
+        );
+        assert_eq!(normalize_reference_spelling("foo\u{a0}\tbar"), "foo bar");
+        assert_eq!(normalize_reference_spelling("\u{a0}\u{2003}"), "\u{a0}");
+        assert_eq!(normalize_reference_spelling(" \t\r\n"), "");
+    }
 
     #[test]
     fn test_is_valid_code_span() {

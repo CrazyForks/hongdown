@@ -14,30 +14,28 @@ impl<'a> Serializer<'a> {
         url: &str,
         title: &str,
     ) {
-        if label.starts_with('\x01') {
-            // Collapsed reference: [text][]
-            let actual_label = label.strip_prefix('\x01').unwrap();
-            output.push('[');
-            output.push_str(text);
-            output.push_str("][]");
+        let collapsed = label.starts_with('\x01');
+        let label = label.strip_prefix('\x01').unwrap_or(label);
+        let emitted_text = text.replace('\x00', " ");
+        // The label may already be taken by a different target, in which case a
+        // distinct one is allocated and the full reference form is required.
+        let label = self.register_reference(label, url, title);
 
-            self.add_reference(actual_label.to_string(), url.to_string(), title.to_string());
-        } else if text == label {
-            // Shortcut reference: [text]
-            output.push('[');
-            output.push_str(text);
-            output.push(']');
-
-            self.add_reference(label.to_string(), url.to_string(), title.to_string());
+        output.push('[');
+        output.push_str(&emitted_text);
+        if label == emitted_text {
+            if collapsed {
+                // Collapsed reference: [text][]
+                output.push_str("][]");
+            } else {
+                // Shortcut reference: [text]
+                output.push(']');
+            }
         } else {
             // Full reference: [text][label]
-            output.push('[');
-            output.push_str(text);
             output.push_str("][");
-            output.push_str(label);
+            output.push_str(&label);
             output.push(']');
-
-            self.add_reference(label.to_string(), url.to_string(), title.to_string());
         }
     }
 
@@ -75,16 +73,26 @@ impl<'a> Serializer<'a> {
         title: &str,
         use_collapsed: bool,
     ) {
-        // Normalize: replace SoftBreak markers with spaces for shortcut refs
-        let normalized_text = text.replace('\x00', " ");
-        output.push('[');
-        output.push_str(&normalized_text);
-        output.push(']');
-        if use_collapsed {
-            output.push_str("[]");
-        }
+        let emitted_text = text.replace('\x00', " ");
+        // Normalize the label separately so whitespace-sensitive inline
+        // content remains unchanged in the displayed link text.
+        let normalized_label = super::escape::normalize_reference_spelling(&emitted_text);
+        // The link text is only usable as the label when it is not already
+        // taken by a different target; otherwise fall back to a full reference.
+        let label = self.register_reference(&normalized_label, url, title);
 
-        self.add_reference(normalized_text, url.to_string(), title.to_string());
+        output.push('[');
+        output.push_str(&emitted_text);
+        if label == emitted_text {
+            output.push(']');
+            if use_collapsed {
+                output.push_str("[]");
+            }
+        } else {
+            output.push_str("][");
+            output.push_str(&label);
+            output.push(']');
+        }
     }
 
     /// Check if the next sibling of a node starts with `[`.
@@ -110,30 +118,25 @@ impl<'a> Serializer<'a> {
         url: &str,
         title: &str,
     ) {
-        if label.starts_with('\x01') {
-            // Collapsed reference: ![alt][]
-            let actual_label = label.strip_prefix('\x01').unwrap();
-            output.push_str("![");
-            output.push_str(text);
-            output.push_str("][]");
+        let collapsed = label.starts_with('\x01');
+        let label = label.strip_prefix('\x01').unwrap_or(label);
+        let label = self.register_reference(label, url, title);
 
-            self.add_reference(actual_label.to_string(), url.to_string(), title.to_string());
-        } else if text == label {
-            // Shortcut reference: ![alt]
-            output.push_str("![");
-            output.push_str(text);
-            output.push(']');
-
-            self.add_reference(label.to_string(), url.to_string(), title.to_string());
+        output.push_str("![");
+        output.push_str(text);
+        if label == text {
+            if collapsed {
+                // Collapsed reference: ![alt][]
+                output.push_str("][]");
+            } else {
+                // Shortcut reference: ![alt]
+                output.push(']');
+            }
         } else {
             // Full reference: ![alt][label]
-            output.push_str("![");
-            output.push_str(text);
             output.push_str("][");
-            output.push_str(label);
+            output.push_str(&label);
             output.push(']');
-
-            self.add_reference(label.to_string(), url.to_string(), title.to_string());
         }
     }
 
@@ -153,16 +156,14 @@ impl<'a> Serializer<'a> {
 
     pub(super) fn serialize_link<'b>(&mut self, node: &'b AstNode<'b>, url: &str, title: &str) {
         // Check if link contains an image (badge-style link)
-        let contains_image = node
-            .children()
-            .any(|child| matches!(&child.data.borrow().value, NodeValue::Image(_)));
+        let contains_image = Self::contains_image(node);
 
         // Check if this is an autolink (link text equals URL)
         let raw_text = self.collect_raw_text(node);
         let is_autolink = title.is_empty() && raw_text == url;
 
         // Check if original was reference style
-        if let Some((text, label)) = self.get_reference_style_info(node) {
+        if let Some((_, label)) = self.get_reference_style_info(node) {
             // For badge-style, serialize children first to get image content
             if contains_image {
                 // Badge-style with reference: [![alt][img-ref]][link-ref]
@@ -172,11 +173,12 @@ impl<'a> Serializer<'a> {
                 }
                 self.output.push_str("][");
                 let actual_label = label.strip_prefix('\x01').unwrap_or(&label);
-                self.output.push_str(actual_label);
+                let actual_label = self.register_reference(actual_label, url, title);
+                self.output.push_str(&actual_label);
                 self.output.push(']');
-                self.add_reference(actual_label.to_string(), url.to_string(), title.to_string());
             } else {
                 // Use helper for non-badge reference links
+                let text = self.collect_inline_children(node);
                 let mut output = String::new();
                 self.format_reference_link(&mut output, &text, &label, url, title);
                 self.output.push_str(&output);
@@ -198,7 +200,7 @@ impl<'a> Serializer<'a> {
         } else if is_autolink {
             Self::format_autolink(&mut self.output, url);
         } else if Self::is_external_url(url) {
-            let link_text = self.collect_text(node);
+            let link_text = self.collect_normalized_link_text(node);
             let mut output = String::new();
             let use_collapsed = Self::next_sibling_starts_with_bracket(node);
             self.format_external_link_as_reference(
@@ -217,9 +219,6 @@ impl<'a> Serializer<'a> {
     }
 
     pub(super) fn serialize_image<'b>(&mut self, node: &'b AstNode<'b>, url: &str, title: &str) {
-        // Collect the alt text
-        let alt_text = self.collect_text(node);
-
         // Check if original was reference style
         if let Some((text, label)) = self.get_reference_style_info(node) {
             // Use a temporary buffer to avoid double borrow
@@ -229,7 +228,11 @@ impl<'a> Serializer<'a> {
             return;
         }
 
-        // Inline style: ![alt](url)
+        // Inline style: ![alt](url).  The alt text is collected only here:
+        // collecting it up front would register reference definitions for any
+        // links inside it even when the output is discarded, reserving labels
+        // that never appear in the document.
+        let alt_text = self.collect_text(node);
         Self::format_inline_image(&mut self.output, &alt_text, url, title);
     }
 }

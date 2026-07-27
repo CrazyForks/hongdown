@@ -6,6 +6,12 @@ use comrak::nodes::{AstNode, ListType, NodeValue};
 
 use crate::Options;
 
+#[cfg(test)]
+std::thread_local! {
+    static REFERENCE_LABEL_REPLACEMENT_SCANS: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
+}
+
 /// The current formatting skip mode.
 ///
 /// Controls whether and how formatting should be skipped for content.
@@ -23,6 +29,9 @@ pub enum FormatSkipMode {
     UntilSection,
     /// Formatting is disabled (by `hongdown-disable` directive).
     /// Remains active until `hongdown-enable` directive is encountered.
+    ///
+    /// Only used when the original source is unavailable: with a source the
+    /// whole region is copied from it in one piece instead.
     Disabled,
 }
 
@@ -98,6 +107,82 @@ pub struct ReferenceLink {
     pub title: String,
 }
 
+/// The longest reference label a CommonMark parser accepts, in bytes.
+///
+/// Matches comrak's own `MAX_LINK_LABEL_LENGTH`; a longer label makes the
+/// parser reject the whole link, so a generated label must stay within it.
+const MAX_REFERENCE_LABEL_BYTES: usize = 1000;
+
+/// Prefix shared by the collision-free placeholders produced in MDX mode.
+const MDX_REFERENCE_LABEL_TOKEN_PREFIX: &str = "<!--hongdown-mdx:";
+
+/// Normalize a reference label into the key used to look it up.
+///
+/// CommonMark matches reference labels after collapsing internal whitespace
+/// and applying Unicode default case folding, so labels that differ only in
+/// spacing or case refer to the same definition and must share a single key.
+/// This mirrors comrak's `normalize_label(_, Case::Fold)`, down to using the
+/// same edge-whitespace and case-folding rules: only CommonMark's ASCII
+/// whitespace is trimmed from the edges, while every Unicode whitespace run
+/// that remains is collapsed to a single space.  Plain lowercasing would miss
+/// pairs such as `Straße` and `STRASSE`.  Internal wrapping markers are
+/// normalized to their emitted form: a SoftBreak becomes a space, while math
+/// sentinels disappear.  Backslashes remain significant because comrak keeps
+/// them in reference-label lookup keys.
+pub fn normalize_reference_key(label: &str) -> String {
+    let emitted = label
+        .replace('\x00', " ")
+        .replace([super::MATH_TOKEN_OPEN, super::MATH_TOKEN_CLOSE], "");
+    let trimmed = emitted.trim_matches(super::escape::is_commonmark_whitespace);
+    let mut normalized = String::with_capacity(trimmed.len());
+    let mut last_was_whitespace = false;
+    for ch in trimmed.chars() {
+        if ch.is_whitespace() {
+            if !last_was_whitespace {
+                normalized.push(' ');
+                last_was_whitespace = true;
+            }
+        } else {
+            normalized.push(ch);
+            last_was_whitespace = false;
+        }
+    }
+    caseless::default_case_fold_str(&normalized)
+}
+
+/// The longest suffix [`numbered_reference_label`] appends, in bytes: a space
+/// plus a `u32` in decimal.
+const MAX_REFERENCE_LABEL_SUFFIX_BYTES: usize = 11;
+
+/// Shorten a label, at a character boundary, so that any numbered suffix still
+/// fits within [`MAX_REFERENCE_LABEL_BYTES`].  Labels that are already short
+/// enough are returned unchanged.
+///
+/// An over-long label is rejected by the parser on the next pass, turning the
+/// link into literal text and losing its destination.  The amount removed does
+/// not depend on the number, so every numbered variant of a given label shares
+/// one namespace; a number-dependent cut would let labels that shorten to the
+/// same prefix allocate against each other unnoticed.
+fn truncate_reference_label_base(label: &str) -> &str {
+    let budget = MAX_REFERENCE_LABEL_BYTES - MAX_REFERENCE_LABEL_SUFFIX_BYTES;
+    if label.len() <= budget {
+        return label;
+    }
+    let mut end = budget;
+    while end > 0 && !label.is_char_boundary(end) {
+        end -= 1;
+    }
+    &label[..end]
+}
+
+/// Build the `n`th numbered variant of `label`, such as `guide 2`.
+fn numbered_reference_label(label: &str, n: u32) -> String {
+    super::escape::normalize_reference_spelling(&format!(
+        "{} {n}",
+        truncate_reference_label_base(label)
+    ))
+}
+
 /// A footnote definition: name -> content
 #[derive(Debug, Clone)]
 pub struct FootnoteDefinition {
@@ -134,6 +219,7 @@ pub struct FootnoteSet {
     /// Used to associate references with their parent footnote's timing.
     pub current_reference_line: usize,
     /// Reference links collected from within footnote definitions.
+    /// Key: normalized label (see `normalize_reference_key`).
     /// Value is (ReferenceLink, footnote_reference_line) to track when to flush.
     pub pending_references: IndexMap<String, (ReferenceLink, usize)>,
 }
@@ -179,10 +265,11 @@ impl FootnoteSet {
         self.current_reference_line = 0;
     }
 
-    /// Add a reference link found within footnote content.
-    pub fn add_reference(&mut self, label: String, reference: ReferenceLink) {
+    /// Add a reference link found within footnote content, under its
+    /// normalized lookup key.
+    pub fn add_reference(&mut self, key: String, reference: ReferenceLink) {
         self.pending_references
-            .insert(label, (reference, self.current_reference_line));
+            .insert(key, (reference, self.current_reference_line));
     }
 }
 
@@ -248,12 +335,42 @@ pub struct Serializer<'a> {
     /// Accumulated blockquote prefix for nested blockquotes (e.g., "> " or "> > ")
     pub blockquote_prefix: String,
     /// Reference links collected for the current section
-    /// Key: label, Value: ReferenceLink (insertion order preserved)
+    /// Key: normalized label (see `normalize_reference_key`),
+    /// Value: ReferenceLink (insertion order preserved)
     pub pending_references: IndexMap<String, ReferenceLink>,
-    /// Reference labels that have already been emitted (to avoid duplicates)
-    pub emitted_references: std::collections::HashSet<String>,
+    /// Reference links that have already been emitted (to avoid duplicates)
+    /// Key: normalized label, Value: the target it was emitted with
+    pub emitted_references: std::collections::HashMap<String, ReferenceLink>,
+    /// The next numbered variant to try for a label whose earlier variants are
+    /// all taken.  Key: normalized label of the base.
+    pub reference_label_cursors: std::collections::HashMap<String, u32>,
+    /// Numbered variants already handed out, so that a target appearing again
+    /// reuses its variant instead of being given another one.
+    /// Key: (normalized label of the base, url, title)
+    pub numbered_reference_labels: std::collections::HashMap<(String, String, String), String>,
     /// Footnote definitions and their reference tracking
     pub footnotes: FootnoteSet,
+    /// Normalized keys (see `normalize_reference_key`) of the definitions that
+    /// are copied verbatim along with a disabled region, and so must not be
+    /// reserved and emitted a second time.
+    pub verbatim_reference_labels: std::collections::HashSet<String>,
+    /// Labels claimed by links that are preserved verbatim, keyed by their
+    /// normalized key.  Such a link cannot be relabelled, so it holds its label
+    /// against formatted links, which can be given a derived one instead.
+    pub verbatim_reference_claims: std::collections::HashMap<String, ReferenceLink>,
+    /// Normalized labels used by unresolved reference syntax.  Numbered label
+    /// allocation must skip them instead of defining them incidentally.
+    pub unresolved_reference_labels: std::collections::HashSet<String>,
+    /// Normalized keys of the labels a verbatim copy redefines: their winning
+    /// definition lies outside it, so it has to be emitted ahead of the copy or
+    /// the copy would shadow it.
+    pub shadowed_reference_labels: std::collections::HashSet<String>,
+    /// Definitions that copied links depend on, each with the line its
+    /// definition sits on in the source, which is when it falls due.
+    pub deferred_references: Vec<(ReferenceLink, usize)>,
+    /// Normalized keys of the reference definitions the source carries, mapped
+    /// to the line of the one the parser resolves.
+    pub reference_definition_lines: std::collections::HashMap<String, usize>,
     /// Current list nesting depth (0 = not in list, 1 = top-level, 2+ = nested)
     pub list_depth: usize,
     /// Current formatting skip mode
@@ -285,6 +402,8 @@ pub struct Serializer<'a> {
     pub directive_proper_nouns: Vec<String>,
     /// Common nouns defined via directives for sentence case (merged with config)
     pub directive_common_nouns: Vec<String>,
+    /// Protected-source tokens and their final output spellings.
+    reference_label_replacements: std::collections::HashMap<String, String>,
     /// Code formatter callback for WASM builds.
     #[cfg(feature = "wasm")]
     pub code_formatter_callback: CodeFormatterCallback,
@@ -306,8 +425,16 @@ impl<'a> Serializer<'a> {
             in_block_quote: false,
             blockquote_prefix: String::new(),
             pending_references: IndexMap::new(),
-            emitted_references: std::collections::HashSet::new(),
+            emitted_references: std::collections::HashMap::new(),
+            reference_label_cursors: std::collections::HashMap::new(),
+            numbered_reference_labels: std::collections::HashMap::new(),
             footnotes: FootnoteSet::new(),
+            verbatim_reference_labels: std::collections::HashSet::new(),
+            verbatim_reference_claims: std::collections::HashMap::new(),
+            unresolved_reference_labels: std::collections::HashSet::new(),
+            shadowed_reference_labels: std::collections::HashSet::new(),
+            deferred_references: Vec::new(),
+            reference_definition_lines: std::collections::HashMap::new(),
             list_depth: 0,
             skip_mode: FormatSkipMode::None,
             in_description_details: false,
@@ -321,6 +448,7 @@ impl<'a> Serializer<'a> {
             paragraph_first_line_prefix_width: 0,
             directive_proper_nouns: Vec::new(),
             directive_common_nouns: Vec::new(),
+            reference_label_replacements: std::collections::HashMap::new(),
             #[cfg(feature = "wasm")]
             code_formatter_callback: None,
         }
@@ -344,8 +472,16 @@ impl<'a> Serializer<'a> {
             in_block_quote: false,
             blockquote_prefix: String::new(),
             pending_references: IndexMap::new(),
-            emitted_references: std::collections::HashSet::new(),
+            emitted_references: std::collections::HashMap::new(),
+            reference_label_cursors: std::collections::HashMap::new(),
+            numbered_reference_labels: std::collections::HashMap::new(),
             footnotes: FootnoteSet::new(),
+            verbatim_reference_labels: std::collections::HashSet::new(),
+            verbatim_reference_claims: std::collections::HashMap::new(),
+            unresolved_reference_labels: std::collections::HashSet::new(),
+            shadowed_reference_labels: std::collections::HashSet::new(),
+            deferred_references: Vec::new(),
+            reference_definition_lines: std::collections::HashMap::new(),
             list_depth: 0,
             skip_mode: FormatSkipMode::None,
             in_description_details: false,
@@ -359,8 +495,52 @@ impl<'a> Serializer<'a> {
             paragraph_first_line_prefix_width: 0,
             directive_proper_nouns: Vec::new(),
             directive_common_nouns: Vec::new(),
+            reference_label_replacements: std::collections::HashMap::new(),
             code_formatter_callback: callback,
         }
+    }
+
+    pub(super) fn with_reference_label_replacements(
+        mut self,
+        replacements: Vec<(String, String)>,
+    ) -> Self {
+        self.reference_label_replacements = replacements.into_iter().collect();
+        self
+    }
+
+    pub(super) fn restore_reference_label(&self, label: &str) -> String {
+        if self.reference_label_replacements.is_empty()
+            || !label.contains(MDX_REFERENCE_LABEL_TOKEN_PREFIX)
+        {
+            return label.to_string();
+        }
+
+        let mut restored = String::with_capacity(label.len());
+        let mut remaining = label;
+        while let Some(start) = remaining.find(MDX_REFERENCE_LABEL_TOKEN_PREFIX) {
+            restored.push_str(&remaining[..start]);
+            let candidate = &remaining[start..];
+            let Some(end) = candidate.find("-->") else {
+                restored.push_str(candidate);
+                return restored;
+            };
+            let token_end = end + 3;
+            let token = &candidate[..token_end];
+            #[cfg(test)]
+            REFERENCE_LABEL_REPLACEMENT_SCANS.with(|scans| scans.set(scans.get() + 1));
+            if let Some(original) = self.reference_label_replacements.get(token) {
+                restored.push_str(original);
+            } else {
+                restored.push_str(token);
+            }
+            remaining = &candidate[token_end..];
+        }
+        restored.push_str(remaining);
+        restored
+    }
+
+    pub(super) fn reference_key(&self, label: &str) -> String {
+        normalize_reference_key(&self.restore_reference_label(label))
     }
 
     /// Add a warning.
@@ -370,16 +550,45 @@ impl<'a> Serializer<'a> {
 
     /// Extract original source text for a node using its sourcepos.
     pub fn extract_source<'b>(&self, node: &'b AstNode<'b>) -> Option<String> {
+        self.extract_source_shifted(node, 0)
+    }
+
+    /// Extract original source text for a node whose reported lines sit
+    /// `line_offset` above its real ones.
+    ///
+    /// An inline inside a paragraph that swallowed a definition at its head is
+    /// reported against the paragraph's own start, so its lines are short by
+    /// however many lines that definition took.  Its columns are the ones its
+    /// real line has.
+    pub fn extract_source_shifted<'b>(
+        &self,
+        node: &'b AstNode<'b>,
+        line_offset: usize,
+    ) -> Option<String> {
+        let sourcepos = node.data.borrow().sourcepos;
+        let start_line = sourcepos.start.line + line_offset;
+        let end_line = sourcepos.end.line + line_offset;
+        self.extract_source_range(
+            start_line,
+            sourcepos.start.column,
+            end_line,
+            sourcepos.end.column,
+        )
+    }
+
+    /// Extract original source text between two inclusive source positions.
+    pub(super) fn extract_source_range(
+        &self,
+        start_line: usize,
+        start_col: usize,
+        end_line: usize,
+        end_col: usize,
+    ) -> Option<String> {
         if self.source_lines.is_empty() {
             return None;
         }
-        let sourcepos = node.data.borrow().sourcepos;
-        let start_line = sourcepos.start.line;
-        let end_line = sourcepos.end.line;
-        let start_col = sourcepos.start.column;
-        let end_col = sourcepos.end.column;
 
-        if start_line == 0 || end_line == 0 {
+        if start_line == 0 || end_line == 0 || end_line < start_line {
             return None;
         }
 
@@ -418,6 +627,21 @@ impl<'a> Serializer<'a> {
         Some(result)
     }
 
+    /// Extract original source text for an inclusive range of lines.
+    /// Line numbers are 1-indexed; `end_line` is clamped to the last line.
+    /// Returns `None` when there is no source or the range is empty.
+    pub fn extract_source_lines(&self, start_line: usize, end_line: usize) -> Option<String> {
+        if self.source_lines.is_empty() || start_line == 0 || end_line < start_line {
+            return None;
+        }
+        let start_idx = start_line - 1;
+        if start_idx >= self.source_lines.len() {
+            return None;
+        }
+        let end_idx = (end_line - 1).min(self.source_lines.len() - 1);
+        Some(self.source_lines[start_idx..=end_idx].join("\n"))
+    }
+
     /// Extract original source text from a given line to the end of the file.
     /// Line numbers are 1-indexed.
     pub fn extract_source_from_line(&self, start_line: usize) -> Option<String> {
@@ -447,19 +671,245 @@ impl<'a> Serializer<'a> {
         self.skip_mode != FormatSkipMode::None
     }
 
-    /// Add a reference link to the pending references.
-    /// If collecting_footnote_content is true, adds to pending_footnote_references instead,
-    /// along with the current footnote's reference line for proper flush timing.
-    pub fn add_reference(&mut self, label: String, url: String, title: String) {
+    /// Look up a reference that has already been registered under `key`,
+    /// whether it is still pending or has already been emitted.
+    fn find_reference(&self, key: &str) -> Option<&ReferenceLink> {
+        self.emitted_references
+            .get(key)
+            .or_else(|| self.pending_references.get(key))
+            .or_else(|| self.footnotes.pending_references.get(key).map(|(r, _)| r))
+    }
+
+    /// Look up the target-bearing occupant of `key`, including a label merely
+    /// claimed by a link that is preserved verbatim.  A claim counts as
+    /// occupying the label even before the definition is reserved, because the
+    /// claiming link cannot be relabelled and so must not have its label taken
+    /// from under it.
+    fn find_occupant(&self, key: &str) -> Option<&ReferenceLink> {
+        self.find_reference(key)
+            .or_else(|| self.verbatim_reference_claims.get(key))
+    }
+
+    /// Whether a verbatim copy carries a definition for `key`.
+    ///
+    /// Such a definition holds the label in the output whether or not anything
+    /// resolves through it, and whether it is the definition the parser
+    /// resolved or a duplicate the copy repeats.  So the label is spoken for
+    /// even when nothing reveals what it points at, and a link that took it
+    /// would find its own definition placed after the copy, where CommonMark's
+    /// first-wins rule would hand it the copy's destination instead.
+    fn is_label_carried_verbatim(&self, key: &str) -> bool {
+        self.verbatim_reference_labels.contains(key) || self.shadowed_reference_labels.contains(key)
+    }
+
+    /// Whether a numbered variant at `key` is unavailable without a target a
+    /// formatted link can share.
+    ///
+    /// Besides definitions copied verbatim, unresolved reference syntax holds
+    /// its label against incidental allocation: emitting a definition for it
+    /// would turn ordinary bracketed text into a link.
+    fn is_numbered_label_unavailable(&self, key: &str) -> bool {
+        self.is_label_carried_verbatim(key) || self.unresolved_reference_labels.contains(key)
+    }
+
+    /// Register a reference link and return the label that must be used to
+    /// refer to it.
+    ///
+    /// A label may only be shared by links whose complete target (both URL and
+    /// title) is identical; sharing it otherwise would silently change one of
+    /// the links' destinations.  When the desired label is already taken by a
+    /// different target, a distinct label is derived from it by appending a
+    /// number, and the caller must fall back to full reference syntax.
+    ///
+    /// If collecting_footnote_content is true, the reference is added to
+    /// pending_footnote_references instead, along with the current footnote's
+    /// reference line for proper flush timing.
+    pub fn register_reference(&mut self, label: &str, url: &str, title: &str) -> String {
+        let key = self.reference_key(label);
+        // Copy the occupant out of the borrow so the maps below can be updated.
+        let occupant = self
+            .find_occupant(&key)
+            .map(|existing| (existing.url.clone(), existing.title.clone()));
+        match occupant {
+            // Already registered with the same target: share it.  A body link
+            // may still need to queue the definition for its section when the
+            // existing entry belongs to a later footnote's schedule.
+            Some((occupied_url, occupied_title))
+                if occupied_url == url && occupied_title == title =>
+            {
+                self.satisfy_shared_reference(key, label, url, title);
+                label.to_string()
+            }
+            // Free label: take it.
+            None if !self.is_label_carried_verbatim(&key) => {
+                self.insert_reference(key, label.to_string(), url, title);
+                label.to_string()
+            }
+            // Taken: by a different target, or by a definition that a verbatim
+            // copy carries.  A carried definition has no target a formatted
+            // link can safely share.
+            _ => {
+                // The variants live in the namespace of the shortened base, so
+                // that is what both the cursor and the reuse map are keyed by:
+                // labels long enough to be shortened to the same prefix share
+                // one namespace and must not allocate against each other.
+                let cursor_key = self.reference_key(truncate_reference_label_base(label));
+                // Reuse the variant this target was already given, if any.
+                // Looking it up directly keeps a document full of same-text
+                // links from rescanning every variant it has handed out.
+                let target = (cursor_key.clone(), url.to_string(), title.to_string());
+                if let Some(label) = self.numbered_reference_labels.get(&target).cloned() {
+                    let key = self.reference_key(&label);
+                    self.satisfy_shared_reference(key, &label, url, title);
+                    return label;
+                }
+                // Every variant below the cursor is already taken, and taken
+                // labels are never released, so the search can resume there.
+                let start = self
+                    .reference_label_cursors
+                    .get(&cursor_key)
+                    .copied()
+                    .unwrap_or(2);
+                for n in start.. {
+                    let candidate = numbered_reference_label(label, n);
+                    let candidate_key = self.reference_key(&candidate);
+                    // Copy the occupant out of the borrow so the maps below can
+                    // be updated.
+                    let occupant = self
+                        .find_occupant(&candidate_key)
+                        .map(|existing| (existing.url.clone(), existing.title.clone()));
+                    match occupant {
+                        // Occupied by something else.  Remember what, because
+                        // the cursor will not visit this variant again and a
+                        // later link to that same target must find it here
+                        // rather than allocating a duplicate for it.
+                        Some((occupied_url, occupied_title))
+                            if occupied_url != url || occupied_title != title =>
+                        {
+                            self.numbered_reference_labels
+                                .entry((cursor_key.clone(), occupied_url, occupied_title))
+                                .or_insert(candidate);
+                            continue;
+                        }
+                        // Held without a known target, either by a definition a
+                        // verbatim copy carries or by unresolved reference
+                        // syntax.  There is nothing to remember it by, so the
+                        // search simply moves on.
+                        None if self.is_numbered_label_unavailable(&candidate_key) => continue,
+                        // Already holds this very target: share it.
+                        Some(_) => {
+                            self.satisfy_shared_reference(candidate_key, &candidate, url, title)
+                        }
+                        None => self.insert_reference(candidate_key, candidate.clone(), url, title),
+                    }
+                    self.reference_label_cursors.insert(cursor_key, n + 1);
+                    self.numbered_reference_labels
+                        .insert(target, candidate.clone());
+                    return candidate;
+                }
+                unreachable!("the numbered label space is unbounded")
+            }
+        }
+    }
+
+    /// Ensure a shared reference is scheduled where the current link needs it.
+    ///
+    /// Footnotes are collected before the body.  If a later footnote registered
+    /// the target first, a body link still needs the definition queued for its
+    /// own section.  A label only claimed by a verbatim link likewise needs a
+    /// definition, unless the definition itself is preserved verbatim.
+    fn satisfy_shared_reference(&mut self, key: String, label: &str, url: &str, title: &str) {
+        if !self.footnotes.collecting_content
+            && self.footnotes.pending_references.contains_key(&key)
+            && !self.verbatim_reference_labels.contains(&key)
+            && !self.emitted_references.contains_key(&key)
+            && !self.pending_references.contains_key(&key)
+        {
+            self.insert_reference(key, label.to_string(), url, title);
+            return;
+        }
+        if self.find_reference(&key).is_none() && !self.verbatim_reference_labels.contains(&key) {
+            self.insert_reference(key, label.to_string(), url, title);
+        }
+    }
+
+    /// Keep a reference definition alive for a link that is emitted verbatim.
+    ///
+    /// Such a link keeps whatever label the source gave it, so unlike
+    /// [`Self::register_reference`] this never falls back to a derived label:
+    /// a renamed definition would leave the verbatim link pointing at nothing.
+    /// Returns `false` when the label is already taken by a different target,
+    /// which the caller reports as a warning since the link cannot be saved.
+    ///
+    /// The definition is queued rather than registered at once, and falls due
+    /// where the source put it, the way a footnote's references follow their
+    /// footnote.  A copied link is not the reason its definition sits where it
+    /// does, so letting it claim a place among the pending definitions would
+    /// move that definition around — and where it would land depends on whether
+    /// the parser could resolve the copied link, which is to say on whether an
+    /// earlier run had already written the very definition being reserved.
+    /// Following the source keeps every run agreeing on the placement.
+    pub fn reserve_reference(&mut self, label: &str, url: &str, title: &str) -> bool {
+        let key = self.reference_key(label);
+        if let Some(existing) = self.find_reference(&key)
+            && (existing.url != url || existing.title != title)
+        {
+            return false;
+        }
+        // A definition the scanner did not find falls due at the end, which is
+        // the one placement that cannot come out ahead of something.
+        let due = self
+            .reference_definition_lines
+            .get(&key)
+            .copied()
+            .unwrap_or(usize::MAX);
+        self.deferred_references.push((
+            ReferenceLink {
+                label: label.to_string(),
+                url: url.to_string(),
+                title: title.to_string(),
+            },
+            due,
+        ));
+        true
+    }
+
+    /// Move the queued definitions that are due before `before_line` into the
+    /// pending ones, behind everything the document's own links registered.
+    /// `None` takes them all, for the flush that ends the document.
+    ///
+    /// A definition already emitted or already pending needs nothing: the first
+    /// is written, and the second is about to be.  One held only by a footnote's
+    /// collection does need this, though, since that collection is flushed on
+    /// the footnote's schedule rather than here.
+    pub fn take_deferred_references(&mut self, before_line: Option<usize>) {
+        let mut deferred = std::mem::take(&mut self.deferred_references);
+        deferred.retain(|(reference, due)| {
+            if before_line.is_some_and(|line| *due >= line) {
+                return true;
+            }
+            let key = self.reference_key(&reference.label);
+            if !self.emitted_references.contains_key(&key)
+                && !self.pending_references.contains_key(&key)
+            {
+                self.pending_references.insert(key, reference.clone());
+            }
+            false
+        });
+        self.deferred_references = deferred;
+    }
+
+    /// Store a new reference definition under an unused key.
+    fn insert_reference(&mut self, key: String, label: String, url: &str, title: &str) {
         let reference = ReferenceLink {
-            label: label.clone(),
-            url,
-            title,
+            label,
+            url: url.to_string(),
+            title: title.to_string(),
         };
         if self.footnotes.collecting_content {
-            self.footnotes.add_reference(label, reference);
+            self.footnotes.add_reference(key, reference);
         } else {
-            self.pending_references.insert(label, reference);
+            self.pending_references.insert(key, reference);
         }
     }
 
@@ -519,7 +969,72 @@ impl<'a> Serializer<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::safe_str_slice;
+    use super::{
+        REFERENCE_LABEL_REPLACEMENT_SCANS, ReferenceLink, Serializer, normalize_reference_key,
+        safe_str_slice,
+    };
+    use crate::Options;
+
+    #[test]
+    fn reference_key_matches_comrak_edge_whitespace() {
+        assert_eq!(normalize_reference_key(" \tfoo\r\n"), "foo");
+        assert_eq!(normalize_reference_key("\u{a0}foo"), " foo");
+        assert_eq!(normalize_reference_key("foo\u{a0}"), "foo ");
+    }
+
+    #[test]
+    fn ordinary_reference_labels_skip_mdx_replacements() {
+        let options = Options::default();
+        let replacements = (0..128)
+            .map(|index| {
+                (
+                    format!("<!--hongdown-mdx:nonce:{index}-->"),
+                    format!("{{expression{index}}}"),
+                )
+            })
+            .collect();
+        let serializer = Serializer::new(&options, Vec::new(), false)
+            .with_reference_label_replacements(replacements);
+
+        REFERENCE_LABEL_REPLACEMENT_SCANS.with(|scans| scans.set(0));
+        for index in 0..128 {
+            serializer.reference_key(&format!("ordinary label {index}"));
+        }
+        REFERENCE_LABEL_REPLACEMENT_SCANS.with(|scans| assert_eq!(scans.get(), 0));
+
+        REFERENCE_LABEL_REPLACEMENT_SCANS.with(|scans| scans.set(0));
+        assert_eq!(
+            serializer.restore_reference_label(
+                "before <!--hongdown-mdx:nonce:0--> and \
+                 <!--hongdown-mdx:nonce:127--> after"
+            ),
+            "before {expression0} and {expression127} after"
+        );
+        REFERENCE_LABEL_REPLACEMENT_SCANS.with(|scans| assert_eq!(scans.get(), 2));
+    }
+
+    #[test]
+    fn shared_reference_carried_verbatim_is_not_queued() {
+        let options = Options::default();
+        let mut serializer = Serializer::new(&options, Vec::new(), false);
+        let key = serializer.reference_key("guide");
+        serializer.footnotes.pending_references.insert(
+            key.clone(),
+            (
+                ReferenceLink {
+                    label: "guide".to_string(),
+                    url: "https://example.com/guide".to_string(),
+                    title: String::new(),
+                },
+                1,
+            ),
+        );
+        serializer.verbatim_reference_labels.insert(key.clone());
+
+        serializer.satisfy_shared_reference(key.clone(), "guide", "https://example.com/guide", "");
+
+        assert!(!serializer.pending_references.contains_key(&key));
+    }
 
     #[test]
     fn test_safe_str_slice_ascii() {

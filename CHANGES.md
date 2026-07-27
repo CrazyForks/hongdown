@@ -7,6 +7,124 @@ Version 0.6.0
 To be released.
 
 
+Version 0.5.2
+-------------
+
+Released on July 28, 2026.
+
+ -  Fixed a bug where a reference definition shared by a body link and a link
+    inside a footnote could sink to the later footnote's section, leaving the
+    body link's section without its definition.  Shared definitions now stay at
+    the end of the first section that uses them, while remaining below footnote
+    definitions when both occur in the same section.  [[#30], [#38]]
+
+ -  Fixed a bug where reference definitions lost angle brackets required by an
+    empty destination, ASCII whitespace, or other targets that cannot be
+    serialized safely in bare form.  Those lines no longer represented the
+    original CommonMark reference definitions, and a second formatting pass
+    treated them as ordinary text.  These destinations now stay
+    angle-bracketed, preserving their link targets and making formatting
+    idempotent.  [[#25], [#37]]
+
+ -  Fixed a bug where an external inline link whose text contained consecutive
+    whitespace could require two formatting passes to settle.  Runs of
+    CommonMark ASCII whitespace in ordinary link text are now collapsed on the
+    first pass, so `[a  b](https://example.com/)` immediately becomes `[a b]`
+    with a matching definition.  [[#28], [#36]]
+
+ -  Fixed a bug where non-ASCII whitespace at the edge of an inline link's text
+    could leave its generated shortcut reference with no matching definition.
+    Reference labels now follow the parser's edge-whitespace rules, preserving
+    distinct labels and their definitions across formatting runs.
+    [[#31], [#35]]
+
+ -  Fixed a bug where formatting could silently change a link's destination.
+    Reference labels are generated from the link text, so two links with the
+    same text but different destinations were given the same label, and the
+    later definition overwrote the earlier one.  A label is now shared only
+    when the complete target matches, meaning both the URL and the title;
+    otherwise the colliding link gets a numbered label and full reference
+    syntax, as in `[guide][guide 2]`.  [[#26], [#29]]
+
+ -  Fixed a bug where a numbered label assigned to a colliding link could match
+    unresolved reference syntax elsewhere in the document, silently turning
+    ordinary bracketed text into a link.  Numbered label allocation now skips
+    labels already used by unresolved references.  [[#33], [#34]]
+
+ -  Fixed a bug where a reference definition needed by a later section was
+    dropped entirely when an earlier section had already defined the same
+    label with a different destination, leaving the later link pointing at
+    the earlier section's URL.  [[#26], [#29]]
+
+ -  Fixed a bug where reference labels differing only in letter case, such as
+    `[Guide]` and `[guide]`, were emitted as two separate definitions.  Since
+    CommonMark matches reference labels case-insensitively, parsers ignored
+    the second definition and both links resolved to the first URL.  Labels
+    are now compared with runs of whitespace collapsed and Unicode case
+    folding applied, the same way the underlying parser resolves them.
+    [[#26], [#29]]
+
+ -  Fixed a bug where a reference definition placed inside a
+    `<!-- hongdown-disable -->` region was dropped, leaving the region's links
+    pointing at nothing.  Since the loss was stable across runs, `--check`
+    never reported the damaged file afterwards.  The region between the two
+    directives is now copied from the source in one piece instead of being
+    rebuilt block by block, so its reference definitions survive, as do its
+    footnote definitions, interior blank lines, and indentation.  (The blank
+    line separating the region from the directives around it is still
+    normalized to exactly one.)  [[#27], [#32]]
+
+ -  Fixed a bug where a reference definition was dropped when the only links
+    using it sat in a region that skips formatting.  Those links are copied
+    from the source and never registered the definition they depend on, which
+    silently broke reference-style badges under `<!-- hongdown-disable -->`,
+    `<!-- hongdown-disable-next-line -->`,
+    `<!-- hongdown-disable-next-section -->`, and
+    `<!-- hongdown-disable-file -->`.  [[#27], [#32]]
+
+ -  Fixed a bug where a link inside a region that skips formatting could have
+    its destination changed by a link outside it.  A copied link keeps the
+    label the source gave it, so when both wanted the same label for different
+    destinations the copied one silently lost its target.  The formatted link,
+    which can be given a derived label such as `[guide][guide 2]`, now yields
+    instead.  [[#27], [#32]]
+
+ -  Fixed a bug where a directive comment gained an extra blank line above it
+    when it directly followed front matter, and lost the blank line entirely
+    when the only thing above it was a reference definition.  [[#27], [#32]]
+
+ -  Fixed a bug where a block whose formatting was skipped by
+    `<!-- hongdown-disable-next-line -->` or
+    `<!-- hongdown-disable-next-section -->` was copied from where its content
+    begins rather than from the start of its lines, losing the indentation and
+    the list or blockquote markers before it.  An indented code block came out
+    as a paragraph, and a reference definition the parser had taken out of a
+    list item was dropped altogether.  Such a block also gained a blank line on
+    every run, so `--check` reported a file `--write` had just written.
+    [[#32]]
+
+ -  Fixed a bug where a reference label holding a bracket escaped with a
+    backslash, as in `[a\]b]`, was cut short at that bracket.  The link was
+    given a label naming no definition, and the definition itself was written
+    out cut short too, so the next run no longer read it as a definition at
+    all.  [[#32]]
+
+[#25]: https://github.com/dahlia/hongdown/issues/25
+[#26]: https://github.com/dahlia/hongdown/issues/26
+[#27]: https://github.com/dahlia/hongdown/issues/27
+[#28]: https://github.com/dahlia/hongdown/issues/28
+[#29]: https://github.com/dahlia/hongdown/pull/29
+[#30]: https://github.com/dahlia/hongdown/issues/30
+[#31]: https://github.com/dahlia/hongdown/issues/31
+[#32]: https://github.com/dahlia/hongdown/pull/32
+[#33]: https://github.com/dahlia/hongdown/issues/33
+[#34]: https://github.com/dahlia/hongdown/pull/34
+[#35]: https://github.com/dahlia/hongdown/pull/35
+[#36]: https://github.com/dahlia/hongdown/pull/36
+[#37]: https://github.com/dahlia/hongdown/pull/37
+[#38]: https://github.com/dahlia/hongdown/pull/38
+
+
 Version 0.5.1
 -------------
 

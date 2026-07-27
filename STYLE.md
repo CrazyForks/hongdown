@@ -347,8 +347,8 @@ Links
 
 ### Reference-style for external URLs
 
-Convert external URLs to reference-style links, with definitions placed at
-the end of the current section:
+Convert external URLs to reference-style links, with each definition placed at
+the end of the first section that uses it:
 
 ~~~~ markdown
 See the [documentation] for more details.
@@ -359,9 +359,51 @@ Read the [installation guide] before proceeding.
 [installation guide]: https://example.com/install
 ~~~~
 
+When several links share a definition, keep it in the first section that uses
+it.  A link inside a footnote belongs to the section where the footnote is
+referenced, regardless of where its definition appears in the source.  If body
+content and one of its footnotes share a definition in the same section, place
+the reference definition after the footnote definition.
+
 *Rationale*: Reference-style links keep the prose readable by moving long URLs
 out of the text flow.  Placing definitions at section end keeps related content
 together.
+
+### Angle brackets for reference destinations
+
+Wrap a reference destination in angle brackets when the bare form would be
+empty, ambiguous, or invalid.  This includes destinations containing ASCII
+whitespace or control characters, destinations beginning with `<`, and
+destinations containing backslashes or text that would be reparsed as a
+character reference.  Also use angle brackets for unbalanced parentheses or
+more than 32 levels of parenthesis nesting.
+
+~~~~ markdown
+[space]: <https://example.com/a b>
+[empty]: <>
+~~~~
+
+Within such a destination, backslash-escape literal angle brackets and
+backslashes.  Write ampersands as `&amp;` and line endings as numeric character
+references.
+
+*Rationale*: Without the angle brackets, whitespace ends the destination and an
+empty destination is not recognized at all.  Keeping these destinations
+angle-bracketed preserves their targets and makes formatting idempotent.
+
+### Inline style for links containing images
+
+Keep an inline link inline when its text contains an image, even if its
+destination is external.  This includes images nested inside emphasis or strong
+spans:
+
+~~~~ markdown
+[**![Build status](https://example.com/status.svg)**](https://example.com/build)
+~~~~
+
+*Rationale*: Image syntax contains brackets, which are not allowed in a
+reference label.  Turning the complete link text into a label would produce an
+invalid reference and leave the outer link unresolved.
 
 ### Inline style for relative URLs
 
@@ -410,6 +452,44 @@ See [GitHub][][^1] for details.
 *Rationale*: Without the empty brackets, `[GitHub][^1]` could be parsed as a
 full reference link with label `^1`, which would break the intended link and
 footnote.
+
+### Distinct labels for distinct targets
+
+A reference label may be shared only by links that point at the very same
+target, meaning the same URL *and* the same title.  When the label a link
+would otherwise take is already used for a different target, the link gets a
+numbered label and full reference syntax:
+
+~~~~ markdown
+ -  Read [guide].
+ -  Read [guide][guide 2].
+
+[guide]: https://example.com/first
+[guide 2]: https://example.com/second
+~~~~
+
+Labels are compared the way CommonMark resolves them: CommonMark ASCII
+whitespace is trimmed from the edges, remaining whitespace runs are collapsed,
+and Unicode case folding is applied.  So `[Guide]` and `[guide]` are the same
+label, as are `[Straße]` and `[STRASSE]`, and one of them is renumbered unless
+both point at the same target.  Non-ASCII whitespace at a label edge remains
+significant.
+
+When an inline external link is converted to reference style, runs of CommonMark
+ASCII whitespace in ordinary text are collapsed to one space before its
+displayed text and label are emitted.  Whitespace-sensitive inline constructs,
+including code spans, math, and inline HTML, keep their displayed content; their
+generated labels are normalized separately.  Significant edge whitespace is
+retained in both so that the reference resolves through the same key.
+
+For numbered label allocation, a label appearing as unresolved reference
+syntax is also considered occupied.  Allocation skips it rather than adding a
+definition that would silently turn the bracketed text into a link.
+
+*Rationale*: A reference definition is document-wide, and a duplicate
+definition is ignored by the parser rather than merged.  Sharing a label
+between different targets would therefore silently change where one of the
+links points, and formatting must never do that.
 
 
 Block quotes and alerts
@@ -677,6 +757,63 @@ The HTML specification defines this behavior.
 
 *[HTML]: HyperText Markup Language
 ~~~~
+
+
+Disabled regions
+----------------
+
+Formatting can be turned off for part of a document with the HTML comment
+directives listed in the *[README](./README.md)*.  What follows describes what
+is preserved where they apply.
+
+### Verbatim content
+
+Content whose formatting is disabled is copied from the source as it stands,
+including its indentation, the blank lines within it, and any reference or
+footnote definition written inside it:
+
+~~~~ markdown
+<!-- hongdown-disable -->
+
+Kept    exactly   as written, [guide] and all.
+
+[guide]: https://example.com/guide
+
+<!-- hongdown-enable -->
+~~~~
+
+The blank line between a directive comment and the content beside it is
+normalized to one.  Everything between them is left alone.
+
+*Rationale*: A reference definition is not a node of its own in the parsed
+document, so a region rebuilt element by element loses one.  Copying the
+region's source keeps whatever it holds.
+
+### Definitions a disabled region needs
+
+A link that is copied keeps the label the source gave it, so a definition it
+depends on is kept even where nothing else refers to it, and stays where the
+source put it:
+
+~~~~ markdown
+<!-- hongdown-disable -->
+
+[![Build status][badge]][ci]
+
+<!-- hongdown-enable -->
+
+[badge]: https://example.com/badge.svg
+[ci]: https://example.com/ci
+~~~~
+
+A label a disabled region defines belongs to that region.  Where a formatted
+link would otherwise take it for a different target, that link is given a
+numbered label instead, as in *[Distinct labels for distinct
+targets](#distinct-labels-for-distinct-targets)*.
+
+*Rationale*: A copied link cannot be relabelled without changing text that is
+meant to be preserved, and a definition inside the region defines its label for
+the whole document.
 
 
 MDX

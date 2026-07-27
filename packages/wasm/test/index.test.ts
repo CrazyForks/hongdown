@@ -247,6 +247,22 @@ describe("formatWithCodeFormatter", () => {
     assert.ok(output.startsWith("# Test"), "H1 should be ATX style");
     assert.ok(output.includes("CODE"), "Code should be transformed");
   });
+
+  it("reserves restored MDX labels", async () => {
+    const input =
+      "See [foo {bar} 2].\n\n" +
+      " -  Read [foo {bar}](https://example.com/first).\n" +
+      " -  Read [foo {bar}](https://example.com/second).\n";
+    const { output, warnings } = await formatWithCodeFormatter(input, {
+      mdx: true,
+    });
+    assert.ok(output.includes("[foo {bar}][foo {bar} 3]"));
+    assert.equal(warnings.length, 1);
+    assert.equal(
+      warnings[0].message,
+      "undefined reference link: [foo {bar} 2]",
+    );
+  });
 });
 
 describe("options", () => {
