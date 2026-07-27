@@ -7,6 +7,11 @@ use super::escape;
 use super::punctuation;
 use super::{MATH_TOKEN_CLOSE, MATH_TOKEN_OPEN};
 
+enum LinkTextSegment {
+    Ordinary(String),
+    Verbatim(String),
+}
+
 impl<'a> Serializer<'a> {
     pub(super) fn collect_text<'b>(&mut self, node: &'b AstNode<'b>) -> String {
         let mut text = String::new();
@@ -22,6 +27,162 @@ impl<'a> Serializer<'a> {
             self.collect_inline_node(child, &mut text);
         }
         text
+    }
+
+    pub(super) fn contains_image<'b>(node: &'b AstNode<'b>) -> bool {
+        node.children().any(|child| {
+            matches!(&child.data.borrow().value, NodeValue::Image(_)) || Self::contains_image(child)
+        })
+    }
+
+    /// Serialize inline children while collapsing whitespace runs in ordinary
+    /// text nodes.  Whitespace-sensitive inline constructs remain untouched.
+    pub(super) fn collect_normalized_link_text<'b>(&mut self, node: &'b AstNode<'b>) -> String {
+        let mut segments = Vec::new();
+        let mut html_depth = 0;
+        for child in node.children() {
+            self.collect_link_text_segments(child, &mut segments, &mut html_depth);
+        }
+        Self::normalize_link_text_segments(segments)
+    }
+
+    fn collect_link_text_segments<'b>(
+        &mut self,
+        node: &'b AstNode<'b>,
+        segments: &mut Vec<LinkTextSegment>,
+        html_depth: &mut usize,
+    ) {
+        match &node.data.borrow().value {
+            NodeValue::Text(_) | NodeValue::SoftBreak => {
+                let mut text = String::new();
+                self.collect_inline_node(node, &mut text);
+                let text = text.replace('\x00', " ");
+                if *html_depth == 0 {
+                    segments.push(LinkTextSegment::Ordinary(text));
+                } else {
+                    segments.push(LinkTextSegment::Verbatim(text));
+                }
+            }
+            NodeValue::Emph => {
+                let delimiter = self.get_emphasis_delimiter(node).to_string();
+                segments.push(LinkTextSegment::Verbatim(delimiter.clone()));
+                for child in node.children() {
+                    self.collect_link_text_segments(child, segments, html_depth);
+                }
+                segments.push(LinkTextSegment::Verbatim(delimiter));
+            }
+            NodeValue::Strong => {
+                let delimiter = self.get_strong_delimiter(node).to_string();
+                segments.push(LinkTextSegment::Verbatim(delimiter.clone()));
+                for child in node.children() {
+                    self.collect_link_text_segments(child, segments, html_depth);
+                }
+                segments.push(LinkTextSegment::Verbatim(delimiter));
+            }
+            NodeValue::HtmlInline(html) => {
+                segments.push(LinkTextSegment::Verbatim(html.clone()));
+                Self::update_inline_html_depth(html, html_depth);
+            }
+            NodeValue::Code(_) | NodeValue::Math(_) | NodeValue::LineBreak => {
+                let mut text = String::new();
+                self.collect_inline_node(node, &mut text);
+                segments.push(LinkTextSegment::Verbatim(text));
+            }
+            NodeValue::Image(_) => {
+                let mut image = String::new();
+                self.collect_inline_node(node, &mut image);
+                segments.push(LinkTextSegment::Verbatim(image));
+            }
+            _ if *html_depth == 0 && node.children().next().is_some() => {
+                for child in node.children() {
+                    self.collect_link_text_segments(child, segments, html_depth);
+                }
+            }
+            _ => {
+                let mut text = String::new();
+                self.collect_inline_node(node, &mut text);
+                segments.push(LinkTextSegment::Verbatim(text));
+            }
+        }
+    }
+
+    fn normalize_link_text_segments(segments: Vec<LinkTextSegment>) -> String {
+        let mut output = String::new();
+        let mut pending_whitespace = String::new();
+
+        for segment in segments {
+            match segment {
+                LinkTextSegment::Ordinary(text) => {
+                    for ch in text.chars() {
+                        if escape::is_commonmark_whitespace(ch) {
+                            pending_whitespace.push(ch);
+                        } else {
+                            Self::flush_link_text_whitespace(&mut output, &mut pending_whitespace);
+                            output.push(ch);
+                        }
+                    }
+                }
+                LinkTextSegment::Verbatim(text) => {
+                    if !text.is_empty() {
+                        Self::flush_link_text_whitespace(&mut output, &mut pending_whitespace);
+                        output.push_str(&text);
+                    }
+                }
+            }
+        }
+
+        Self::flush_link_text_whitespace(&mut output, &mut pending_whitespace);
+        output
+    }
+
+    fn flush_link_text_whitespace(output: &mut String, pending_whitespace: &mut String) {
+        if pending_whitespace.is_empty() {
+            return;
+        }
+        output.push(' ');
+        pending_whitespace.clear();
+    }
+
+    fn update_inline_html_depth(html: &str, depth: &mut usize) {
+        let html = html.trim();
+        if html.starts_with("</") {
+            *depth = depth.saturating_sub(1);
+            return;
+        }
+        if !html.starts_with('<')
+            || html.starts_with("<!")
+            || html.starts_with("<?")
+            || html.ends_with("/>")
+        {
+            return;
+        }
+
+        let tag = html[1..]
+            .chars()
+            .take_while(|ch| ch.is_ascii_alphanumeric() || *ch == '-')
+            .collect::<String>()
+            .to_ascii_lowercase();
+        if !tag.is_empty()
+            && !matches!(
+                tag.as_str(),
+                "area"
+                    | "base"
+                    | "br"
+                    | "col"
+                    | "embed"
+                    | "hr"
+                    | "img"
+                    | "input"
+                    | "link"
+                    | "meta"
+                    | "param"
+                    | "source"
+                    | "track"
+                    | "wbr"
+            )
+        {
+            *depth += 1;
+        }
     }
 
     /// Collect raw text without escaping (for comparison purposes)
@@ -117,14 +278,27 @@ impl<'a> Serializer<'a> {
             }
             NodeValue::Link(link) => {
                 // Handle reference-style links in headings
-                if let Some((_, label)) = self.get_reference_style_info(node) {
+                if Self::contains_image(node) {
+                    let link_text = self.collect_inline_children(node).replace('\x00', " ");
+                    if let Some((_, label)) = self.get_reference_style_info(node) {
+                        self.format_reference_link(
+                            text,
+                            &link_text,
+                            &label,
+                            &link.url,
+                            &link.title,
+                        );
+                    } else {
+                        Self::format_inline_link(text, &link_text, &link.url, &link.title);
+                    }
+                } else if let Some((_, label)) = self.get_reference_style_info(node) {
                     let link_text = self.collect_inline_children(node);
                     self.format_reference_link(text, &link_text, &label, &link.url, &link.title);
                 } else {
                     // For inline links, just output plain text (or format as inline?)
                     // In headings, we typically want reference style for external links
                     if Self::is_external_url(&link.url) {
-                        let link_text = self.collect_inline_children(node);
+                        let link_text = self.collect_normalized_link_text(node);
                         // Headings don't have footnote references as siblings, so no need for collapsed style
                         self.format_external_link_as_reference(
                             text,
@@ -230,9 +404,7 @@ impl<'a> Serializer<'a> {
             }
             NodeValue::Link(link) => {
                 // Check if link contains an image (badge-style link)
-                let contains_image = node
-                    .children()
-                    .any(|child| matches!(&child.data.borrow().value, NodeValue::Image(_)));
+                let contains_image = Self::contains_image(node);
 
                 // Check if this is an autolink (link text equals URL)
                 let raw_text = self.collect_raw_text(node);
@@ -277,7 +449,7 @@ impl<'a> Serializer<'a> {
                     Self::format_autolink(content, &link.url);
                 } else if Self::is_external_url(&link.url) {
                     // External URL: collect link text first
-                    let link_text = self.collect_inline_children(node);
+                    let link_text = self.collect_normalized_link_text(node);
                     // Check if next sibling starts with '[' to decide if we need collapsed style
                     let use_collapsed = Self::next_sibling_starts_with_bracket(node);
                     self.format_external_link_as_reference(

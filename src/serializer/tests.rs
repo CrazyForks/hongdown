@@ -3496,6 +3496,32 @@ fn test_heading_with_image_only() {
 }
 
 #[test]
+fn test_heading_link_with_nested_image_stays_inline() {
+    let input = "# Project [**![CI](badge.svg)**](https://ci.example.com/)";
+    let result = parse_and_serialize(input);
+
+    assert!(
+        result.starts_with("Project [**![CI](badge.svg)**](https://ci.example.com/)\n"),
+        "Image-bearing link should stay inline, got:\n{result}"
+    );
+    assert!(!result.contains("[**![CI](badge.svg)**]:"));
+    assert_eq!(parse_and_serialize(&result), result);
+}
+
+#[test]
+fn test_multiline_heading_link_with_nested_image_stays_inline() {
+    let input = "Project [**![CI](badge.svg)**\nbadge](https://ci.example.com/)\n===============================";
+    let result = parse_and_serialize(input);
+
+    assert!(
+        result.starts_with("Project [**![CI](badge.svg)** badge](https://ci.example.com/)\n"),
+        "Soft break should become a space, got:\n{result:?}"
+    );
+    assert!(!result.contains('\0'));
+    assert_eq!(parse_and_serialize(&result), result);
+}
+
+#[test]
 fn test_setext_heading_with_image_on_previous_line() {
     // When image is on a separate line before setext heading text,
     // they form a single heading (per Markdown spec)
@@ -7458,6 +7484,118 @@ fn test_generated_label_normalization_preserves_link_content() {
         assert_eq!(second.output, result.output);
         assert!(second.warnings.is_empty());
     }
+}
+
+#[test]
+fn test_inline_external_link_whitespace_is_normalized() {
+    // https://github.com/dahlia/hongdown/issues/28
+    for text in ["a  b", "a\tb"] {
+        let input = format!("See [{text}](https://example.com/).\n");
+        let expected = "See [a b].\n\n[a b]: https://example.com/\n";
+
+        let result = parse_and_serialize_with_warnings(&input);
+        assert_eq!(result.output, expected, "failed for {text:?}");
+        assert!(result.warnings.is_empty());
+
+        let second = parse_and_serialize_with_warnings(&result.output);
+        assert_eq!(second.output, result.output);
+        assert!(second.warnings.is_empty());
+    }
+}
+
+#[test]
+fn test_inline_external_link_edge_whitespace_is_normalized() {
+    for (text, displayed) in [("  a", " a"), ("a  ", "a "), ("a\t\t", "a ")] {
+        let input = format!("See [{text}](https://example.com/).\n");
+        let expected = format!(
+            "See [{displayed}][a].\n\n\
+             [a]: https://example.com/\n"
+        );
+
+        let result = parse_and_serialize_with_warnings(&input);
+        assert_eq!(result.output, expected, "failed for {text:?}");
+        assert!(result.warnings.is_empty());
+
+        let second = parse_and_serialize_with_warnings(&result.output);
+        assert_eq!(second.output, result.output);
+        assert!(second.warnings.is_empty());
+    }
+}
+
+#[test]
+fn test_non_ascii_internal_whitespace_is_preserved() {
+    for whitespace in ['\u{a0}', '\u{3000}'] {
+        let text = format!("a{whitespace}b");
+        let input = format!("See [{text}](https://example.com/).\n");
+        let expected = format!(
+            "See [{text}][a b].\n\n\
+             [a b]: https://example.com/\n"
+        );
+
+        let result = parse_and_serialize_with_warnings(&input);
+        assert_eq!(
+            result.output, expected,
+            "failed for U+{:04X}",
+            whitespace as u32
+        );
+        assert!(result.warnings.is_empty());
+
+        let second = parse_and_serialize_with_warnings(&result.output);
+        assert_eq!(second.output, result.output);
+        assert!(second.warnings.is_empty());
+    }
+}
+
+#[test]
+fn test_mixed_inline_external_link_whitespace_is_normalized_selectively() {
+    // Whitespace in ordinary text should collapse without changing the
+    // contents of whitespace-sensitive inline constructs.
+    for (text, displayed, label) in [
+        ("a  b `c  d` e  f", "a b `c  d` e f", "a b `c d` e f"),
+        ("a  b $c  d$ e  f", "a b $c  d$ e f", "a b $c d$ e f"),
+        (
+            "a  b <span>c  d</span> e  f",
+            "a b <span>c  d</span> e f",
+            "a b <span>c d</span> e f",
+        ),
+        (
+            "<span>*a  </span>* c  d",
+            "<span>*a  </span>* c d",
+            "<span>*a </span>* c d",
+        ),
+        (
+            "<span>**a  </span>** c  d",
+            "<span>**a  </span>** c d",
+            "<span>**a </span>** c d",
+        ),
+    ] {
+        let input = format!("See [{text}](https://example.com/).\n");
+        let expected = format!(
+            "See [{displayed}][{label}].\n\n\
+             [{label}]: https://example.com/\n"
+        );
+
+        let result = parse_and_serialize_with_warnings(&input);
+        assert_eq!(result.output, expected, "failed for {text:?}");
+        assert!(result.warnings.is_empty());
+
+        let second = parse_and_serialize_with_warnings(&result.output);
+        assert_eq!(second.output, result.output);
+        assert!(second.warnings.is_empty());
+    }
+}
+
+#[test]
+fn test_nested_image_in_external_link_is_preserved() {
+    let input = "See [**![badge](badge.svg)** text](https://example.com/).\n";
+
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(result.output, input);
+    assert!(result.warnings.is_empty());
+
+    let second = parse_and_serialize_with_warnings(&result.output);
+    assert_eq!(second.output, result.output);
+    assert!(second.warnings.is_empty());
 }
 
 #[test]
