@@ -363,6 +363,20 @@ Read the [installation guide] before proceeding.
 out of the text flow.  Placing definitions at section end keeps related content
 together.
 
+### Inline style for links containing images
+
+Keep an inline link inline when its text contains an image, even if its
+destination is external.  This includes images nested inside emphasis or strong
+spans:
+
+~~~~ markdown
+[**![Build status](https://example.com/status.svg)**](https://example.com/build)
+~~~~
+
+*Rationale*: Image syntax contains brackets, which are not allowed in a
+reference label.  Turning the complete link text into a label would produce an
+invalid reference and leave the outer link unresolved.
+
 ### Inline style for relative URLs
 
 Keep relative URLs and fragment links inline:
