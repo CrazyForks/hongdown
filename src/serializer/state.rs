@@ -821,6 +821,7 @@ impl<'a> Serializer<'a> {
     fn satisfy_shared_reference(&mut self, key: String, label: &str, url: &str, title: &str) {
         if !self.footnotes.collecting_content
             && self.footnotes.pending_references.contains_key(&key)
+            && !self.verbatim_reference_labels.contains(&key)
             && !self.emitted_references.contains_key(&key)
             && !self.pending_references.contains_key(&key)
         {
@@ -969,7 +970,8 @@ impl<'a> Serializer<'a> {
 #[cfg(test)]
 mod tests {
     use super::{
-        REFERENCE_LABEL_REPLACEMENT_SCANS, Serializer, normalize_reference_key, safe_str_slice,
+        REFERENCE_LABEL_REPLACEMENT_SCANS, ReferenceLink, Serializer, normalize_reference_key,
+        safe_str_slice,
     };
     use crate::Options;
 
@@ -1009,6 +1011,29 @@ mod tests {
             "before {expression0} and {expression127} after"
         );
         REFERENCE_LABEL_REPLACEMENT_SCANS.with(|scans| assert_eq!(scans.get(), 2));
+    }
+
+    #[test]
+    fn shared_reference_carried_verbatim_is_not_queued() {
+        let options = Options::default();
+        let mut serializer = Serializer::new(&options, Vec::new(), false);
+        let key = serializer.reference_key("guide");
+        serializer.footnotes.pending_references.insert(
+            key.clone(),
+            (
+                ReferenceLink {
+                    label: "guide".to_string(),
+                    url: "https://example.com/guide".to_string(),
+                    title: String::new(),
+                },
+                1,
+            ),
+        );
+        serializer.verbatim_reference_labels.insert(key.clone());
+
+        serializer.satisfy_shared_reference(key.clone(), "guide", "https://example.com/guide", "");
+
+        assert!(!serializer.pending_references.contains_key(&key));
     }
 
     #[test]

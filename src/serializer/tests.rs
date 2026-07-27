@@ -4108,10 +4108,7 @@ Text with a footnote[^1].
 [guide]: https://example.com/guide
 "#;
     let result = parse_and_serialize(input);
-
-    assert_eq!(
-        result,
-        r#"Section one
+    let expected = r#"Section one
 -----------
 
 Body [guide] link.
@@ -4125,8 +4122,10 @@ Section two
 Text with a footnote[^1].
 
 [^1]: See [guide] as well.
-"#
-    );
+"#;
+
+    assert_eq!(result, expected);
+    assert_eq!(parse_and_serialize(&result), expected);
 }
 
 #[test]
