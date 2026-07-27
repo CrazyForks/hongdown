@@ -426,10 +426,17 @@ numbered label and full reference syntax:
 [guide 2]: https://example.com/second
 ~~~~
 
-Labels are compared the way CommonMark resolves them: with runs of whitespace
-collapsed and Unicode case folding applied.  So `[Guide]` and `[guide]` are
-the same label, as are `[Straße]` and `[STRASSE]`, and one of them is
-renumbered unless both point at the same target.
+Labels are compared the way CommonMark resolves them: CommonMark ASCII
+whitespace is trimmed from the edges, remaining whitespace runs are collapsed,
+and Unicode case folding is applied.  So `[Guide]` and `[guide]` are the same
+label, as are `[Straße]` and `[STRASSE]`, and one of them is renumbered unless
+both point at the same target.  Non-ASCII whitespace at a label edge remains
+significant.
+
+When an inline external link is converted to reference style, its displayed
+text is preserved while the generated label is normalized separately.
+Significant edge whitespace is retained in both so that the reference resolves
+through the same key.
 
 For numbered label allocation, a label appearing as unresolved reference
 syntax is also considered occupied.  Allocation skips it rather than adding a

@@ -122,16 +122,32 @@ const MDX_REFERENCE_LABEL_TOKEN_PREFIX: &str = "<!--hongdown-mdx:";
 /// and applying Unicode default case folding, so labels that differ only in
 /// spacing or case refer to the same definition and must share a single key.
 /// This mirrors comrak's `normalize_label(_, Case::Fold)`, down to using the
-/// same case folding implementation: plain lowercasing would miss pairs such
-/// as `Straße` and `STRASSE`.  Internal wrapping markers are normalized to
-/// their emitted form: a SoftBreak becomes a space, while math sentinels
-/// disappear.  Backslashes remain significant because comrak keeps them in
-/// reference-label lookup keys.
+/// same edge-whitespace and case-folding rules: only CommonMark's ASCII
+/// whitespace is trimmed from the edges, while every Unicode whitespace run
+/// that remains is collapsed to a single space.  Plain lowercasing would miss
+/// pairs such as `Straße` and `STRASSE`.  Internal wrapping markers are
+/// normalized to their emitted form: a SoftBreak becomes a space, while math
+/// sentinels disappear.  Backslashes remain significant because comrak keeps
+/// them in reference-label lookup keys.
 pub fn normalize_reference_key(label: &str) -> String {
     let emitted = label
         .replace('\x00', " ")
         .replace([super::MATH_TOKEN_OPEN, super::MATH_TOKEN_CLOSE], "");
-    caseless::default_case_fold_str(&super::escape::normalize_whitespace(&emitted))
+    let trimmed = emitted.trim_matches(super::escape::is_commonmark_whitespace);
+    let mut normalized = String::with_capacity(trimmed.len());
+    let mut last_was_whitespace = false;
+    for ch in trimmed.chars() {
+        if ch.is_whitespace() {
+            if !last_was_whitespace {
+                normalized.push(' ');
+                last_was_whitespace = true;
+            }
+        } else {
+            normalized.push(ch);
+            last_was_whitespace = false;
+        }
+    }
+    caseless::default_case_fold_str(&normalized)
 }
 
 /// The longest suffix [`numbered_reference_label`] appends, in bytes: a space
@@ -161,7 +177,10 @@ fn truncate_reference_label_base(label: &str) -> &str {
 
 /// Build the `n`th numbered variant of `label`, such as `guide 2`.
 fn numbered_reference_label(label: &str, n: u32) -> String {
-    format!("{} {n}", truncate_reference_label_base(label))
+    super::escape::normalize_reference_spelling(&format!(
+        "{} {n}",
+        truncate_reference_label_base(label)
+    ))
 }
 
 /// A footnote definition: name -> content
@@ -940,8 +959,17 @@ impl<'a> Serializer<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{REFERENCE_LABEL_REPLACEMENT_SCANS, Serializer, safe_str_slice};
+    use super::{
+        REFERENCE_LABEL_REPLACEMENT_SCANS, Serializer, normalize_reference_key, safe_str_slice,
+    };
     use crate::Options;
+
+    #[test]
+    fn reference_key_matches_comrak_edge_whitespace() {
+        assert_eq!(normalize_reference_key(" \tfoo\r\n"), "foo");
+        assert_eq!(normalize_reference_key("\u{a0}foo"), " foo");
+        assert_eq!(normalize_reference_key("foo\u{a0}"), "foo ");
+    }
 
     #[test]
     fn ordinary_reference_labels_skip_mdx_replacements() {

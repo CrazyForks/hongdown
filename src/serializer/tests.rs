@@ -7399,6 +7399,91 @@ fn test_duplicate_link_text_same_url_reuses_label() {
 }
 
 #[test]
+fn test_non_ascii_edge_whitespace_keeps_reference_labels_distinct() {
+    // Comrak trims only CommonMark ASCII whitespace from reference-label
+    // edges, so a no-break space must remain in both the emitted link and its
+    // definition.
+    // https://github.com/dahlia/hongdown/issues/31
+    for text in ["\u{a0}foo", "foo\u{a0}"] {
+        let input = format!(
+            "See [foo](https://example.com/x) and \
+             [{text}](https://example.com/y) too.\n"
+        );
+        let expected = format!(
+            "See [foo] and [{text}] too.\n\n\
+             [foo]: https://example.com/x\n\
+             [{text}]: https://example.com/y\n"
+        );
+        let result = parse_and_serialize_with_warnings(&input);
+        assert_eq!(result.output, expected, "failed for {text:?}");
+        assert!(result.warnings.is_empty());
+
+        let second = parse_and_serialize_with_warnings(&result.output);
+        assert_eq!(second.output, result.output);
+        assert!(second.warnings.is_empty());
+    }
+}
+
+#[test]
+fn test_numbered_label_after_non_ascii_edge_whitespace_is_idempotent() {
+    let input = "See [foo\u{a0}](https://example.com/x) and \
+                 [foo\u{a0}](https://example.com/y) too.\n";
+    let expected = "See [foo\u{a0}] and [foo\u{a0}][foo 2] too.\n\n\
+                    [foo\u{a0}]: https://example.com/x\n\
+                    [foo 2]: https://example.com/y\n";
+
+    let result = parse_and_serialize_with_warnings(input);
+    assert_eq!(result.output, expected);
+    assert!(result.warnings.is_empty());
+
+    let second = parse_and_serialize_with_warnings(&result.output);
+    assert_eq!(second.output, result.output);
+    assert!(second.warnings.is_empty());
+}
+
+#[test]
+fn test_generated_label_normalization_preserves_link_content() {
+    for (text, label) in [(" foo ", "foo"), ("`a  b`", "`a b`")] {
+        let input = format!("See [{text}](https://example.com/).\n");
+        let expected = format!(
+            "See [{text}][{label}].\n\n\
+             [{label}]: https://example.com/\n"
+        );
+
+        let result = parse_and_serialize_with_warnings(&input);
+        assert_eq!(result.output, expected, "failed for {text:?}");
+        assert!(result.warnings.is_empty());
+
+        let second = parse_and_serialize_with_warnings(&result.output);
+        assert_eq!(second.output, result.output);
+        assert!(second.warnings.is_empty());
+    }
+}
+
+#[test]
+fn test_non_ascii_edge_whitespace_preserves_inline_span_spaces() {
+    for (text, label) in [
+        ("`a  b`", "`a b`"),
+        ("$a  b$", "$a b$"),
+        ("<span>a  b</span>", "<span>a b</span>"),
+    ] {
+        let input = format!("See [\u{a0}{text}](https://example.com/).\n");
+        let expected = format!(
+            "See [\u{a0}{text}][\u{a0}{label}].\n\n\
+             [\u{a0}{label}]: https://example.com/\n"
+        );
+
+        let result = parse_and_serialize_with_warnings(&input);
+        assert_eq!(result.output, expected, "failed for {text:?}");
+        assert!(result.warnings.is_empty());
+
+        let second = parse_and_serialize_with_warnings(&result.output);
+        assert_eq!(second.output, result.output);
+        assert!(second.warnings.is_empty());
+    }
+}
+
+#[test]
 fn test_escaped_and_unescaped_reference_labels_remain_distinct() {
     let input = "[one][foo_bar] and [two][foo\\_bar].\n\n\
                  [foo_bar]: https://example.com/\n\

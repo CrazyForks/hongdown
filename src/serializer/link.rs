@@ -16,13 +16,14 @@ impl<'a> Serializer<'a> {
     ) {
         let collapsed = label.starts_with('\x01');
         let label = label.strip_prefix('\x01').unwrap_or(label);
+        let emitted_text = text.replace('\x00', " ");
         // The label may already be taken by a different target, in which case a
         // distinct one is allocated and the full reference form is required.
         let label = self.register_reference(label, url, title);
 
         output.push('[');
-        output.push_str(text);
-        if label == text {
+        output.push_str(&emitted_text);
+        if label == emitted_text {
             if collapsed {
                 // Collapsed reference: [text][]
                 output.push_str("][]");
@@ -72,15 +73,17 @@ impl<'a> Serializer<'a> {
         title: &str,
         use_collapsed: bool,
     ) {
-        // Normalize: replace SoftBreak markers with spaces for shortcut refs
-        let normalized_text = text.replace('\x00', " ");
+        let emitted_text = text.replace('\x00', " ");
+        // Normalize the label separately so whitespace-sensitive inline
+        // content remains unchanged in the displayed link text.
+        let normalized_label = super::escape::normalize_reference_spelling(&emitted_text);
         // The link text is only usable as the label when it is not already
         // taken by a different target; otherwise fall back to a full reference.
-        let label = self.register_reference(&normalized_text, url, title);
+        let label = self.register_reference(&normalized_label, url, title);
 
         output.push('[');
-        output.push_str(&normalized_text);
-        if label == normalized_text {
+        output.push_str(&emitted_text);
+        if label == emitted_text {
             output.push(']');
             if use_collapsed {
                 output.push_str("[]");
@@ -162,7 +165,7 @@ impl<'a> Serializer<'a> {
         let is_autolink = title.is_empty() && raw_text == url;
 
         // Check if original was reference style
-        if let Some((text, label)) = self.get_reference_style_info(node) {
+        if let Some((_, label)) = self.get_reference_style_info(node) {
             // For badge-style, serialize children first to get image content
             if contains_image {
                 // Badge-style with reference: [![alt][img-ref]][link-ref]
@@ -177,6 +180,7 @@ impl<'a> Serializer<'a> {
                 self.output.push(']');
             } else {
                 // Use helper for non-badge reference links
+                let text = self.collect_inline_children(node);
                 let mut output = String::new();
                 self.format_reference_link(&mut output, &text, &label, url, title);
                 self.output.push_str(&output);
@@ -198,7 +202,7 @@ impl<'a> Serializer<'a> {
         } else if is_autolink {
             Self::format_autolink(&mut self.output, url);
         } else if Self::is_external_url(url) {
-            let link_text = self.collect_text(node);
+            let link_text = self.collect_inline_children(node);
             let mut output = String::new();
             let use_collapsed = Self::next_sibling_starts_with_bracket(node);
             self.format_external_link_as_reference(
