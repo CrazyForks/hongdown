@@ -383,6 +383,7 @@ impl<'a> Serializer<'a> {
                     }
                     '\\' => output.push_str("\\\\"),
                     '&' => output.push_str("&amp;"),
+                    '\t' => output.push_str("&#9;"),
                     '\n' => output.push_str("&#10;"),
                     '\r' => output.push_str("&#13;"),
                     _ => output.push(character),
