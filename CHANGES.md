@@ -6,6 +6,15 @@ Version 0.5.3
 
 To be released.
 
+ -  Fixed a bug where decoded tabs in angle-bracketed reference destinations
+    were written as literal control characters, so reparsing the formatted
+    Markdown could lose the destination.  Tabs are now written as `&#9;`,
+    preserving the destination and making formatting idempotent.
+    [[#39], [#40]]
+
+[#39]: https://github.com/dahlia/hongdown/issues/39
+[#40]: https://github.com/dahlia/hongdown/pull/40
+
 
 Version 0.5.2
 -------------
