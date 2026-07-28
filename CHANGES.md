@@ -4,7 +4,7 @@ Hongdown changelog
 Version 0.5.3
 -------------
 
-To be released.
+Released on July 28, 2026.
 
  -  Fixed a bug where decoded tabs in angle-bracketed reference destinations
     were written as literal control characters, so reparsing the formatted
