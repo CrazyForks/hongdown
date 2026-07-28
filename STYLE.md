@@ -380,12 +380,13 @@ more than 32 levels of parenthesis nesting.
 
 ~~~~ markdown
 [space]: <https://example.com/a b>
+[tab]: <https://example.com/a&#9;b>
 [empty]: <>
 ~~~~
 
 Within such a destination, backslash-escape literal angle brackets and
-backslashes.  Write ampersands as `&amp;` and line endings as numeric character
-references.
+backslashes.  Write ampersands as `&amp;`, and write tabs and line endings as
+numeric character references.
 
 *Rationale*: Without the angle brackets, whitespace ends the destination and an
 empty destination is not recognized at all.  Keeping these destinations
